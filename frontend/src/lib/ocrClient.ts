@@ -1,6 +1,9 @@
 import { OCRScanResult, IdType } from '../types';
 
-const OCR_BASE_URL = import.meta.env.VITE_OCR_API_URL || 'http://localhost:3001';
+const OCR_BASE_URL =
+  import.meta.env.VITE_OCR_API_URL ||
+  import.meta.env.VITE_OCR_SERVER_URL ||
+  'http://localhost:3001';
 
 export interface ScanDocumentParams {
   documentType: IdType | 'auto';
