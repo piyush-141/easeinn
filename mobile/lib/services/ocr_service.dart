@@ -63,11 +63,12 @@ class OcrResult {
 class OcrService {
   // Use localhost on desktop/web, 10.0.2.2 on Android emulator
   static String get baseUrl {
-    if (kIsWeb) return 'http://localhost:3001';
-    try {
-      if (Platform.isAndroid) return 'http://10.0.2.2:3001';
-    } catch (_) {}
-    return 'http://localhost:3001';
+    // if (kIsWeb) return 'http://localhost:3001';
+    // try {
+    //   if (Platform.isAndroid) return 'http://10.0.2.2:3001';
+    // } catch (_) {}
+    // return 'http://localhost:3001';
+    return 'https://easeinn.onrender.com';
   }
 
   static MediaType _resolveMediaType(String filename) {
