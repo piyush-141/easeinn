@@ -5,10 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
-// ignore: undefined_prefixed_name
-import 'dart:ui_web' as ui_web;
+import 'camera_web_bridge/camera_web_bridge.dart';
+import 'camera_web_bridge/camera_bridge_interface.dart';
 
 class ChatGptCameraSheet extends StatefulWidget {
   final Function(Uint8List bytes, String filename) onCaptured;
@@ -41,8 +39,7 @@ class ChatGptCameraSheet extends StatefulWidget {
 }
 
 class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTickerProviderStateMixin {
-  html.VideoElement? _videoElement;
-  html.MediaStream? _mediaStream;
+  final CameraBridge _cameraBridge = createCameraBridge();
   String? _viewId;
   bool _isCameraReady = false;
   String? _errorMessage;
@@ -56,7 +53,7 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
       vsync: this,
       duration: const Duration(milliseconds: 150),
     );
-    if (kIsWeb) {
+    if (kIsWeb && _cameraBridge.isSupported) {
       _initWebCamera();
     } else {
       setState(() {
@@ -67,37 +64,12 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
 
   Future<void> _initWebCamera() async {
     try {
-      final viewId = 'camera-view-${DateTime.now().microsecondsSinceEpoch}';
-      final video = html.VideoElement()
-        ..autoplay = true
-        ..muted = true
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover'
-        ..style.borderRadius = '24px 24px 0 0';
-
-      // Register view factory with dart:ui_web
-      ui_web.platformViewRegistry.registerViewFactory(viewId, (int id) => video);
-
-      final mediaDevices = html.window.navigator.mediaDevices;
-      if (mediaDevices == null) {
+      final viewId = await _cameraBridge.initCamera();
+      if (viewId == null) {
         throw Exception('Camera device not supported by this browser.');
       }
 
-      final stream = await mediaDevices.getUserMedia({
-        'video': {
-          'facingMode': {'ideal': 'environment'},
-          'width': {'ideal': 1920},
-          'height': {'ideal': 1080},
-        },
-        'audio': false,
-      });
-
-      video.srcObject = stream;
-
       setState(() {
-        _videoElement = video;
-        _mediaStream = stream;
         _viewId = viewId;
         _isCameraReady = true;
       });
@@ -112,22 +84,13 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
   Future<void> _capturePhoto() async {
     if (_isCapturing) return;
 
-    if (_videoElement != null && _isCameraReady) {
+    if (_isCameraReady) {
       setState(() => _isCapturing = true);
       _flashAnimController.forward().then((_) => _flashAnimController.reverse());
 
       try {
-        final videoWidth = _videoElement!.videoWidth;
-        final videoHeight = _videoElement!.videoHeight;
-        final w = videoWidth > 0 ? videoWidth : 1280;
-        final h = videoHeight > 0 ? videoHeight : 720;
-
-        final canvas = html.CanvasElement(width: w, height: h);
-        canvas.context2D.drawImage(_videoElement!, 0, 0);
-
-        final dataUrl = canvas.toDataUrl('image/jpeg', 0.92);
-        final base64String = dataUrl.split(',')[1];
-        final Uint8List bytes = base64Decode(base64String);
+        final Uint8List? bytes = await _cameraBridge.capturePhoto();
+        if (bytes == null) throw Exception('No image captured');
 
         _stopCamera();
         if (mounted) {
@@ -164,12 +127,7 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
   }
 
   void _stopCamera() {
-    if (_mediaStream != null) {
-      for (final track in _mediaStream!.getTracks()) {
-        track.stop();
-      }
-      _mediaStream = null;
-    }
+    _cameraBridge.stopCamera();
   }
 
   @override
