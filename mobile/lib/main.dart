@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'services/hotel_store.dart';
-import 'theme/app_theme.dart';
-import 'screens/login_screen.dart';
-import 'screens/home_shell.dart';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'services/hotel_store.dart';
 import 'services/supabase_service.dart';
+import 'theme/app_theme.dart';
+import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,14 +39,7 @@ class EaseInnApp extends StatelessWidget {
       title: 'EaseInn PMS',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: Consumer<HotelStore>(
-        builder: (context, store, child) {
-          if (!store.isAuthenticated) {
-            return const LoginScreen();
-          }
-          return const HomeShell();
-        },
-      ),
+      home: const SplashScreen(),
     );
   }
 }

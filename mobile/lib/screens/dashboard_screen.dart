@@ -3,14 +3,25 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../services/hotel_store.dart';
+import '../models/room.dart';
+import '../models/stay.dart';
 import '../theme/app_theme.dart';
 import 'calendar_screen.dart';
 import 'booking_checkout_screen.dart';
 import 'check_in_screen.dart';
+import 'booking_export_screen.dart';
+import '../widgets/pressable_scale.dart';
 
 class DashboardScreen extends StatelessWidget {
-  final void Function(int tabIndex, {BookingMode? initialMode}) onNavigateTab;
+  final void Function(int tabIndex, {BookingMode? initialMode, String? preselectedRoomId}) onNavigateTab;
   const DashboardScreen({super.key, required this.onNavigateTab});
+
+  String _getTimeGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,91 +37,16 @@ class DashboardScreen extends StatelessWidget {
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Top Welcome Card
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppTheme.slateDark, Color(0xFF1E1B4B)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppTheme.brandPrimary.withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.5)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.document_scanner_rounded, color: Colors.white, size: 12),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'EaseInn PMS',
-                                  style: GoogleFonts.inter(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            DateFormat('EEE, d MMM yyyy').format(DateTime.now()),
-                            style: GoogleFonts.inter(
-                              color: Colors.white60,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Shift Operations',
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Logged in as ${store.staffName} (${store.staffRole})',
-                        style: GoogleFonts.inter(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // ── 1. GREETING & TODAY'S OVERVIEW INFO (NO BG CARD - MATCHING IMAGE 1) ──
+                _buildGreetingOverview(context, store),
 
-                const SizedBox(height: 18),
+                const SizedBox(height: 20),
 
-                // ── TOP 4 OPTIONS (QUICK ACTIONS) - Matching media_1792076991413.png ──
+                // ── 2. QUICK ACTIONS (KEPT EXACTLY AS IT IS) ──
                 Text(
                   'Quick Actions',
                   style: GoogleFonts.outfit(
@@ -148,13 +84,17 @@ class DashboardScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    // Bottom Left: Guest Details (Orange/Amber Gradient)
+                    // Bottom Left: Booking Register (Orange/Amber Gradient)
                     Expanded(
                       child: _buildGradientQuickCard(
-                        title: 'Guest Details',
-                        icon: Icons.people_alt_rounded,
+                        title: 'Booking Register',
+                        icon: Icons.table_chart_rounded,
                         gradientColors: const [Color(0xFFFF9F1C), Color(0xFFFF6B35)],
-                        onTap: () => onNavigateTab(4), // Guests tab
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const BookingExportScreen()),
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -172,24 +112,27 @@ class DashboardScreen extends StatelessWidget {
 
                 const SizedBox(height: 18),
 
-                // ── DYNAMIC ROOM TIMELINE & CALENDAR BANNER ──
-                InkWell(
+                // ── 3. DYNAMIC ROOM TIMELINE BANNER ──
+                PressableScale(
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const CalendarScreen()),
                     );
                   },
-                  borderRadius: BorderRadius.circular(20),
+                  pressedScale: 0.96,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [AppTheme.brandLight, Colors.white],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.3)),
+                      border: Border.all(color: const Color(0xFFDDD6FE), width: 1.2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF7C3AED).withValues(alpha: 0.08),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: Row(
                       children: [
@@ -240,62 +183,12 @@ class DashboardScreen extends StatelessWidget {
 
                 const SizedBox(height: 18),
 
-                // ── DYNAMIC METRICS GRID ──
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'Occupied',
-                        value: '${store.occupiedRooms}',
-                        subtitle: '${store.occupancyRate}% Rate',
-                        icon: Icons.hotel_rounded,
-                        color: AppTheme.statusOccupied,
-                        bgColor: AppTheme.statusOccupiedBg,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'Vacant',
-                        value: '${store.vacantRooms}',
-                        subtitle: 'Ready to check-in',
-                        icon: Icons.check_circle_outline_rounded,
-                        color: AppTheme.statusVacant,
-                        bgColor: AppTheme.statusVacantBg,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'Needs Cleaning',
-                        value: '${store.cleaningRooms}',
-                        subtitle: 'Housekeeping alert',
-                        icon: Icons.cleaning_services_rounded,
-                        color: AppTheme.statusCleaning,
-                        bgColor: AppTheme.statusCleaningBg,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildKpiCard(
-                        title: 'Today Collected',
-                        value: currencyFormat.format(store.revenueToday),
-                        subtitle: '${store.activeGuests} In-house guests',
-                        icon: Icons.payments_outlined,
-                        color: AppTheme.brandPrimary,
-                        bgColor: AppTheme.brandLight,
-                      ),
-                    ),
-                  ],
-                ),
+                // ── 4. 2x2 STATUS CARDS (CLEAN & MINIMAL WHITE CARDS) ──
+                _buildStatusCardsGrid(context, store, currencyFormat),
 
-                const SizedBox(height: 22),
+                const SizedBox(height: 24),
 
-                // ── ACTIVE STAYS SECTION ──
+                // ── 5. IN-HOUSE GUESTS SECTION ──
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -326,18 +219,18 @@ class DashboardScreen extends StatelessWidget {
                 // Active stays list or Empty State
                 if (store.activeStays.isEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: AppTheme.slateBorder),
                     ),
                     child: Column(
                       children: [
-                        Icon(Icons.bed_outlined, color: AppTheme.slateMuted.withValues(alpha: 0.5), size: 40),
+                        Icon(Icons.bed_outlined, color: AppTheme.slateMuted.withValues(alpha: 0.4), size: 38),
                         const SizedBox(height: 8),
                         Text(
-                          'No Guests In-House',
+                          'No Guests Currently In-House',
                           style: GoogleFonts.outfit(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
@@ -346,7 +239,7 @@ class DashboardScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Tap "Quick Check-in" above to scan an ID and assign a room.',
+                          'Tap "Quick Check-in" above to scan guest ID and allocate a room.',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
                         ),
@@ -415,17 +308,40 @@ class DashboardScreen extends StatelessWidget {
                                     '${stay.room?.categoryName} • ${stay.actualNights}n • ₹${stay.nightlyRate.toInt()}/n',
                                     style: GoogleFonts.inter(
                                       color: AppTheme.slateMuted,
-                                      fontSize: 10,
+                                      fontSize: 10.5,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'In: ${DateFormat('d MMM, hh:mm a').format(stay.checkInAt)} • Out: ${DateFormat('d MMM, hh:mm a').format(stay.expectedCheckOut)}',
-                                    style: GoogleFonts.inter(
-                                      color: AppTheme.brandPrimary,
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  const SizedBox(height: 3),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'In: ${DateFormat('d MMM, hh:mm a').format(stay.checkInAt)}',
+                                        style: GoogleFonts.inter(
+                                          color: AppTheme.slateMuted,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                                        child: Text(
+                                          '→',
+                                          style: GoogleFonts.inter(
+                                            color: AppTheme.slateMuted,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        'Out: ${DateFormat('d MMM, hh:mm a').format(stay.expectedCheckOut)}',
+                                        style: GoogleFonts.inter(
+                                          color: AppTheme.slateMuted,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
@@ -439,21 +355,29 @@ class DashboardScreen extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            OutlinedButton(
-                              onPressed: () {
+                            PressableScale(
+                              onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(builder: (_) => BookingCheckOutScreen(stay: stay)),
                                 );
                               },
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppTheme.brandPrimary,
-                                side: const BorderSide(color: AppTheme.brandPrimary),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                shape: RoundedRectangleBorder(
+                              pressedScale: 0.92,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.brandPrimary),
+                                ),
+                                child: const Text(
+                                  'Checkout',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.brandPrimary,
+                                  ),
                                 ),
                               ),
-                              child: const Text('Checkout', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ),
@@ -461,7 +385,7 @@ class DashboardScreen extends StatelessWidget {
                     },
                   ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
               ],
             ),
           ),
@@ -470,15 +394,174 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  // ── Quick Action Card Component (Matching ui_inspo/quick_actions) ──
+  // ── 1. GREETING OVERVIEW (WRAPPED IN ONE MINIMAL CARD) ──
+  Widget _buildGreetingOverview(BuildContext context, HotelStore store) {
+    final staffFirstName = store.staffName.split(' ').first;
+    final formattedDate = DateFormat('EEEE, d MMMM').format(DateTime.now());
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.slateBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Greeting Row with Sun Icon
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEDE9FE), // Soft light purple
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.wb_sunny_rounded,
+                  color: Color(0xFF7C3AED), // Rich purple
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_getTimeGreeting()}, $staffFirstName',
+                      style: GoogleFonts.outfit(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$formattedDate · Today\'s overview',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.slateMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          // 3 Info Columns (Arrivals, Departures, Occupancy)
+          Row(
+            children: [
+              // Arrivals
+              Expanded(
+                child: _buildInfoItem(
+                  label: 'Arrivals',
+                  value: '${store.arrivalsToday}',
+                  valueColor: const Color(0xFF2563EB), // Blue accent
+                  caption: 'Expected today',
+                  onTap: () => _showArrivalsDrawer(context, store),
+                ),
+              ),
+              // Departures
+              Expanded(
+                child: _buildInfoItem(
+                  label: 'Departures',
+                  value: '${store.departuresToday}',
+                  valueColor: const Color(0xFF8B5CF6), // Purple accent
+                  caption: 'Expected today',
+                  onTap: () => _showDeparturesDrawer(context, store),
+                ),
+              ),
+              // Occupancy
+              Expanded(
+                child: _buildInfoItem(
+                  label: 'Occupancy',
+                  value: '${store.occupancyRate}%',
+                  valueColor: AppTheme.slateDark,
+                  caption: '${store.occupiedRooms} of ${store.totalRooms} rooms',
+                  onTap: () => _showOccupancyDrawer(context, store),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoItem({
+    required String label,
+    required String value,
+    required Color valueColor,
+    required String caption,
+    required VoidCallback onTap,
+  }) {
+    return PressableScale(
+      onTap: onTap,
+      pressedScale: 0.93,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.slateMuted,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: GoogleFonts.outfit(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: valueColor,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              caption,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppTheme.slateMuted,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── QUICK ACTIONS GRADIENT CARD COMPONENT ──
   Widget _buildGradientQuickCard({
     required String title,
     required IconData icon,
     required List<Color> gradientColors,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return PressableScale(
       onTap: onTap,
+      pressedScale: 0.94,
       child: Container(
         height: 100,
         decoration: BoxDecoration(
@@ -532,69 +615,958 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildKpiCard({
-    required String title,
-    required String value,
-    required String subtitle,
+  // ── 4. 2x2 STATUS CARDS (CLEAN & MINIMAL WHITE CARDS) ──
+  Widget _buildStatusCardsGrid(BuildContext context, HotelStore store, NumberFormat currencyFormat) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            // Card 1: Occupied
+            Expanded(
+              child: _buildMinimalStatusCard(
+                icon: Icons.bed_rounded,
+                iconColor: const Color(0xFF3B82F6), // Blue
+                title: 'Occupied',
+                subtitle: 'Current rooms in use',
+                metric: store.occupiedRooms == 1 ? '1 room' : '${store.occupiedRooms} rooms',
+                onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'booked'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Card 2: Vacant
+            Expanded(
+              child: _buildMinimalStatusCard(
+                icon: Icons.check_circle_outline_rounded,
+                iconColor: const Color(0xFF10B981), // Green
+                title: 'Vacant',
+                subtitle: 'Ready to sell',
+                metric: store.vacantRooms == 1 ? '1 room' : '${store.vacantRooms} rooms',
+                onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'free'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            // Card 3: Needs Cleaning
+            Expanded(
+              child: _buildMinimalStatusCard(
+                icon: Icons.cleaning_services_outlined,
+                iconColor: const Color(0xFFF59E0B), // Orange / Amber
+                title: 'Needs Cleaning',
+                subtitle: 'Housekeeping status',
+                metric: store.cleaningRooms == 1 ? '1 room' : '${store.cleaningRooms} rooms',
+                onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'cleaning'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Card 4: Today's Collection
+            Expanded(
+              child: _buildMinimalStatusCard(
+                icon: Icons.account_balance_wallet_outlined,
+                iconColor: const Color(0xFFA855F7), // Purple
+                title: 'Today\'s Collection',
+                subtitle: 'Payments recorded today',
+                metric: currencyFormat.format(store.revenueToday),
+                onTap: () => _showCollectionDrawer(context, store),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMinimalStatusCard({
     required IconData icon,
-    required Color color,
-    required Color bgColor,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required String metric,
+    required VoidCallback onTap,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.slateBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: GoogleFonts.inter(
-                  color: AppTheme.slateMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: 16),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: GoogleFonts.outfit(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.slateDark,
+    return PressableScale(
+      onTap: onTap,
+      pressedScale: 0.95,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.slateBorder),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: GoogleFonts.inter(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Icon(icon, color: iconColor, size: 21),
+                Text(
+                  metric,
+                  style: GoogleFonts.outfit(
+                    color: AppTheme.slateDark,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: GoogleFonts.outfit(
+                color: AppTheme.slateDark,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.2,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: GoogleFonts.inter(
+                color: AppTheme.slateMuted,
+                fontSize: 11,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  // ── Insights Bottom Sheet ──
+  // ── ARRIVALS DRAWER ──
+  void _showArrivalsDrawer(BuildContext context, HotelStore store) {
+    final now = DateTime.now();
+    final arrivals = store.stays.where((s) {
+      return s.checkInAt.year == now.year &&
+          s.checkInAt.month == now.month &&
+          s.checkInAt.day == now.day;
+    }).toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(ctx).size.height * 0.72,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.slateBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Today\'s Expected Arrivals',
+                      style: GoogleFonts.outfit(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                      ),
+                    ),
+                    Text(
+                      '${arrivals.length} check-in${arrivals.length == 1 ? '' : 's'} scheduled for today',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${arrivals.length}',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF2563EB),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: arrivals.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.event_available_rounded, size: 48, color: Colors.grey.shade300),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No Arrivals Scheduled for Today',
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Tap "Quick Check-in" above to register a walk-in guest.',
+                            style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: arrivals.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final stay = arrivals[i];
+                        final isAlreadyInHouse = stay.status == StayStatus.active;
+
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppTheme.slateBorder),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    stay.room?.roomNumber ?? '-',
+                                    style: GoogleFonts.outfit(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: const Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      stay.guest?.fullName ?? 'Guest',
+                                      style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.slateDark),
+                                    ),
+                                    Text(
+                                      '${stay.room?.categoryName} • ${stay.numGuests} Guest${stay.numGuests > 1 ? 's' : ''}',
+                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Arrival Time: ${DateFormat('hh:mm a').format(stay.checkInAt)}',
+                                      style: GoogleFonts.inter(fontSize: 10.5, color: const Color(0xFF2563EB), fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (!isAlreadyInHouse)
+                                ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    onNavigateTab(2, initialMode: BookingMode.checkIn, preselectedRoomId: stay.roomId);
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.brandPrimary,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    elevation: 0,
+                                  ),
+                                  child: const Text('Check In', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                )
+                              else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFECFDF5),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    'In-House',
+                                    style: TextStyle(color: Color(0xFF059669), fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── DEPARTURES DRAWER ──
+  void _showDeparturesDrawer(BuildContext context, HotelStore store) {
+    final now = DateTime.now();
+    final departures = store.stays.where((s) {
+      return s.status == StayStatus.active &&
+          s.expectedCheckOut.year == now.year &&
+          s.expectedCheckOut.month == now.month &&
+          s.expectedCheckOut.day == now.day;
+    }).toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(ctx).size.height * 0.72,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.slateBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Today\'s Expected Departures',
+                      style: GoogleFonts.outfit(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                      ),
+                    ),
+                    Text(
+                      '${departures.length} check-out${departures.length == 1 ? '' : 's'} scheduled for today',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3E8FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${departures.length}',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF7C3AED),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: departures.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.luggage_outlined, size: 48, color: Colors.grey.shade300),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No Departures Remaining Today',
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'All scheduled check-outs are complete.',
+                            style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: departures.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final stay = departures[i];
+
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppTheme.slateBorder),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF3E8FF),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    stay.room?.roomNumber ?? '-',
+                                    style: GoogleFonts.outfit(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: const Color(0xFF7C3AED),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      stay.guest?.fullName ?? 'Guest',
+                                      style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.slateDark),
+                                    ),
+                                    Text(
+                                      '${stay.room?.categoryName} • In-house',
+                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Due Out: ${DateFormat('hh:mm a').format(stay.expectedCheckOut)}',
+                                      style: GoogleFonts.inter(fontSize: 10.5, color: const Color(0xFF7C3AED), fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(builder: (_) => BookingCheckOutScreen(stay: stay)),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF7C3AED),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  elevation: 0,
+                                ),
+                                child: const Text('Checkout', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── OCCUPANCY DRAWER: SHOWS WHICH ROOM IS BOOKED AND FREE ──
+  void _showOccupancyDrawer(BuildContext context, HotelStore store, {String initialFilter = 'all'}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            String activeFilter = initialFilter;
+
+            final rooms = store.rooms;
+            final bookedRooms = rooms.where((r) => r.status == RoomStatus.occupied || r.status == RoomStatus.reserved).toList();
+            final freeRooms = rooms.where((r) => r.status == RoomStatus.vacant).toList();
+            final cleaningRooms = rooms.where((r) => r.status == RoomStatus.needsCleaning).toList();
+
+            List<Room> displayedRooms;
+            if (activeFilter == 'booked') {
+              displayedRooms = bookedRooms;
+            } else if (activeFilter == 'free') {
+              displayedRooms = freeRooms;
+            } else if (activeFilter == 'cleaning') {
+              displayedRooms = cleaningRooms;
+            } else {
+              displayedRooms = rooms;
+            }
+
+            return Container(
+              height: MediaQuery.of(ctx).size.height * 0.82,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppTheme.slateBorder,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Room Occupancy Directory',
+                            style: GoogleFonts.outfit(
+                              fontSize: 19,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.slateDark,
+                            ),
+                          ),
+                          Text(
+                            '${bookedRooms.length} Booked • ${freeRooms.length} Free • ${cleaningRooms.length} Cleaning',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.brandLight,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${store.occupancyRate}%',
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.brandPrimary,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Filter Segment Tabs
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildFilterChip('all', 'All Rooms (${rooms.length})', activeFilter, (val) {
+                          setModalState(() => activeFilter = val);
+                        }),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('booked', 'Booked (${bookedRooms.length})', activeFilter, (val) {
+                          setModalState(() => activeFilter = val);
+                        }),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('free', 'Free (${freeRooms.length})', activeFilter, (val) {
+                          setModalState(() => activeFilter = val);
+                        }),
+                        const SizedBox(width: 8),
+                        _buildFilterChip('cleaning', 'Cleaning (${cleaningRooms.length})', activeFilter, (val) {
+                          setModalState(() => activeFilter = val);
+                        }),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Room Directory Cards
+                  Expanded(
+                    child: displayedRooms.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No rooms in this category',
+                              style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 13),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: displayedRooms.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (context, i) {
+                              final room = displayedRooms[i];
+                              final isOccupied = room.status == RoomStatus.occupied;
+                              final isVacant = room.status == RoomStatus.vacant;
+                              final isCleaning = room.status == RoomStatus.needsCleaning;
+                              final isReserved = room.status == RoomStatus.reserved;
+
+                              // Find associated stay if booked
+                              final activeStay = store.activeStays.where((s) => s.roomId == room.id).firstOrNull ??
+                                  store.stays.where((s) => s.roomId == room.id && s.status != StayStatus.checkedOut).firstOrNull;
+
+                              Color badgeBg;
+                              Color badgeColor;
+                              String badgeText;
+
+                              if (isOccupied) {
+                                badgeBg = const Color(0xFFEFF6FF);
+                                badgeColor = const Color(0xFF2563EB);
+                                badgeText = 'BOOKED / IN-USE';
+                              } else if (isVacant) {
+                                badgeBg = const Color(0xFFECFDF5);
+                                badgeColor = const Color(0xFF059669);
+                                badgeText = 'FREE / READY';
+                              } else if (isCleaning) {
+                                badgeBg = const Color(0xFFFEF3C7);
+                                badgeColor = const Color(0xFFD97706);
+                                badgeText = 'NEEDS CLEANING';
+                              } else if (isReserved) {
+                                badgeBg = const Color(0xFFE0F2FE);
+                                badgeColor = const Color(0xFF0284C7);
+                                badgeText = 'RESERVED';
+                              } else {
+                                badgeBg = const Color(0xFFF1F5F9);
+                                badgeColor = AppTheme.slateMuted;
+                                badgeText = 'MAINTENANCE';
+                              }
+
+                              return Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isOccupied
+                                        ? const Color(0xFFBFDBFE)
+                                        : isVacant
+                                            ? const Color(0xFFA7F3D0)
+                                            : AppTheme.slateBorder,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: AppTheme.slateBorder),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          room.roomNumber,
+                                          style: GoogleFonts.outfit(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 17,
+                                            color: AppTheme.slateDark,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: badgeBg,
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  badgeText,
+                                                  style: GoogleFonts.inter(
+                                                    color: badgeColor,
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'Floor ${room.floor}',
+                                                style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            room.categoryName,
+                                            style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
+                                          ),
+                                          if (isOccupied && activeStay?.guest != null) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Guest: ${activeStay!.guest!.fullName}',
+                                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF2563EB), fontWeight: FontWeight.w600),
+                                            ),
+                                          ] else ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Base Rate: ₹${room.baseRate.toInt()}/night',
+                                              style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    if (isVacant)
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.pop(ctx);
+                                          onNavigateTab(2, initialMode: BookingMode.checkIn, preselectedRoomId: room.id);
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF059669),
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          elevation: 0,
+                                        ),
+                                        child: const Text('Book', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      )
+                                    else if (isCleaning)
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          store.updateRoomStatus(room.id, RoomStatus.vacant);
+                                          setModalState(() {});
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Room ${room.roomNumber} marked clean & ready to sell.')),
+                                          );
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFD97706),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          elevation: 0,
+                                        ),
+                                        child: const Text('Mark Clean', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                                      )
+                                    else if (isOccupied && activeStay != null)
+                                      OutlinedButton(
+                                        onPressed: () {
+                                          Navigator.pop(ctx);
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(builder: (_) => BookingCheckOutScreen(stay: activeStay)),
+                                          );
+                                        },
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF2563EB),
+                                          side: const BorderSide(color: Color(0xFF2563EB)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        child: const Text('Folio', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterChip(String key, String title, String activeFilter, ValueChanged<String> onSelected) {
+    final isSelected = activeFilter == key;
+    return InkWell(
+      onTap: () => onSelected(key),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.slateDark : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          title,
+          style: GoogleFonts.inter(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? Colors.white : AppTheme.slateMuted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── TODAY'S COLLECTION DRAWER ──
+  void _showCollectionDrawer(BuildContext context, HotelStore store) {
+    final currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final now = DateTime.now();
+    final todayPayments = store.payments.where((p) {
+      return p.recordedAt.year == now.year &&
+          p.recordedAt.month == now.month &&
+          p.recordedAt.day == now.day;
+    }).toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(ctx).size.height * 0.65,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.slateBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Today\'s Payment Receipts',
+                      style: GoogleFonts.outfit(fontSize: 19, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                    ),
+                    Text(
+                      'Total Collected: ${currencyFormat.format(store.revenueToday)}',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3E8FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    currencyFormat.format(store.revenueToday),
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: const Color(0xFF7C3AED), fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: todayPayments.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey.shade300),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No Payments Recorded Today',
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Payments from advance check-ins or checkout settlements appear here.',
+                            style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: todayPayments.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) {
+                        final p = todayPayments[i];
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppTheme.slateBorder),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${p.method.toUpperCase()} • ${p.paymentType.toUpperCase()}',
+                                    style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
+                                  ),
+                                  Text(
+                                    'Recorded: ${DateFormat('hh:mm a').format(p.recordedAt)} ${p.reference != null ? '• Ref: ${p.reference}' : ''}',
+                                    style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                currencyFormat.format(p.amount),
+                                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15, color: const Color(0xFF059669)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── INSIGHTS BOTTOM SHEET ──
   void _showInsightsSheet(BuildContext context, HotelStore store) {
     showModalBottomSheet(
       context: context,

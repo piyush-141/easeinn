@@ -6,6 +6,7 @@ import '../models/stay.dart';
 import '../models/bill.dart';
 import '../services/hotel_store.dart';
 import '../theme/app_theme.dart';
+import '../widgets/pressable_scale.dart';
 
 class BookingCheckOutScreen extends StatefulWidget {
   final Stay stay;
@@ -854,8 +855,9 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
             const SizedBox(height: 24),
 
             // ── Confirm Check-Out Button ────────────────────────────────────
-            GestureDetector(
+            PressableScale(
               onTap: () => _confirmCheckout(store, stay!, bill, balanceDue),
+              pressedScale: 0.96,
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 18),
                 decoration: BoxDecoration(
@@ -950,8 +952,9 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
     required VoidCallback onTap,
     bool highlight = false,
   }) {
-    return GestureDetector(
+    return PressableScale(
       onTap: onTap,
+      pressedScale: 0.95,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(

@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import 'check_in_screen.dart';
 import 'room_detail_screen.dart';
 import 'booking_checkout_screen.dart';
+import '../widgets/pressable_scale.dart';
 
 class RoomsScreen extends StatefulWidget {
   final void Function(int tabIndex, {String? preselectedRoomId, BookingMode? initialMode})? onNavigateTab;
@@ -242,10 +243,12 @@ class _RoomsScreenState extends State<RoomsScreen> {
     Color? color,
     required VoidCallback onTap,
   }) {
-    return InkWell(
+    return PressableScale(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
+      pressedScale: 0.94,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected ? (color ?? AppTheme.slateDark) : Colors.white,
@@ -299,12 +302,13 @@ class _RoomsScreenState extends State<RoomsScreen> {
     final activeStay = store.activeStays.where((s) => s.roomId == room.id).firstOrNull;
     final reservedStay = store.upcomingStays.where((s) => s.roomId == room.id).firstOrNull;
 
-    return GestureDetector(
+    return PressableScale(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => RoomDetailScreen(room: room)),
         );
       },
+      pressedScale: 0.96,
       child: Container(
         width: 180,
         height: 230,
@@ -567,15 +571,18 @@ class _RoomsScreenState extends State<RoomsScreen> {
               SizedBox(
                 width: double.infinity,
                 height: 30,
-                child: ElevatedButton.icon(
-                  onPressed: () => store.markRoomClean(room.id),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.statusCleaning,
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                child: PressableScale(
+                  pressedScale: 0.95,
+                  child: ElevatedButton.icon(
+                    onPressed: () => store.markRoomClean(room.id),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.statusCleaning,
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.check_circle_rounded, size: 13),
+                    label: const Text('Mark Clean', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
-                  icon: const Icon(Icons.check_circle_rounded, size: 13),
-                  label: const Text('Mark Clean', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               )
             else if (isVacant)
@@ -584,26 +591,29 @@ class _RoomsScreenState extends State<RoomsScreen> {
                   Expanded(
                     child: SizedBox(
                       height: 30,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          if (widget.onNavigateTab != null) {
-                            widget.onNavigateTab!(2, preselectedRoomId: room.id, initialMode: BookingMode.checkIn);
-                          } else {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => CheckInScreen(preselectedRoomId: room.id, initialMode: BookingMode.checkIn),
-                              ),
-                            );
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.brandPrimary,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.zero,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      child: PressableScale(
+                        pressedScale: 0.94,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            if (widget.onNavigateTab != null) {
+                              widget.onNavigateTab!(2, preselectedRoomId: room.id, initialMode: BookingMode.checkIn);
+                            } else {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => CheckInScreen(preselectedRoomId: room.id, initialMode: BookingMode.checkIn),
+                                ),
+                              );
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.brandPrimary,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Check-In', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                         ),
-                        child: const Text('Check-In', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ),
@@ -611,25 +621,28 @@ class _RoomsScreenState extends State<RoomsScreen> {
                   Expanded(
                     child: SizedBox(
                       height: 30,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          if (widget.onNavigateTab != null) {
-                            widget.onNavigateTab!(2, preselectedRoomId: room.id, initialMode: BookingMode.reservation);
-                          } else {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => CheckInScreen(preselectedRoomId: room.id, initialMode: BookingMode.reservation),
-                              ),
-                            );
-                          }
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.slateDark,
-                          side: const BorderSide(color: AppTheme.slateBorder),
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      child: PressableScale(
+                        pressedScale: 0.94,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            if (widget.onNavigateTab != null) {
+                              widget.onNavigateTab!(2, preselectedRoomId: room.id, initialMode: BookingMode.reservation);
+                            } else {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => CheckInScreen(preselectedRoomId: room.id, initialMode: BookingMode.reservation),
+                                ),
+                              );
+                            }
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.slateDark,
+                            side: const BorderSide(color: AppTheme.slateBorder),
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Reserve', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
                         ),
-                        child: const Text('Reserve', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ),
@@ -639,47 +652,53 @@ class _RoomsScreenState extends State<RoomsScreen> {
               SizedBox(
                 width: double.infinity,
                 height: 30,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    store.checkInReservedStay(reservedStay.id);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${reservedStay.guest?.fullName ?? "Guest"} checked in to Room ${room.roomNumber}!'),
-                        backgroundColor: AppTheme.slateDark,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.brandPrimary,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    elevation: 0,
+                child: PressableScale(
+                  pressedScale: 0.95,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      store.checkInReservedStay(reservedStay.id);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${reservedStay.guest?.fullName ?? "Guest"} checked in to Room ${room.roomNumber}!'),
+                          backgroundColor: AppTheme.slateDark,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.brandPrimary,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.how_to_reg_rounded, size: 12),
+                    label: const Text('Check-In Guest', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
-                  icon: const Icon(Icons.how_to_reg_rounded, size: 12),
-                  label: const Text('Check-In Guest', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               )
             else if (isOccupied && activeStay != null)
               SizedBox(
                 width: double.infinity,
                 height: 30,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => BookingCheckOutScreen(stay: activeStay),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.brandPrimary,
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                child: PressableScale(
+                  pressedScale: 0.95,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => BookingCheckOutScreen(stay: activeStay),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.brandPrimary,
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Checkout', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
-                  child: const Text('Checkout', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               )
             else

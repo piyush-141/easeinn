@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:camera/camera.dart';
 
 import 'camera_web_bridge/camera_web_bridge.dart';
 import 'camera_web_bridge/camera_bridge_interface.dart';
@@ -39,8 +39,13 @@ class ChatGptCameraSheet extends StatefulWidget {
 }
 
 class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTickerProviderStateMixin {
-  final CameraBridge _cameraBridge = createCameraBridge();
-  String? _viewId;
+  // Web bridge
+  final CameraBridge _webCameraBridge = createCameraBridge();
+  String? _webViewId;
+
+  // Mobile camera controller (Android / iOS)
+  CameraController? _mobileCameraController;
+
   bool _isCameraReady = false;
   String? _errorMessage;
   bool _isCapturing = false;
@@ -53,52 +58,109 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
       vsync: this,
       duration: const Duration(milliseconds: 150),
     );
-    if (kIsWeb && _cameraBridge.isSupported) {
-      _initWebCamera();
+    _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    if (kIsWeb) {
+      await _initWebCamera();
     } else {
+      await _initMobileCamera();
+    }
+  }
+
+  Future<void> _initMobileCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        throw Exception('No cameras found on this device.');
+      }
+
+      // Prefer back camera for document scanning
+      final backCamera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      final controller = CameraController(
+        backCamera,
+        ResolutionPreset.veryHigh,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+
+      await controller.initialize();
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
       setState(() {
-        _errorMessage = 'In-app camera is currently optimized for Web. Use file upload on mobile.';
+        _mobileCameraController = controller;
+        _isCameraReady = true;
+        _errorMessage = null;
+      });
+    } catch (e) {
+      debugPrint('[CameraSheet] Mobile Camera init error: $e');
+      setState(() {
+        _errorMessage = 'Could not access mobile camera. Please allow camera permissions or upload an ID image.';
       });
     }
   }
 
   Future<void> _initWebCamera() async {
     try {
-      final viewId = await _cameraBridge.initCamera();
+      final viewId = await _webCameraBridge.initCamera();
       if (viewId == null) {
         throw Exception('Camera device not supported by this browser.');
       }
 
       setState(() {
-        _viewId = viewId;
+        _webViewId = viewId;
         _isCameraReady = true;
+        _errorMessage = null;
       });
     } catch (e) {
-      debugPrint('[CameraSheet] Camera init error: $e');
+      debugPrint('[CameraSheet] Web camera init error: $e');
       setState(() {
-        _errorMessage = 'Could not access camera. Please allow camera permissions or upload a file.';
+        _errorMessage = 'Could not access camera in browser. Please allow camera permissions or upload a file.';
       });
     }
   }
 
   Future<void> _capturePhoto() async {
-    if (_isCapturing) return;
+    if (_isCapturing || !_isCameraReady) return;
 
-    if (_isCameraReady) {
-      setState(() => _isCapturing = true);
-      _flashAnimController.forward().then((_) => _flashAnimController.reverse());
+    setState(() => _isCapturing = true);
+    _flashAnimController.forward().then((_) => _flashAnimController.reverse());
 
-      try {
-        final Uint8List? bytes = await _cameraBridge.capturePhoto();
-        if (bytes == null) throw Exception('No image captured');
+    try {
+      Uint8List? bytes;
+      String filename = 'camera_capture_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-        _stopCamera();
-        if (mounted) {
-          Navigator.of(context).pop();
-          widget.onCaptured(bytes, 'camera_capture_${DateTime.now().millisecondsSinceEpoch}.jpg');
-        }
-      } catch (e) {
-        debugPrint('[CameraSheet] Capture error: $e');
+      if (!kIsWeb && _mobileCameraController != null && _mobileCameraController!.value.isInitialized) {
+        // Mobile camera capture
+        final XFile file = await _mobileCameraController!.takePicture();
+        bytes = await file.readAsBytes();
+        filename = file.name;
+      } else if (kIsWeb) {
+        // Web canvas capture
+        bytes = await _webCameraBridge.capturePhoto();
+      }
+
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('No image data captured.');
+      }
+
+      _stopCamera();
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onCaptured(bytes, filename);
+      }
+    } catch (e) {
+      debugPrint('[CameraSheet] Capture error: $e');
+      if (mounted) {
         setState(() => _isCapturing = false);
       }
     }
@@ -127,7 +189,11 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
   }
 
   void _stopCamera() {
-    _cameraBridge.stopCamera();
+    if (_mobileCameraController != null) {
+      _mobileCameraController!.dispose();
+      _mobileCameraController = null;
+    }
+    _webCameraBridge.stopCamera();
   }
 
   @override
@@ -140,8 +206,7 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    // Cover ~60% of the screen like ChatGPT
-    final sheetHeight = (screenHeight * 0.62).clamp(420.0, 680.0);
+    final sheetHeight = (screenHeight * 0.75).clamp(460.0, 720.0);
 
     return Container(
       height: sheetHeight,
@@ -178,43 +243,85 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            icon: const Icon(Icons.folder_open_rounded, size: 18),
-                            label: const Text('Choose from Files'),
+                            icon: const Icon(Icons.photo_library_rounded, size: 18),
+                            label: const Text('Choose from Gallery / Files'),
                           ),
                         ],
                       ),
                     ),
                   )
-                : (_isCameraReady && _viewId != null)
+                : _isCameraReady
                     ? Stack(
                         children: [
-                          HtmlElementView(viewType: _viewId!),
+                          // Camera Preview Widget
+                          Positioned.fill(
+                            child: !kIsWeb && _mobileCameraController != null && _mobileCameraController!.value.isInitialized
+                                ? LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return ClipRRect(
+                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                                        child: SizedBox(
+                                          width: constraints.maxWidth,
+                                          height: constraints.maxHeight,
+                                          child: FittedBox(
+                                            fit: BoxFit.cover,
+                                            child: SizedBox(
+                                              width: _mobileCameraController!.value.previewSize?.height ?? constraints.maxWidth,
+                                              height: _mobileCameraController!.value.previewSize?.width ?? constraints.maxHeight,
+                                              child: CameraPreview(_mobileCameraController!),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : (kIsWeb && _webViewId != null)
+                                    ? HtmlElementView(viewType: _webViewId!)
+                                    : const SizedBox.shrink(),
+                          ),
 
-                          // Document Alignment Frame (Subtle ID card guide)
+                          // Document Alignment Frame (ID card guide)
                           Center(
                             child: AspectRatio(
-                              aspectRatio: 1.58, // Standard credit-card ratio
+                              aspectRatio: 1.58, // Standard credit-card / Aadhaar ratio
                               child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 32),
+                                margin: const EdgeInsets.symmetric(horizontal: 28),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.4),
-                                    width: 1.5,
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    width: 1.8,
                                   ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.3),
+                                      blurRadius: 10,
+                                    ),
+                                  ],
                                 ),
                                 child: Align(
                                   alignment: Alignment.bottomCenter,
                                   child: Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: Colors.black54,
+                                      color: Colors.black.withValues(alpha: 0.7),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Text(
-                                      'Fit document within frame',
-                                      style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.crop_free_rounded, color: Colors.white70, size: 13),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Align Aadhaar / PAN within frame',
+                                          style: GoogleFonts.inter(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -224,10 +331,20 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
                         ],
                       )
                     : const Center(
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                            ),
+                            SizedBox(height: 12),
+                            Text(
+                              'Opening Camera...',
+                              style: TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                          ],
                         ),
                       ),
           ),
@@ -244,111 +361,139 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white30,
+                      color: Colors.white38,
                       borderRadius: BorderRadius.circular(2),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          'AI Vision Active',
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFF818CF8),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
 
-          // ── FLASH ANIMATION EFFECT ────────────────────────
-          AnimatedBuilder(
-            animation: _flashAnimController,
-            builder: (context, child) {
-              return IgnorePointer(
-                child: Container(
-                  color: Colors.white.withValues(alpha: _flashAnimController.value * 0.8),
-                ),
-              );
-            },
+          // ── FLASH ANIMATION OVERLAY ───────────────────────
+          Positioned.fill(
+            bottom: 96,
+            child: AnimatedBuilder(
+              animation: _flashAnimController,
+              builder: (context, child) {
+                return IgnorePointer(
+                  child: Container(
+                    color: Colors.white.withValues(alpha: _flashAnimController.value * 0.9),
+                  ),
+                );
+              },
+            ),
           ),
 
-          // ── BOTTOM CONTROLS (ChatGPT Style) ───────────────
+          // ── BOTTOM CONTROLS (ChatGPT Floating Bar) ────────
           Positioned(
+            bottom: 0,
             left: 0,
             right: 0,
-            bottom: 0,
+            height: 96,
             child: Container(
-              height: 96,
               color: const Color(0xFF141417),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 32),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Back / Close Button
-                  InkWell(
+                  // Dismiss Button
+                  GestureDetector(
                     onTap: () {
                       _stopCamera();
                       Navigator.of(context).pop();
                     },
-                    borderRadius: BorderRadius.circular(24),
                     child: Container(
                       width: 44,
                       height: 44,
-                      decoration: const BoxDecoration(
-                        color: Colors.white12,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
+                      child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
                     ),
                   ),
 
-                  // Center Shutter Button (Large White Circle like ChatGPT)
+                  // Big Center Shutter Button
                   GestureDetector(
-                    onTap: _isCameraReady ? _capturePhoto : null,
+                    onTap: _isCameraReady && !_isCapturing ? _capturePhoto : null,
                     child: Container(
-                      width: 72,
-                      height: 72,
-                      padding: const EdgeInsets.all(4),
+                      width: 68,
+                      height: 68,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
+                        border: Border.all(color: Colors.white, width: 4),
                       ),
-                      child: Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
+                      child: Center(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          width: _isCapturing ? 46 : 54,
+                          height: _isCapturing ? 46 : 54,
+                          decoration: BoxDecoration(
+                            color: _isCapturing ? const Color(0xFF6366F1) : Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: _isCapturing
+                              ? const Center(
+                                  child: SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : null,
                         ),
-                        child: _isCapturing
-                            ? const Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                                ),
-                              )
-                            : null,
                       ),
                     ),
                   ),
 
-                  // Gallery / File Picker Button
-                  InkWell(
+                  // File Picker / Gallery Button
+                  GestureDetector(
                     onTap: _pickFromFile,
-                    borderRadius: BorderRadius.circular(24),
                     child: Container(
                       width: 44,
                       height: 44,
-                      decoration: const BoxDecoration(
-                        color: Colors.white12,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.photo_library_outlined,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
+                      child: const Icon(Icons.photo_library_rounded, color: Colors.white, size: 20),
                     ),
                   ),
                 ],

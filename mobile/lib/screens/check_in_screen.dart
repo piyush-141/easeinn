@@ -10,6 +10,7 @@ import '../models/room.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chatgpt_camera_sheet.dart';
+import '../widgets/pressable_scale.dart';
 import 'home_shell.dart';
 
 enum BookingMode { checkIn, reservation }
@@ -3762,29 +3763,32 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                     const SizedBox(width: 6),
                   ],
-                  ElevatedButton(
-                    onPressed: isNoRooms ? null : () => setState(() => _currentStep = 2),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.brandPrimary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(0, 42),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Next: Guest',
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
+                  PressableScale(
+                    pressedScale: 0.95,
+                    child: ElevatedButton(
+                      onPressed: isNoRooms ? null : () => setState(() => _currentStep = 2),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.brandPrimary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 42),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Next: Guest',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 5),
-                        const Icon(Icons.arrow_forward_rounded, size: 15),
-                      ],
+                          const SizedBox(width: 5),
+                          const Icon(Icons.arrow_forward_rounded, size: 15),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -3820,42 +3824,45 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (_nameController.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(_bookingMode == BookingMode.reservation
-                                ? 'Please enter guest name to proceed to deposit & confirmation'
-                                : 'Please enter guest name to proceed to payment'),
-                            behavior: SnackBarBehavior.floating,
+                  PressableScale(
+                    pressedScale: 0.95,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (_nameController.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(_bookingMode == BookingMode.reservation
+                                  ? 'Please enter guest name to proceed to deposit & confirmation'
+                                  : 'Please enter guest name to proceed to payment'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+                        setState(() => _currentStep = 3);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.brandPrimary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 42),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _bookingMode == BookingMode.reservation ? 'Next: Deposit' : 'Next: Payment',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        );
-                        return;
-                      }
-                      setState(() => _currentStep = 3);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.brandPrimary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(0, 42),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _bookingMode == BookingMode.reservation ? 'Next: Deposit' : 'Next: Payment',
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        const Icon(Icons.arrow_forward_rounded, size: 15),
-                      ],
+                          const SizedBox(width: 5),
+                          const Icon(Icons.arrow_forward_rounded, size: 15),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -3891,31 +3898,34 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  ElevatedButton.icon(
-                    onPressed: selectedRoom == null
-                        ? null
-                        : () => _handlePaymentAndCheckIn(store, selectedRoom, totalEstimatedAmount),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _paymentMethod == 'upi' ? const Color(0xFF16A34A) : AppTheme.brandPrimary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(0, 42),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                    ),
-                    icon: Icon(
-                      _paymentMethod == 'upi'
-                          ? Icons.qr_code_2_rounded
-                          : (_bookingMode == BookingMode.reservation ? Icons.event_available_rounded : Icons.check_circle_rounded),
-                      size: 15,
-                    ),
-                    label: Text(
-                      _paymentMethod == 'upi'
-                          ? (_bookingMode == BookingMode.reservation ? 'Show QR & Pay Deposit' : 'Show QR & Pay')
-                          : (_bookingMode == BookingMode.reservation ? 'Confirm Reservation' : 'Complete Check-In'),
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                  PressableScale(
+                    pressedScale: 0.95,
+                    child: ElevatedButton.icon(
+                      onPressed: selectedRoom == null
+                          ? null
+                          : () => _handlePaymentAndCheckIn(store, selectedRoom, totalEstimatedAmount),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _paymentMethod == 'upi' ? const Color(0xFF16A34A) : AppTheme.brandPrimary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 42),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      icon: Icon(
+                        _paymentMethod == 'upi'
+                            ? Icons.qr_code_2_rounded
+                            : (_bookingMode == BookingMode.reservation ? Icons.event_available_rounded : Icons.check_circle_rounded),
+                        size: 15,
+                      ),
+                      label: Text(
+                        _paymentMethod == 'upi'
+                            ? (_bookingMode == BookingMode.reservation ? 'Show QR & Pay Deposit' : 'Show QR & Pay')
+                            : (_bookingMode == BookingMode.reservation ? 'Confirm Reservation' : 'Complete Check-In'),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),

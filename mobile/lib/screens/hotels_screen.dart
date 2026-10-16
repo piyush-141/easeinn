@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/hotel_store.dart';
+import '../services/auth_service.dart';
 import '../models/property.dart';
 import '../theme/app_theme.dart';
+import '../widgets/pressable_scale.dart';
 
 class HotelsScreen extends StatelessWidget {
   const HotelsScreen({super.key});
@@ -92,7 +94,7 @@ class HotelsScreen extends StatelessWidget {
           ElevatedButton(
             onPressed: () {
               if (nameCtrl.text.trim().isEmpty) return;
-              context.read<HotelStore>().addNewProperty(
+              final newP = context.read<HotelStore>().addNewProperty(
                 name: nameCtrl.text.trim(),
                 city: cityCtrl.text.trim(),
                 state: stateCtrl.text.trim(),
@@ -103,6 +105,7 @@ class HotelsScreen extends StatelessWidget {
                 upiId: upiCtrl.text.trim().isEmpty ? 'piyushpal427@okaxis' : upiCtrl.text.trim(),
                 upiPayeeName: payeeCtrl.text.trim().isEmpty ? nameCtrl.text.trim() : payeeCtrl.text.trim(),
               );
+              AuthService().updateCachedProperty(newP.id, newP.name);
               Navigator.of(dialogCtx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('Switched to ${nameCtrl.text.trim()}')),
@@ -323,163 +326,173 @@ class HotelsScreen extends StatelessWidget {
                   final prop = store.properties[index];
                   final isActive = prop.id == store.currentProperty.id;
 
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isActive ? AppTheme.brandPrimary : AppTheme.slateBorder,
-                        width: isActive ? 2 : 1,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: isActive ? AppTheme.brandPrimary.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.02),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
+                  return PressableScale(
+                    pressedScale: 0.98,
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isActive ? AppTheme.brandPrimary : AppTheme.slateBorder,
+                          width: isActive ? 2 : 1,
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: isActive ? AppTheme.brandLight : const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Icon(
-                                      Icons.hotel_rounded,
-                                      color: isActive ? AppTheme.brandPrimary : AppTheme.slateMuted,
-                                      size: 18,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Flexible(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          prop.name,
-                                          style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
-                                        ),
-                                        Text(
-                                          '${prop.hotelTier} • ${prop.city}, ${prop.state}',
-                                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (isActive)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.statusVacantBg,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
+                        boxShadow: [
+                          BoxShadow(
+                            color: isActive ? AppTheme.brandPrimary.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Row(
                                   children: [
-                                    Icon(Icons.check_circle_rounded, color: AppTheme.statusVacant, size: 12),
-                                    SizedBox(width: 4),
-                                    Text('Active Branch', style: TextStyle(color: AppTheme.statusVacant, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: isActive ? AppTheme.brandLight : const Color(0xFFF1F5F9),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Icon(
+                                        Icons.hotel_rounded,
+                                        color: isActive ? AppTheme.brandPrimary : AppTheme.slateMuted,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Flexible(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            prop.name,
+                                            style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                          ),
+                                          Text(
+                                            '${prop.hotelTier} • ${prop.city}, ${prop.state}',
+                                            style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Hotel Specific Meta Grid
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppTheme.slateBorder),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildMetaItem(Icons.place_outlined, 'Address', '${prop.address}, ${prop.pincode}'),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Expanded(child: _buildMetaItem(Icons.schedule_rounded, 'Standard Timings', 'In ${prop.defaultCheckInTime} • Out ${prop.defaultCheckOutTime}')),
-                                  Expanded(child: _buildMetaItem(Icons.meeting_room_outlined, 'Capacity', '${prop.totalRooms} Rooms registered')),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Expanded(child: _buildMetaItem(Icons.receipt_outlined, 'GSTIN', prop.gstNumber)),
-                                  Expanded(child: _buildMetaItem(Icons.phone_outlined, 'Phone', prop.phone)),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              _buildMetaItem(Icons.qr_code_2_rounded, 'UPI / Bank ID', '${prop.upiId} (${prop.upiPayeeName})'),
+                              if (isActive)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.statusVacantBg,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.check_circle_rounded, color: AppTheme.statusVacant, size: 12),
+                                      SizedBox(width: 4),
+                                      Text('Active Branch', style: TextStyle(color: AppTheme.statusVacant, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
                             ],
                           ),
-                        ),
+                          const SizedBox(height: 12),
 
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: () => _showEditHotelDialog(context, prop),
-                              icon: const Icon(Icons.edit_outlined, size: 13),
-                              label: const Text('Edit Branch Details', style: TextStyle(fontSize: 11)),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppTheme.slateDark,
-                                side: const BorderSide(color: AppTheme.slateBorder),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          // Hotel Specific Meta Grid
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppTheme.slateBorder),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildMetaItem(Icons.place_outlined, 'Address', '${prop.address}, ${prop.pincode}'),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Expanded(child: _buildMetaItem(Icons.schedule_rounded, 'Standard Timings', 'In ${prop.defaultCheckInTime} • Out ${prop.defaultCheckOutTime}')),
+                                    Expanded(child: _buildMetaItem(Icons.meeting_room_outlined, 'Capacity', '${prop.totalRooms} Rooms registered')),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Expanded(child: _buildMetaItem(Icons.receipt_outlined, 'GSTIN', prop.gstNumber)),
+                                    Expanded(child: _buildMetaItem(Icons.phone_outlined, 'Phone', prop.phone)),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                _buildMetaItem(Icons.qr_code_2_rounded, 'UPI / Bank ID', '${prop.upiId} (${prop.upiPayeeName})'),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              PressableScale(
+                                pressedScale: 0.94,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _showEditHotelDialog(context, prop),
+                                  icon: const Icon(Icons.edit_outlined, size: 13),
+                                  label: const Text('Edit Branch Details', style: TextStyle(fontSize: 11)),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppTheme.slateDark,
+                                    side: const BorderSide(color: AppTheme.slateBorder),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: isActive
-                                  ? Container(
-                                      height: 38,
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.brandLight.withValues(alpha: 0.5),
-                                        borderRadius: BorderRadius.circular(10),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: isActive
+                                    ? Container(
+                                        height: 38,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.brandLight.withValues(alpha: 0.5),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Text(
+                                          'Currently Managing',
+                                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandDark),
+                                        ),
+                                      )
+                                    : PressableScale(
+                                        pressedScale: 0.95,
+                                        child: ElevatedButton(
+                                          onPressed: () {
+                                            store.switchProperty(prop.id);
+                                            AuthService().updateCachedProperty(prop.id, prop.name);
+                                            Navigator.of(context).pop();
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text('Switched active branch to ${prop.name}')),
+                                            );
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppTheme.brandPrimary,
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                          child: const Text('Switch Branch', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                        ),
                                       ),
-                                      child: Text(
-                                        'Currently Managing',
-                                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandDark),
-                                      ),
-                                    )
-                                  : ElevatedButton(
-                                      onPressed: () {
-                                        store.switchProperty(prop.id);
-                                        Navigator.of(context).pop();
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Switched active branch to ${prop.name}')),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppTheme.brandPrimary,
-                                        foregroundColor: Colors.white,
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      ),
-                                      child: const Text('Switch Branch', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                    ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },

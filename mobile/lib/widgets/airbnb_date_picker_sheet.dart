@@ -689,8 +689,8 @@ class _AirbnbDatePickerSheetState extends State<AirbnbDatePickerSheet>
 
           // Black Circle for Start & End Date (Airbnb Style)
           AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOutBack,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
             width: isSelected ? 42 : 38,
             height: isSelected ? 42 : 38,
             decoration: BoxDecoration(

@@ -38,7 +38,7 @@ class HotelStore extends ChangeNotifier {
   String staffPassword = '••••••••';
   DateTime? lastSyncTime = DateTime.now();
   bool isSyncing = false;
-  bool isAuthenticated = true;
+  bool isAuthenticated = false;
 
   // Update Manager / Profile
   void updateStaffProfile({
@@ -135,7 +135,7 @@ class HotelStore extends ChangeNotifier {
   }
 
   // Real room inventory
-  List<Room> _rooms = [];
+  final List<Room> _rooms = [];
   final List<Guest> _guests = [];
   final List<Stay> _stays = [];
   final List<Bill> _bills = [];
@@ -148,118 +148,62 @@ class HotelStore extends ChangeNotifier {
   }
 
   void _initializeRooms() {
-    _rooms = [
-      // Floor 1
-      Room(
-        id: 'r101',
-        propertyId: _currentProperty.id,
-        roomNumber: '101',
+    _initializeRoomsForProperty(_currentProperty);
+  }
+
+  void _initializeRoomsForProperty(Property prop) {
+    _rooms.removeWhere((r) => r.propertyId == prop.id);
+    final count = prop.totalRooms > 0 ? prop.totalRooms : 12;
+    final half = (count / 2).ceil();
+    final List<Room> propRooms = [];
+
+    // Floor 1
+    for (int i = 1; i <= half && propRooms.length < count; i++) {
+      final numStr = '1${i.toString().padLeft(2, '0')}';
+      String cat = 'Standard Room';
+      double rate = 2200.0;
+      if (i > 2 && i <= 4) {
+        cat = 'Deluxe Room';
+        rate = 3500.0;
+      } else if (i > 4) {
+        cat = 'Executive Suite';
+        rate = 5500.0;
+      }
+      propRooms.add(Room(
+        id: 'r-${prop.id}-$numStr',
+        propertyId: prop.id,
+        roomNumber: numStr,
         floor: 1,
-        categoryName: 'Standard Room',
-        baseRate: 2200.0,
+        categoryName: cat,
+        baseRate: rate,
         status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r102',
-        propertyId: _currentProperty.id,
-        roomNumber: '102',
-        floor: 1,
-        categoryName: 'Standard Room',
-        baseRate: 2200.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r103',
-        propertyId: _currentProperty.id,
-        roomNumber: '103',
-        floor: 1,
-        categoryName: 'Deluxe Room',
-        baseRate: 3500.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r104',
-        propertyId: _currentProperty.id,
-        roomNumber: '104',
-        floor: 1,
-        categoryName: 'Deluxe Room',
-        baseRate: 3500.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r105',
-        propertyId: _currentProperty.id,
-        roomNumber: '105',
-        floor: 1,
-        categoryName: 'Executive Suite',
-        baseRate: 5500.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r106',
-        propertyId: _currentProperty.id,
-        roomNumber: '106',
-        floor: 1,
-        categoryName: 'Executive Suite',
-        baseRate: 5500.0,
-        status: RoomStatus.vacant,
-      ),
-      // Floor 2
-      Room(
-        id: 'r201',
-        propertyId: _currentProperty.id,
-        roomNumber: '201',
+      ));
+    }
+
+    // Floor 2
+    for (int i = 1; propRooms.length < count; i++) {
+      final numStr = '2${i.toString().padLeft(2, '0')}';
+      String cat = 'Standard Room';
+      double rate = 2200.0;
+      if (i > 2 && i <= 4) {
+        cat = 'Deluxe Room';
+        rate = 3500.0;
+      } else if (i > 4) {
+        cat = 'Executive Suite';
+        rate = 5500.0;
+      }
+      propRooms.add(Room(
+        id: 'r-${prop.id}-$numStr',
+        propertyId: prop.id,
+        roomNumber: numStr,
         floor: 2,
-        categoryName: 'Standard Room',
-        baseRate: 2200.0,
+        categoryName: cat,
+        baseRate: rate,
         status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r202',
-        propertyId: _currentProperty.id,
-        roomNumber: '202',
-        floor: 2,
-        categoryName: 'Standard Room',
-        baseRate: 2200.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r203',
-        propertyId: _currentProperty.id,
-        roomNumber: '203',
-        floor: 2,
-        categoryName: 'Deluxe Room',
-        baseRate: 3500.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r204',
-        propertyId: _currentProperty.id,
-        roomNumber: '204',
-        floor: 2,
-        categoryName: 'Deluxe Room',
-        baseRate: 3500.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r205',
-        propertyId: _currentProperty.id,
-        roomNumber: '205',
-        floor: 2,
-        categoryName: 'Executive Suite',
-        baseRate: 5500.0,
-        status: RoomStatus.vacant,
-      ),
-      Room(
-        id: 'r206',
-        propertyId: _currentProperty.id,
-        roomNumber: '206',
-        floor: 2,
-        categoryName: 'Executive Suite',
-        baseRate: 5500.0,
-        status: RoomStatus.vacant,
-      ),
-    ];
+      ));
+    }
+
+    _rooms.addAll(propRooms);
   }
 
   // Default Check-Out & Check-In Times (editable via Settings)
@@ -370,28 +314,38 @@ class HotelStore extends ChangeNotifier {
   }
 
   void _seedInitialData() {
-    if (_stays.isNotEmpty) return;
+    // Demo seed data is strictly isolated to the built-in demo hotel ('prop-001').
+    // Any newly created manager/hotel accounts will NEVER be polluted with demo guests/stays.
+    if (_currentProperty.id != 'prop-001') return;
+    if (_stays.any((s) => s.propertyId == 'prop-001')) return;
     final now = DateTime.now();
 
     // Guest 1: Ethan Harper (Room 101) - Checked in 2 days ago at 12:00 PM, checking out tomorrow at 11:00 AM
     final g1 = Guest(
       id: 'g-ethan',
-      propertyId: _currentProperty.id,
+      propertyId: 'prop-001',
       fullName: 'Ethan Harper',
       phone: '+91 98451 23456',
       email: 'ethan.h@example.com',
       idType: 'passport',
       idNumberMasked: 'Z****482',
+      dateOfBirth: '1992-05-14',
+      gender: 'Male',
+      fatherName: 'William Harper',
+      address: 'Flat 4B, Kensington Court, Richmond Road, Bengaluru',
+      pincode: '560025',
+      notes: 'Frequent business traveler, prefers upper floor',
+      staysCount: 3,
     );
     _guests.add(g1);
 
-    final r101Index = _rooms.indexWhere((r) => r.roomNumber == '101');
+    final r101Index = _rooms.indexWhere((r) => r.roomNumber == '101' && r.propertyId == 'prop-001');
     if (r101Index != -1) {
       final checkIn1 = DateTime(now.year, now.month, now.day - 2, 12, 0); // 12:00 PM
       final checkOut1 = DateTime(now.year, now.month, now.day + 1, 11, 0); // 11:00 AM
       final stay1 = Stay(
         id: 'stay-101',
-        propertyId: _currentProperty.id,
+        propertyId: 'prop-001',
         guestId: g1.id,
         roomId: _rooms[r101Index].id,
         checkInAt: checkIn1,
@@ -427,30 +381,43 @@ class HotelStore extends ChangeNotifier {
     // Guest 2: Priya Sharma (with co-guest) (Room 104) - Checked in yesterday at 2:30 PM, checkout in 3 days at 11:00 AM
     final g2 = Guest(
       id: 'g-priya',
-      propertyId: _currentProperty.id,
+      propertyId: 'prop-001',
       fullName: 'Priya Sharma',
       phone: '+91 97412 88990',
       email: 'priya.s@example.com',
       idType: 'aadhaar',
       idNumberMasked: 'XXXX-XXXX-9182',
+      dateOfBirth: '1995-11-22',
+      gender: 'Female',
+      fatherName: 'Rameshwar Sharma',
+      address: 'House 14, Sector 7, HSR Layout, Bengaluru',
+      pincode: '560102',
+      notes: 'Anniversary stay',
+      staysCount: 2,
     );
     final g2Co = Guest(
       id: 'g-rajesh',
-      propertyId: _currentProperty.id,
+      propertyId: 'prop-001',
       fullName: 'Rajesh Sharma',
       phone: '+91 97412 88991',
       idType: 'aadhaar',
       idNumberMasked: 'XXXX-XXXX-4321',
+      dateOfBirth: '1993-08-19',
+      gender: 'Male',
+      fatherName: 'Rameshwar Sharma',
+      address: 'House 14, Sector 7, HSR Layout, Bengaluru',
+      pincode: '560102',
+      staysCount: 1,
     );
     _guests.addAll([g2, g2Co]);
 
-    final r104Index = _rooms.indexWhere((r) => r.roomNumber == '104');
+    final r104Index = _rooms.indexWhere((r) => r.roomNumber == '104' && r.propertyId == 'prop-001');
     if (r104Index != -1) {
       final checkIn2 = DateTime(now.year, now.month, now.day - 1, 14, 30); // 2:30 PM
       final checkOut2 = DateTime(now.year, now.month, now.day + 3, 11, 0); // 11:00 AM
       final stay2 = Stay(
         id: 'stay-104',
-        propertyId: _currentProperty.id,
+        propertyId: 'prop-001',
         guestId: g2.id,
         roomId: _rooms[r104Index].id,
         checkInAt: checkIn2,
@@ -487,22 +454,29 @@ class HotelStore extends ChangeNotifier {
     // Guest 3: Arjun Kapoor (Upcoming Reservation for Room 201) - Check-in tomorrow at 1:00 PM, checkout in 4 days at 11:00 AM
     final g3 = Guest(
       id: 'g-arjun',
-      propertyId: _currentProperty.id,
+      propertyId: 'prop-001',
       fullName: 'Arjun Kapoor',
       phone: '+91 98200 11223',
       email: 'arjun.k@example.com',
       idType: 'driving_license',
       idNumberMasked: 'DL-04****99',
+      dateOfBirth: '1990-03-28',
+      gender: 'Male',
+      fatherName: 'Sanjay Kapoor',
+      address: 'Flat 202, Silver Oak Heights, 100 Feet Road, Indiranagar, Bengaluru',
+      pincode: '560038',
+      notes: 'VIP guest, late evening arrival confirmed',
+      staysCount: 1,
     );
     _guests.add(g3);
 
-    final r201Index = _rooms.indexWhere((r) => r.roomNumber == '201');
+    final r201Index = _rooms.indexWhere((r) => r.roomNumber == '201' && r.propertyId == 'prop-001');
     if (r201Index != -1) {
       final checkIn3 = DateTime(now.year, now.month, now.day + 1, 13, 0); // Tomorrow 1:00 PM
       final checkOut3 = DateTime(now.year, now.month, now.day + 4, 11, 0); // 11:00 AM
       final stay3 = Stay(
         id: 'stay-201',
-        propertyId: _currentProperty.id,
+        propertyId: 'prop-001',
         guestId: g3.id,
         roomId: _rooms[r201Index].id,
         checkInAt: checkIn3,
@@ -519,22 +493,29 @@ class HotelStore extends ChangeNotifier {
     // Guest 4: Ananya Sen (Upcoming Reservation for Room 205) - Check-in in 3 days at 12:00 PM, checkout in 6 days at 11:00 AM
     final g4 = Guest(
       id: 'g-ananya',
-      propertyId: _currentProperty.id,
+      propertyId: 'prop-001',
       fullName: 'Ananya Sen',
       phone: '+91 99100 44556',
       email: 'ananya.s@example.com',
       idType: 'aadhaar',
       idNumberMasked: 'XXXX-XXXX-8821',
+      dateOfBirth: '1998-07-09',
+      gender: 'Female',
+      fatherName: 'Debashish Sen',
+      address: 'Plot 88, Lakeview Residency, Whitefield Main Road, Bengaluru',
+      pincode: '560066',
+      notes: 'Corporate conference attendee',
+      staysCount: 1,
     );
     _guests.add(g4);
 
-    final r205Index = _rooms.indexWhere((r) => r.roomNumber == '205');
+    final r205Index = _rooms.indexWhere((r) => r.roomNumber == '205' && r.propertyId == 'prop-001');
     if (r205Index != -1) {
       final checkIn4 = DateTime(now.year, now.month, now.day + 3, 12, 0); // In 3 days 12:00 PM
       final checkOut4 = DateTime(now.year, now.month, now.day + 6, 11, 0); // 11:00 AM
       final stay4 = Stay(
         id: 'stay-205',
-        propertyId: _currentProperty.id,
+        propertyId: 'prop-001',
         guestId: g4.id,
         roomId: _rooms[r205Index].id,
         checkInAt: checkIn4,
@@ -549,21 +530,29 @@ class HotelStore extends ChangeNotifier {
     }
 
     // Room 105: Needs Cleaning (Rahul Verma checked out today at 10:30 AM)
-    final r105Index = _rooms.indexWhere((r) => r.roomNumber == '105');
+    final r105Index = _rooms.indexWhere((r) => r.roomNumber == '105' && r.propertyId == 'prop-001');
     if (r105Index != -1) {
       _rooms[r105Index] = _rooms[r105Index].copyWith(status: RoomStatus.needsCleaning);
       final g5 = Guest(
         id: 'g-rahul',
-        propertyId: _currentProperty.id,
+        propertyId: 'prop-001',
         fullName: 'Rahul Verma',
         phone: '+91 98111 22334',
+        email: 'rahul.verma@example.com',
         idType: 'aadhaar',
         idNumberMasked: 'XXXX-XXXX-1122',
+        dateOfBirth: '1987-12-04',
+        gender: 'Male',
+        fatherName: 'Omprakash Verma',
+        address: '45 Brigade Meadows, Kanakapura Main Road, Bengaluru',
+        pincode: '560082',
+        notes: 'Checked out on time, room in good order',
+        staysCount: 4,
       );
       _guests.add(g5);
       final stay5 = Stay(
         id: 'stay-105-past',
-        propertyId: _currentProperty.id,
+        propertyId: 'prop-001',
         guestId: g5.id,
         roomId: _rooms[r105Index].id,
         checkInAt: DateTime(now.year, now.month, now.day - 2, 11, 0),
@@ -579,21 +568,21 @@ class HotelStore extends ChangeNotifier {
     }
   }
 
-  // Getters
+  // Getters (Strictly scoped to currentProperty)
   Property get currentProperty => _currentProperty;
   List<Property> get properties => _properties;
-  List<Room> get rooms => _rooms;
-  List<Guest> get guests => _guests;
-  List<Stay> get stays => _stays;
-  List<Bill> get bills => _bills;
-  List<Payment> get payments => _payments;
+  List<Room> get rooms => _rooms.where((r) => r.propertyId == _currentProperty.id).toList();
+  List<Guest> get guests => _guests.where((g) => g.propertyId == _currentProperty.id).toList();
+  List<Stay> get stays => _stays.where((s) => s.propertyId == _currentProperty.id).toList();
+  List<Bill> get bills => _bills.where((b) => stays.any((s) => s.id == b.stayId)).toList();
+  List<Payment> get payments => _payments.where((p) => bills.any((b) => b.payments.any((bp) => bp.id == p.id))).toList();
 
   // DYNAMIC COMPUTED METRICS (100% REAL - NO FAKE DATA)
-  int get totalRooms => _rooms.length;
-  int get occupiedRooms => _rooms.where((r) => r.status == RoomStatus.occupied).length;
-  int get vacantRooms => _rooms.where((r) => r.status == RoomStatus.vacant).length;
-  int get cleaningRooms => _rooms.where((r) => r.status == RoomStatus.needsCleaning).length;
-  int get reservedRooms => _rooms.where((r) => r.status == RoomStatus.reserved).length;
+  int get totalRooms => rooms.length;
+  int get occupiedRooms => rooms.where((r) => r.status == RoomStatus.occupied).length;
+  int get vacantRooms => rooms.where((r) => r.status == RoomStatus.vacant).length;
+  int get cleaningRooms => rooms.where((r) => r.status == RoomStatus.needsCleaning).length;
+  int get reservedRooms => rooms.where((r) => r.status == RoomStatus.reserved).length;
 
   int get occupancyRate {
     if (totalRooms == 0) return 0;
@@ -601,14 +590,14 @@ class HotelStore extends ChangeNotifier {
   }
 
   int get activeGuests {
-    return _stays
+    return stays
         .where((s) => s.status == StayStatus.active)
         .fold<int>(0, (sum, s) => sum + s.numGuests);
   }
 
   double get revenueToday {
     final now = DateTime.now();
-    return _payments
+    return payments
         .where((p) =>
             p.recordedAt.year == now.year &&
             p.recordedAt.month == now.month &&
@@ -618,7 +607,7 @@ class HotelStore extends ChangeNotifier {
 
   int get arrivalsToday {
     final now = DateTime.now();
-    return _stays
+    return stays
         .where((s) =>
             s.checkInAt.year == now.year &&
             s.checkInAt.month == now.month &&
@@ -628,7 +617,7 @@ class HotelStore extends ChangeNotifier {
 
   int get departuresToday {
     final now = DateTime.now();
-    return _stays
+    return stays
         .where((s) =>
             s.status == StayStatus.active &&
             s.expectedCheckOut.year == now.year &&
@@ -637,12 +626,12 @@ class HotelStore extends ChangeNotifier {
         .length;
   }
 
-  List<Stay> get activeStays => _stays.where((s) => s.status == StayStatus.active).toList();
+  List<Stay> get activeStays => stays.where((s) => s.status == StayStatus.active).toList();
 
   // Upcoming Stays (Scheduled over future days, ordered chronologically by arrival)
   List<Stay> get upcomingStays {
     final now = DateTime.now();
-    final list = _stays.where((s) {
+    final list = stays.where((s) {
       return s.status == StayStatus.reserved || (s.status == StayStatus.active && s.checkInAt.isAfter(now));
     }).toList();
     list.sort((a, b) => a.checkInAt.compareTo(b.checkInAt));
@@ -651,7 +640,7 @@ class HotelStore extends ChangeNotifier {
 
   // Get stays checking in on a specific date
   List<Stay> getArrivalsForDate(DateTime date) {
-    return _stays.where((s) {
+    return stays.where((s) {
       return s.checkInAt.year == date.year &&
           s.checkInAt.month == date.month &&
           s.checkInAt.day == date.day;
@@ -660,7 +649,7 @@ class HotelStore extends ChangeNotifier {
 
   // Get stays checking out on a specific date
   List<Stay> getDeparturesForDate(DateTime date) {
-    return _stays.where((s) {
+    return stays.where((s) {
       return s.expectedCheckOut.year == date.year &&
           s.expectedCheckOut.month == date.month &&
           s.expectedCheckOut.day == date.day;
@@ -676,7 +665,7 @@ class HotelStore extends ChangeNotifier {
     final departures = getDeparturesForDate(date);
 
     // Stays active during this date
-    final occupiedStays = _stays.where((s) {
+    final occupiedStays = stays.where((s) {
       if (s.status == StayStatus.checkedOut && s.expectedCheckOut.isBefore(dayStart)) {
         return false;
       }
@@ -1218,7 +1207,7 @@ class HotelStore extends ChangeNotifier {
   }
 
   // 5. Add New Hotel Property
-  void addNewProperty({
+  Property addNewProperty({
     required String name,
     required String city,
     required String state,
@@ -1226,11 +1215,13 @@ class HotelStore extends ChangeNotifier {
     required String phone,
     required String email,
     required int totalRooms,
+    String? propertyId,
     String upiId = 'piyushpal427@okaxis',
     String upiPayeeName = 'Piyush Pal',
   }) {
+    final propId = propertyId ?? 'prop-${DateTime.now().millisecondsSinceEpoch}';
     final newProp = Property(
-      id: 'prop-${DateTime.now().millisecondsSinceEpoch}',
+      id: propId,
       name: name,
       address: address,
       city: city,
@@ -1238,13 +1229,91 @@ class HotelStore extends ChangeNotifier {
       pincode: '560001',
       phone: phone,
       email: email,
-      totalRooms: totalRooms,
+      totalRooms: totalRooms > 0 ? totalRooms : 12,
       upiId: upiId.isEmpty ? 'piyushpal427@okaxis' : upiId,
       upiPayeeName: upiPayeeName.isEmpty ? name : upiPayeeName,
     );
+    // If the only property was the demo property (prop-001) and we are creating a real hotel,
+    // remove the demo property and purge all demo seed data so this account is 100% clean!
+    if (_properties.length == 1 && _properties.first.id == 'prop-001') {
+      _properties.clear();
+      _guests.removeWhere((g) => g.propertyId == 'prop-001');
+      _stays.removeWhere((s) => s.propertyId == 'prop-001');
+      _bills.removeWhere((b) => b.id.contains('101') || b.id.contains('104') || b.id.contains('105'));
+      _payments.clear();
+      _rooms.removeWhere((r) => r.propertyId == 'prop-001');
+    }
     _properties.add(newProp);
     _currentProperty = newProp;
-    _initializeRooms(); // Setup rooms for new property
+    _initializeRoomsForProperty(newProp); // Setup fresh vacant rooms for new property
+    notifyListeners();
+    return newProp;
+  }
+
+  /// Reset store cleanly for a newly created or authenticated hotel account.
+  /// Guarantees ZERO demo seed data leaks into the new account.
+  void initCleanAccount({
+    required Property property,
+    required String managerName,
+    required String managerEmail,
+    required String managerPhone,
+    String? managerRole,
+  }) {
+    _currentProperty = property;
+    _properties = [property];
+
+    // Purge ALL demo seed data completely
+    _guests.removeWhere((g) => g.propertyId == 'prop-001');
+    _stays.removeWhere((s) => s.propertyId == 'prop-001');
+    _bills.removeWhere((b) => b.id.contains('101') || b.id.contains('104') || b.id.contains('105'));
+    _payments.clear();
+
+    // Setup fresh vacant rooms exclusively for this property
+    _rooms.clear();
+    _initializeRoomsForProperty(property);
+
+    // Update manager details
+    staffName = managerName.trim();
+    staffEmail = managerEmail.trim();
+    staffPhone = managerPhone.trim();
+    staffRole = managerRole?.trim() ?? 'General Manager / Owner';
+    staffEmployeeId = 'EAS-MGR-001';
+
+    isAuthenticated = true;
+    notifyListeners();
+  }
+
+  /// Load demo account data (ONLY for frontdesk@easeinn.com)
+  void loadDemoAccount() {
+    _currentProperty = Property(
+      id: 'prop-001',
+      name: 'EaseInn Boutique & Suites',
+      address: '88 MG Road, Indiranagar',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      pincode: '560038',
+      phone: '+91 98765 43210',
+      email: 'frontdesk@easeinn.com',
+      totalRooms: 12,
+      upiId: 'piyushpal427@okaxis',
+      upiPayeeName: 'Piyush Pal',
+    );
+    _properties = [_currentProperty];
+    staffName = 'Devika Rao';
+    staffRole = 'General Manager';
+    staffEmail = 'frontdesk@easeinn.com';
+    staffPhone = '+91 98450 11223';
+    staffEmployeeId = 'EAS-MGR-009';
+
+    _rooms.clear();
+    _guests.clear();
+    _stays.clear();
+    _bills.clear();
+    _payments.clear();
+
+    _initializeRoomsForProperty(_currentProperty);
+    _seedInitialData();
+    isAuthenticated = true;
     notifyListeners();
   }
 
@@ -1272,6 +1341,27 @@ class HotelStore extends ChangeNotifier {
   void switchProperty(String propertyId) {
     final found = _properties.firstWhere((p) => p.id == propertyId, orElse: () => _currentProperty);
     _currentProperty = found;
+    if (!_rooms.any((r) => r.propertyId == found.id)) {
+      _initializeRoomsForProperty(found);
+    }
+    notifyListeners();
+  }
+
+  void setCurrentProperty(Property property) {
+    if (property.id != 'prop-001') {
+      _properties.removeWhere((p) => p.id == 'prop-001');
+      _guests.removeWhere((g) => g.propertyId == 'prop-001');
+      _stays.removeWhere((s) => s.propertyId == 'prop-001');
+      _bills.removeWhere((b) => b.id.contains('101') || b.id.contains('104') || b.id.contains('105'));
+      _rooms.removeWhere((r) => r.propertyId == 'prop-001');
+    }
+    _currentProperty = property;
+    if (!_properties.any((p) => p.id == property.id)) {
+      _properties.insert(0, property);
+    }
+    if (!_rooms.any((r) => r.propertyId == property.id)) {
+      _initializeRoomsForProperty(property);
+    }
     notifyListeners();
   }
 
@@ -1283,6 +1373,32 @@ class HotelStore extends ChangeNotifier {
 
   void logout() {
     isAuthenticated = false;
+    _currentProperty = Property(
+      id: 'prop-001',
+      name: 'EaseInn Boutique & Suites',
+      address: '88 MG Road, Indiranagar',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      pincode: '560038',
+      phone: '+91 98765 43210',
+      email: 'frontdesk@easeinn.com',
+      totalRooms: 12,
+      upiId: 'piyushpal427@okaxis',
+      upiPayeeName: 'Piyush Pal',
+    );
+    _properties = [_currentProperty];
+    staffName = 'Devika Rao';
+    staffRole = 'General Manager';
+    staffEmail = 'frontdesk@easeinn.com';
+    staffPhone = '+91 98450 11223';
+    staffEmployeeId = 'EAS-MGR-009';
+    _rooms.clear();
+    _guests.clear();
+    _stays.clear();
+    _bills.clear();
+    _payments.clear();
+    _initializeRoomsForProperty(_currentProperty);
+    _seedInitialData();
     notifyListeners();
   }
 }

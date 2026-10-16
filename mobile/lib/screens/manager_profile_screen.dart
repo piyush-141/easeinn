@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../services/hotel_store.dart';
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/pressable_scale.dart';
+import 'login_screen.dart';
 
 class ManagerProfileScreen extends StatefulWidget {
   const ManagerProfileScreen({super.key});
@@ -82,6 +85,11 @@ class _ManagerProfileScreenState extends State<ManagerProfileScreen> {
                 employeeId: empIdCtrl.text.trim(),
                 emergencyContact: emergencyCtrl.text.trim(),
                 currentShift: shiftCtrl.text.trim(),
+              );
+              AuthService().updateCachedProfile(
+                name: nameCtrl.text.trim(),
+                role: roleCtrl.text.trim(),
+                email: emailCtrl.text.trim(),
               );
               Navigator.of(dialogCtx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
@@ -432,29 +440,35 @@ class _ManagerProfileScreenState extends State<ManagerProfileScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _showEditProfileDialog(context, store),
-                            icon: const Icon(Icons.edit_outlined, size: 15),
-                            label: const Text('Edit Profile'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppTheme.slateDark,
-                              side: const BorderSide(color: AppTheme.slateBorder),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: PressableScale(
+                            pressedScale: 0.95,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showEditProfileDialog(context, store),
+                              icon: const Icon(Icons.edit_outlined, size: 15),
+                              label: const Text('Edit Profile'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTheme.slateDark,
+                                side: const BorderSide(color: AppTheme.slateBorder),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _showChangePasswordDialog(context, store),
-                            icon: const Icon(Icons.lock_outline_rounded, size: 15),
-                            label: const Text('Change Password'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppTheme.slateDark,
-                              side: const BorderSide(color: AppTheme.slateBorder),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: PressableScale(
+                            pressedScale: 0.95,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showChangePasswordDialog(context, store),
+                              icon: const Icon(Icons.lock_outline_rounded, size: 15),
+                              label: const Text('Change Password'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTheme.slateDark,
+                                side: const BorderSide(color: AppTheme.slateBorder),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                              ),
                             ),
                           ),
                         ),
@@ -545,34 +559,37 @@ class _ManagerProfileScreenState extends State<ManagerProfileScreen> {
                         ],
                       ),
                     ),
-                    ElevatedButton(
-                      onPressed: store.isSyncing
-                          ? null
-                          : () async {
-                              await store.syncData();
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('PMS database synced with cloud!'),
-                                    backgroundColor: Color(0xFF16A34A),
-                                  ),
-                                );
-                              }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.brandPrimary,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    PressableScale(
+                      pressedScale: 0.94,
+                      child: ElevatedButton(
+                        onPressed: store.isSyncing
+                            ? null
+                            : () async {
+                                await store.syncData();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('PMS database synced with cloud!'),
+                                      backgroundColor: Color(0xFF16A34A),
+                                    ),
+                                  );
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.brandPrimary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: store.isSyncing
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Text('Sync Now', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
-                      child: store.isSyncing
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Text('Sync Now', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -661,9 +678,91 @@ class _ManagerProfileScreenState extends State<ManagerProfileScreen> {
               ),
 
               const SizedBox(height: 20),
+
+              // Log Out Button
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: PressableScale(
+                  pressedScale: 0.96,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _confirmSignOut(context, store),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFEF4444),
+                      side: const BorderSide(color: Color(0xFFFCA5A5)),
+                      backgroundColor: const Color(0xFFFEF2F2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    icon: const Icon(Icons.logout_rounded, size: 20),
+                    label: Text(
+                      'Sign Out from Shift / Account',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 14),
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _confirmSignOut(BuildContext context, HotelStore store) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.logout_rounded, color: Color(0xFFDC2626), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Sign Out',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to sign out from ${store.currentProperty.name}? You will need to log in again to access front-desk management.',
+          style: GoogleFonts.inter(fontSize: 13, color: AppTheme.slateMuted, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await AuthService().signOut(store);
+              if (!context.mounted) return;
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Sign Out'),
+          ),
+        ],
       ),
     );
   }

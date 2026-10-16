@@ -47,7 +47,7 @@ class _HomeShellState extends State<HomeShell> {
 
     final screens = [
       DashboardScreen(
-        onNavigateTab: (idx, {initialMode}) => _onTabSelected(idx, initialMode: initialMode),
+        onNavigateTab: (idx, {initialMode, preselectedRoomId}) => _onTabSelected(idx, initialMode: initialMode, preselectedRoomId: preselectedRoomId),
       ),
       RoomsScreen(onNavigateTab: (idx, {preselectedRoomId, initialMode}) => _onTabSelected(idx, preselectedRoomId: preselectedRoomId, fromRooms: true, initialMode: initialMode)),
       CheckInScreen(
@@ -87,11 +87,20 @@ class _HomeShellState extends State<HomeShell> {
                 Container(
                   width: 32,
                   height: 32,
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: AppTheme.brandPrimary.withValues(alpha: 0.12),
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.2), width: 0.8),
                   ),
-                  child: const Icon(Icons.hotel_rounded, color: AppTheme.brandPrimary, size: 18),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.asset(
+                      'assets/images/easeinn_logo.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.hotel_rounded, color: AppTheme.brandPrimary, size: 18),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Flexible(
@@ -280,9 +289,9 @@ class _HomeShellState extends State<HomeShell> {
                   alignment: Alignment.center,
                   children: [
                     AnimatedScale(
-                      scale: isSelected ? 1.08 : 1.0,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutBack,
+                      scale: isSelected ? 1.04 : 1.0,
+                      duration: const Duration(milliseconds: 160),
+                      curve: Curves.easeOutCubic,
                       child: Icon(
                         isSelected ? activeIcon : icon,
                         size: 21,
@@ -307,7 +316,7 @@ class _HomeShellState extends State<HomeShell> {
                 ),
                 const SizedBox(height: 2),
                 AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 180),
+                  duration: const Duration(milliseconds: 160),
                   style: GoogleFonts.inter(
                     fontSize: 9.5,
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -344,7 +353,7 @@ class _HomeShellState extends State<HomeShell> {
             mainAxisSize: MainAxisSize.min,
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 240),
+                duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOutCubic,
                 width: 50,
                 height: 50,
@@ -366,9 +375,9 @@ class _HomeShellState extends State<HomeShell> {
                   ],
                 ),
                 child: AnimatedScale(
-                  scale: isSelected ? 1.08 : 1.0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutBack,
+                  scale: isSelected ? 1.04 : 1.0,
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOutCubic,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
