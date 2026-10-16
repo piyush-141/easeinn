@@ -11,6 +11,7 @@ import 'guests_screen.dart';
 import 'calendar_screen.dart';
 import 'manager_profile_screen.dart';
 import 'hotels_screen.dart';
+import 'whatsapp_screen.dart';
 
 class HomeShell extends StatefulWidget {
   final int initialIndex;
@@ -142,6 +143,15 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_rounded, color: Color(0xFF25D366), size: 21),
+            tooltip: 'WhatsApp Automation',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const WhatsAppScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.calendar_month_rounded, color: AppTheme.brandPrimary, size: 22),
             tooltip: 'Dynamic Room Timeline & Calendar',
