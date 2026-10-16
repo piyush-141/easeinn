@@ -13,6 +13,7 @@ import {
   IdType,
   PaymentMethod,
 } from '../types';
+import { triggerCheckInWhatsApp, triggerCheckOutWhatsApp } from '../lib/whatsappClient';
 
 // Initial Demo Hotel
 const DEMO_PROPERTY: Property = {
@@ -523,6 +524,19 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
     );
 
+    // Trigger automated WhatsApp check-in notification (non-blocking)
+    if (newGuest.phone) {
+      triggerCheckInWhatsApp({
+        guestName: newGuest.full_name,
+        phone: newGuest.phone,
+        hotelName: currentProperty.name,
+        roomNumber: targetRoom ? targetRoom.room_number : payload.roomId,
+        checkInDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        checkOutDate: new Date(payload.expectedCheckout).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        stayId,
+      }).catch((err) => console.warn('[WhatsApp] Check-in message hook error:', err));
+    }
+
     return { stayId, billNumber };
   };
 
@@ -575,6 +589,21 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return r;
       })
     );
+
+    // Trigger automated WhatsApp checkout thank-you notification (non-blocking)
+    const guestPhone = stay.guest?.phone || stay.room?.current_stay?.guest_phone;
+    if (guestPhone) {
+      const stayRoom = rooms.find((r) => r.id === stay.room_id) || stay.room;
+      triggerCheckOutWhatsApp({
+        guestName: stay.guest?.full_name || stay.room?.current_stay?.guest_name || 'Valued Guest',
+        phone: guestPhone,
+        hotelName: currentProperty.name,
+        roomNumber: stayRoom ? stayRoom.room_number : stay.room_id,
+        checkInDate: new Date(stay.check_in_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        checkOutDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        stayId,
+      }).catch((err) => console.warn('[WhatsApp] Check-out message hook error:', err));
+    }
 
     return { success: true, bill: updatedBill };
   };

@@ -186,3 +186,56 @@ export interface OCRScanResult {
     } | null;
   };
 }
+
+// WhatsApp Automation Types
+export type WhatsAppStatus =
+  | 'DISCONNECTED'
+  | 'INITIALIZING'
+  | 'QR_READY'
+  | 'AUTHENTICATED'
+  | 'CONNECTED'
+  | 'AUTH_FAILURE'
+  | 'ERROR';
+
+export interface WhatsAppPlaceholder {
+  key: string;
+  label: string;
+  sample: string;
+}
+
+export interface WhatsAppSystemStatus {
+  status: WhatsAppStatus;
+  isConnected: boolean;
+  isReady: boolean;
+  qrCodeDataUrl: string | null;
+  hasActiveQr: boolean;
+  connectedNumber: string | null;
+  connectedPushname: string | null;
+  lastStatusChange: string;
+  initializationError: string | null;
+  activeTemplatesCount: number;
+  totalTemplatesCount: number;
+  supportedPlaceholders: WhatsAppPlaceholder[];
+}
+
+export interface WhatsAppTemplate {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  category: 'automated' | 'manual';
+  trigger: 'on_checkin' | 'on_checkout' | 'on_reservation' | 'manual';
+  template: string;
+}
+
+export interface WhatsAppLogEntry {
+  id: string;
+  timestamp: string;
+  templateId: string;
+  recipientPhone: string;
+  status: 'SENT' | 'FAILED' | 'SKIPPED_DISABLED' | 'SKIPPED_DUPLICATE' | 'FAILED_CLIENT_NOT_CONNECTED';
+  error?: string;
+  messageId?: string;
+  preview?: string;
+  context?: Record<string, any>;
+}

@@ -6,13 +6,14 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const apiRoutes = require("./src/routes/api.routes");
+const whatsappRoutes = require("./src/routes/whatsapp.routes");
 const { errorHandler } = require("./src/middleware/error.middleware");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Create required directories on startup
-["uploads", "processed"].forEach((dir) => {
+["uploads", "processed", "data"].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
     console.log(`Created directory: ${dir}/`);
@@ -30,8 +31,8 @@ app.use("/processed", express.static(path.join(__dirname, "processed")));
 // Health check
 app.get("/", (req, res) => {
   res.json({
-    service: "Document Verification API",
-    version: "1.0.0",
+    service: "EaseInn Backend & Document Verification API",
+    version: "2.0.0",
     status: "running",
     endpoints: {
       upload: "POST /api/upload",
@@ -39,12 +40,16 @@ app.get("/", (req, res) => {
       extract: "POST /api/extract",
       verify: "POST /api/verify",
       full_pipeline: "POST /api/pipeline",
+      whatsapp_status: "GET /api/whatsapp/status",
+      whatsapp_templates: "GET /api/whatsapp/templates",
+      whatsapp_send: "POST /api/whatsapp/send",
     },
   });
 });
 
 // API Routes
 app.use("/api", apiRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
 
 // Global error handler
 app.use(errorHandler);

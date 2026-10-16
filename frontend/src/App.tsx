@@ -13,6 +13,7 @@ import { Guests } from './pages/Guests';
 import { Insights } from './pages/Insights';
 import { Hotels } from './pages/Hotels';
 import { Login } from './pages/Login';
+import { WhatsAppSettings } from './pages/WhatsAppSettings';
 
 const Layout: React.FC<{ children: React.ReactNode; onOpenAddHotel: () => void }> = ({
   children,
@@ -59,6 +60,7 @@ export function App() {
             <Route path="/guests" element={<Guests />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/hotels" element={<Hotels onOpenAddHotel={() => setIsAddHotelOpen(true)} />} />
+            <Route path="/whatsapp" element={<WhatsAppSettings />} />
             <Route path="/login" element={<Login />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

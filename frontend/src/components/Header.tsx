@@ -8,6 +8,7 @@ import {
   UserCheck,
   Clock,
   Sparkles,
+  MessageSquare,
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 
@@ -110,6 +111,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddHotel }) => {
 
       {/* Right: Quick Checkin CTA & Profile */}
       <div className="flex items-center gap-3">
+        <button
+          onClick={() => navigate('/whatsapp')}
+          className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold px-3 py-2 rounded-xl transition shadow-xs active:scale-95"
+          title="WhatsApp Automated Messaging Settings"
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+          <span className="hidden sm:inline">WhatsApp</span>
+        </button>
+
         <button
           onClick={() => navigate('/checkin')}
           className="flex items-center gap-2 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-700 hover:to-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-brand-500/20 transition-all hover:shadow-brand-500/30 transform active:scale-95"

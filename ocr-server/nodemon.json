@@ -9,6 +9,9 @@
     "test-images/**",
     "client/",
     "client/**",
+    ".wwebjs_auth/**",
+    ".wwebjs_cache/**",
+    "data/**",
     "*.log"
   ],
   "ext": "js,mjs,cjs,json",

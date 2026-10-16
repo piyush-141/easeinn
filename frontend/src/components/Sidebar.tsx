@@ -10,6 +10,7 @@ import {
   Building2,
   Sparkles,
   ShieldCheck,
+  MessageSquare,
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
 
@@ -27,6 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenAddHotel }) => {
     { to: '/checkout', label: 'Check-Out & Billing', icon: LogOut },
     { to: '/guests', label: 'Guests Directory', icon: Users },
     { to: '/insights', label: 'Analytics & Insights', icon: BarChart3 },
+    { to: '/whatsapp', label: 'WhatsApp Automation', icon: MessageSquare, badge: 'AUTO' },
     { to: '/hotels', label: 'Hotels & Branches', icon: Building2 },
   ];
 
@@ -98,6 +100,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenAddHotel }) => {
                 {item.highlight && (
                   <span className="text-[9px] font-bold uppercase bg-brand-400/20 text-brand-300 px-1.5 py-0.5 rounded-full border border-brand-400/30">
                     OCR
+                  </span>
+                )}
+                {item.badge && (
+                  <span className="text-[9px] font-bold uppercase bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full border border-emerald-500/30">
+                    {item.badge}
                   </span>
                 )}
               </>

@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import '../models/property.dart';
 import '../models/room.dart';
 import '../models/guest.dart';
 import '../models/stay.dart';
 import '../models/bill.dart';
+import 'whatsapp_service.dart';
 
 class HotelStore extends ChangeNotifier {
   // Current active property
@@ -855,6 +857,20 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
 
+    // Trigger automated WhatsApp check-in notification (non-blocking)
+    if (phone.trim().isNotEmpty) {
+      final df = DateFormat('dd MMM yyyy');
+      WhatsAppService.triggerCheckIn(
+        guestName: fullName,
+        phone: phone,
+        hotelName: _currentProperty.name,
+        roomNumber: targetRoom.roomNumber,
+        checkInDate: df.format(checkInTime),
+        checkOutDate: df.format(resolvedExpectedCheckOut),
+        stayId: stayId,
+      );
+    }
+
     return {
       'stayId': stayId,
       'billNumber': billNumber,
@@ -1050,6 +1066,20 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
 
+    // Trigger automated WhatsApp booking confirmation notification (non-blocking)
+    if (phone.trim().isNotEmpty) {
+      final df = DateFormat('dd MMM yyyy');
+      WhatsAppService.triggerReservation(
+        guestName: fullName,
+        phone: phone,
+        hotelName: _currentProperty.name,
+        roomNumber: targetRoom.roomNumber,
+        checkInDate: df.format(resolvedCheckIn),
+        checkOutDate: df.format(resolvedCheckOut),
+        stayId: stayId,
+      );
+    }
+
     return {
       'stayId': stayId,
       'billNumber': billNumber,
@@ -1157,6 +1187,23 @@ class HotelStore extends ChangeNotifier {
     }
 
     notifyListeners();
+
+    // Trigger automated WhatsApp checkout thank-you notification (non-blocking)
+    final guestPhone = targetStay.guest?.phone;
+    if (guestPhone != null && guestPhone.trim().isNotEmpty) {
+      final df = DateFormat('dd MMM yyyy');
+      final roomNum = targetStay.room?.roomNumber ?? (roomIndex != -1 ? _rooms[roomIndex].roomNumber : '');
+      WhatsAppService.triggerCheckOut(
+        guestName: targetStay.guest?.fullName ?? 'Valued Guest',
+        phone: guestPhone,
+        hotelName: _currentProperty.name,
+        roomNumber: roomNum,
+        checkInDate: df.format(targetStay.checkInAt),
+        checkOutDate: df.format(targetStay.checkOutAt ?? DateTime.now()),
+        stayId: stayId,
+      );
+    }
+
     return bill;
   }
 

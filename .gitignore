@@ -50,6 +50,14 @@ ocr-server/processed/*
 !ocr-server/processed/.gitkeep
 *.traineddata
 
+# --- WhatsApp Web Session Credentials (Private) ---
+.wwebjs_auth/
+.wwebjs_cache/
+**/.wwebjs_auth/
+**/.wwebjs_cache/
+ocr-server/data/
+**/data/whatsapp_logs.json
+
 # --- Flutter / Dart Build & Tooling ---
 .dart_tool/
 .flutter-plugins
