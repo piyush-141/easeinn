@@ -9,8 +9,10 @@ import {
   Clock,
   Sparkles,
   MessageSquare,
+  LogOut,
 } from 'lucide-react';
 import { useHotel } from '../context/HotelContext';
+import { supabase } from '../lib/supabase';
 
 interface HeaderProps {
   onOpenAddHotel: () => void;
@@ -111,6 +113,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddHotel }) => {
 
       {/* Right: Quick Checkin CTA & Profile */}
       <div className="flex items-center gap-3">
+        <button
+          onClick={() => { void supabase.auth.signOut(); }}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-red-600"
+          title="Sign out"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Sign out</span>
+        </button>
         <button
           onClick={() => navigate('/whatsapp')}
           className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold px-3 py-2 rounded-xl transition shadow-xs active:scale-95"

@@ -20,6 +20,10 @@ exports.getStatus = async (req, res) => {
 exports.connect = async (req, res) => {
   try {
     // Non-blocking trigger so HTTP request doesn't wait for full QR scan
+    const current = whatsappService.getStatus();
+    if (current.isConnected || current.hasActiveQr || current.status === "INITIALIZING" || current.status === "AUTHENTICATED") {
+      return res.json({ success: true, message: "WhatsApp connection is already active or initializing.", status: current.status });
+    }
     whatsappService.initializeWhatsAppClient().catch((err) => {
       console.error("[WhatsApp] Error during connect:", err.message);
     });
@@ -151,7 +155,8 @@ exports.sendMessage = async (req, res) => {
       stayId,
     });
 
-    return res.json(result);
+    const statusCode = result.success ? 200 : ["NOT_CONNECTED", "SEND_OUTCOME_UNKNOWN", "SEND_IN_PROGRESS"].includes(result.code) ? 503 : result.code === "SEND_FAILED" ? 502 : 400;
+    return res.status(statusCode).json(result);
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -162,7 +167,8 @@ exports.sendMessage = async (req, res) => {
  */
 exports.getLogs = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 50;
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 200)) : 50;
     const logs = whatsappService.getLogs(limit);
     return res.json({ success: true, logs });
   } catch (err) {
@@ -196,7 +202,8 @@ exports.onCheckIn = async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.warn("[WhatsApp Hook Check-in Non-Blocking Error]", err.message);
+    return res.json({ success: false, error: err.message, nonBlocking: true });
   }
 };
 
@@ -208,7 +215,7 @@ exports.onCheckOut = async (req, res) => {
   try {
     const { guestName, phone, hotelName, roomNumber, checkInDate, checkOutDate, stayId } = req.body;
     if (!phone) {
-      return res.status(400).json({ success: false, error: "Guest phone number is required" });
+      return res.json({ success: false, error: "Guest phone number is required", nonBlocking: true });
     }
 
     const result = await whatsappService.sendWhatsAppNotification({
@@ -226,7 +233,8 @@ exports.onCheckOut = async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.warn("[WhatsApp Hook Check-out Non-Blocking Error]", err.message);
+    return res.json({ success: false, error: err.message, nonBlocking: true });
   }
 };
 
@@ -238,7 +246,7 @@ exports.onReservation = async (req, res) => {
   try {
     const { guestName, phone, hotelName, roomNumber, checkInDate, checkOutDate, stayId } = req.body;
     if (!phone) {
-      return res.status(400).json({ success: false, error: "Guest phone number is required" });
+      return res.json({ success: false, error: "Guest phone number is required", nonBlocking: true });
     }
 
     const result = await whatsappService.sendWhatsAppNotification({
@@ -256,6 +264,7 @@ exports.onReservation = async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.warn("[WhatsApp Hook Reservation Non-Blocking Error]", err.message);
+    return res.json({ success: false, error: err.message, nonBlocking: true });
   }
 };

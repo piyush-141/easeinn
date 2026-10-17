@@ -43,6 +43,7 @@ export const WhatsAppSettings: React.FC = () => {
   // Status & Connection State
   const [statusData, setStatusData] = useState<WhatsAppSystemStatus | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [isDisconnecting, setIsDisconnecting] = useState<boolean>(false);
 
@@ -79,20 +80,15 @@ export const WhatsAppSettings: React.FC = () => {
     fetchLogs();
   }, []);
 
-  // Poll status when QR is active or initializing
+  // Keep the badge and send controls synchronized with the live socket.
   useEffect(() => {
-    if (!statusData) return;
     const isPending =
-      statusData.status === 'QR_READY' ||
-      statusData.status === 'INITIALIZING' ||
-      statusData.status === 'AUTHENTICATED';
+      statusData?.status === 'QR_READY' ||
+      statusData?.status === 'INITIALIZING' ||
+      statusData?.status === 'AUTHENTICATED';
 
-    if (isPending) {
-      const interval = setInterval(() => {
-        fetchStatus(true);
-      }, 3500);
-      return () => clearInterval(interval);
-    }
+    const interval = setInterval(() => fetchStatus(true), isPending ? 3500 : 10000);
+    return () => clearInterval(interval);
   }, [statusData?.status]);
 
   // Update live preview when active template or its text changes
@@ -105,10 +101,13 @@ export const WhatsAppSettings: React.FC = () => {
     try {
       const data = await getWhatsAppStatus();
       setStatusData(data);
+      setStatusError(null);
       if (data.supportedPlaceholders) {
         setPlaceholders(data.supportedPlaceholders);
       }
     } catch (err: any) {
+      setStatusData(null);
+      setStatusError(err.message || 'WhatsApp service is unavailable.');
       console.warn('[WhatsApp] Could not fetch status:', err.message);
     } finally {
       if (!silent) setIsLoadingStatus(false);
@@ -308,10 +307,10 @@ export const WhatsAppSettings: React.FC = () => {
         },
       });
 
-      if (res.success) {
+      if (res.success && res.accepted === true && !res.suppressed) {
         setTestResult({
           success: true,
-          message: `Delivered successfully to ${res.recipient}! Check WhatsApp on recipient device.`,
+          message: `WhatsApp accepted the message for +${res.recipient}. Recipient delivery is still pending confirmation.`,
         });
         fetchLogs();
       } else {
@@ -400,10 +399,14 @@ export const WhatsAppSettings: React.FC = () => {
               </div>
 
               <p className="text-xs text-slate-500">
-                {statusData?.isConnected ? (
+                {statusError ? (
+                  <span className="text-red-600">Could not reach the WhatsApp service: {statusError}</span>
+                ) : statusData?.initializationError && !statusData?.isConnected ? (
+                  <span className="text-amber-700">{statusData.initializationError}</span>
+                ) : statusData?.isConnected ? (
                   <>
                     Logged in via {statusData.connectedPushname ? `"${statusData.connectedPushname}"` : 'Hotel Device'}
-                    {statusData.connectedNumber && ` (+${statusData.connectedNumber})`}. Session is persisted securely in local auth storage.
+                    {statusData.connectedNumber && ` (+${statusData.connectedNumber})`}. Session is stored on the server’s persistent disk.
                   </>
                 ) : (
                   'Link your hotel front-desk or management WhatsApp number by scanning the QR code below.'
@@ -471,7 +474,7 @@ export const WhatsAppSettings: React.FC = () => {
                     <div className="p-3 bg-emerald-50/80 border border-emerald-200/60 rounded-xl text-[11px] text-emerald-800 flex items-start gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                       <span>
-                        Once paired, your session is saved in <code>.wwebjs_auth</code>. You will not need to scan again unless unlinked.
+                        Once paired, the linked-device session is stored on the server's persistent disk. You should not need to scan again after a routine restart.
                       </span>
                     </div>
                   </div>
@@ -507,7 +510,7 @@ export const WhatsAppSettings: React.FC = () => {
               Operational Notice: Unofficial WhatsApp Web Automation Guidelines
             </h4>
             <p className="text-amber-800 leading-relaxed">
-              EaseInn utilizes <code>whatsapp-web.js</code>, an open-source Puppeteer automation client that connects to WhatsApp Web without paid API subscription fees. To protect the hotel’s WhatsApp number against temporary blocks or spam penalties:
+              EaseInn uses Baileys to connect to WhatsApp linked devices. This unofficial integration can be disconnected by WhatsApp and does not provide authoritative recipient delivery receipts. To protect the hotel’s number:
             </p>
             <ul className="list-disc list-inside space-y-1 text-amber-800/90 pl-1">
               <li>
@@ -830,10 +833,10 @@ export const WhatsAppSettings: React.FC = () => {
                   </div>
 
                   <div>
-                    {log.status === 'SENT' ? (
+                    {log.status === 'ACCEPTED' || log.status === 'SENT' ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Delivered
+                        {log.delivered || log.deliveryStatus === 'DELIVERED' || log.deliveryStatus === 'READ' ? 'Delivered' : 'Accepted · awaiting delivery'}
                       </span>
                     ) : log.status === 'SKIPPED_DUPLICATE' ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">

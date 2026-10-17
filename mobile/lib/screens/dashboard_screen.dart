@@ -14,7 +14,12 @@ import 'whatsapp_screen.dart';
 import '../widgets/pressable_scale.dart';
 
 class DashboardScreen extends StatelessWidget {
-  final void Function(int tabIndex, {BookingMode? initialMode, String? preselectedRoomId}) onNavigateTab;
+  final void Function(
+    int tabIndex, {
+    BookingMode? initialMode,
+    String? preselectedRoomId,
+  })
+  onNavigateTab;
   const DashboardScreen({super.key, required this.onNavigateTab});
 
   String _getTimeGreeting() {
@@ -27,7 +32,11 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<HotelStore>();
-    final currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final currencyFormat = NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -66,8 +75,14 @@ class DashboardScreen extends StatelessWidget {
                       child: _buildGradientQuickCard(
                         title: 'Reservation',
                         icon: Icons.event_available_rounded,
-                        gradientColors: const [Color(0xFF00C9A7), Color(0xFF00B4D8)],
-                        onTap: () => onNavigateTab(2, initialMode: BookingMode.reservation),
+                        gradientColors: const [
+                          Color(0xFF00C9A7),
+                          Color(0xFF00B4D8),
+                        ],
+                        onTap: () => onNavigateTab(
+                          2,
+                          initialMode: BookingMode.reservation,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -76,8 +91,12 @@ class DashboardScreen extends StatelessWidget {
                       child: _buildGradientQuickCard(
                         title: 'Quick Check-in',
                         icon: Icons.person_add_alt_1_rounded,
-                        gradientColors: const [Color(0xFFFF3366), Color(0xFFFF5E7E)],
-                        onTap: () => onNavigateTab(2, initialMode: BookingMode.checkIn),
+                        gradientColors: const [
+                          Color(0xFFFF3366),
+                          Color(0xFFFF5E7E),
+                        ],
+                        onTap: () =>
+                            onNavigateTab(2, initialMode: BookingMode.checkIn),
                       ),
                     ),
                   ],
@@ -90,10 +109,15 @@ class DashboardScreen extends StatelessWidget {
                       child: _buildGradientQuickCard(
                         title: 'Booking Register',
                         icon: Icons.table_chart_rounded,
-                        gradientColors: const [Color(0xFFFF9F1C), Color(0xFFFF6B35)],
+                        gradientColors: const [
+                          Color(0xFFFF9F1C),
+                          Color(0xFFFF6B35),
+                        ],
                         onTap: () {
                           Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const BookingExportScreen()),
+                            MaterialPageRoute(
+                              builder: (_) => const BookingExportScreen(),
+                            ),
                           );
                         },
                       ),
@@ -104,7 +128,10 @@ class DashboardScreen extends StatelessWidget {
                       child: _buildGradientQuickCard(
                         title: 'Insights',
                         icon: Icons.bar_chart_rounded,
-                        gradientColors: const [Color(0xFF4361EE), Color(0xFF7209B7)],
+                        gradientColors: const [
+                          Color(0xFF4361EE),
+                          Color(0xFF7209B7),
+                        ],
                         onTap: () => _showInsightsSheet(context, store),
                       ),
                     ),
@@ -122,14 +149,22 @@ class DashboardScreen extends StatelessWidget {
                   },
                   pressedScale: 0.96,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFDDD6FE), width: 1.2),
+                      border: Border.all(
+                        color: const Color(0xFFDDD6FE),
+                        width: 1.2,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF7C3AED).withValues(alpha: 0.08),
+                          color: const Color(
+                            0xFF7C3AED,
+                          ).withValues(alpha: 0.08),
                           blurRadius: 16,
                           offset: const Offset(0, 4),
                         ),
@@ -145,13 +180,19 @@ class DashboardScreen extends StatelessWidget {
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                color: AppTheme.brandPrimary.withValues(alpha: 0.3),
+                                color: AppTheme.brandPrimary.withValues(
+                                  alpha: 0.3,
+                                ),
                                 blurRadius: 8,
                                 offset: const Offset(0, 3),
                               ),
                             ],
                           ),
-                          child: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 22),
+                          child: const Icon(
+                            Icons.calendar_month_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -176,7 +217,11 @@ class DashboardScreen extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.brandPrimary),
+                        const Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 14,
+                          color: AppTheme.brandPrimary,
+                        ),
                       ],
                     ),
                   ),
@@ -193,7 +238,10 @@ class DashboardScreen extends StatelessWidget {
                   },
                   pressedScale: 0.96,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFF0F5132), Color(0xFF198754)],
@@ -203,7 +251,9 @@ class DashboardScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF198754).withValues(alpha: 0.25),
+                          color: const Color(
+                            0xFF198754,
+                          ).withValues(alpha: 0.25),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -218,7 +268,11 @@ class DashboardScreen extends StatelessWidget {
                             color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          child: const Icon(Icons.chat_rounded, color: Colors.white, size: 22),
+                          child: const Icon(
+                            Icons.chat_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -236,22 +290,27 @@ class DashboardScreen extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.25),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: const Text(
-                                      'AUTO',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                  ),
+                                  // Container(
+                                  //   padding: const EdgeInsets.symmetric(
+                                  //     horizontal: 6,
+                                  //     vertical: 2,
+                                  // ),
+                                  // decoration: BoxDecoration(
+                                  //   color: Colors.white.withValues(
+                                  //     alpha: 0.25,
+                                  //   ),
+                                  //   borderRadius: BorderRadius.circular(6),
+                                  // ),
+                                  // child: const Text(
+                                  //   'AUTO',
+                                  //   style: TextStyle(
+                                  //     color: Colors.white,
+                                  //     fontSize: 9,
+                                  //     fontWeight: FontWeight.bold,
+                                  //     letterSpacing: 0.5,
+                                  //   ),
+                                  // ),
+                                  // ),
                                 ],
                               ),
                               Text(
@@ -264,7 +323,11 @@ class DashboardScreen extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.white),
+                        const Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        ),
                       ],
                     ),
                   ),
@@ -308,7 +371,10 @@ class DashboardScreen extends StatelessWidget {
                 // Active stays list or Empty State
                 if (store.activeStays.isEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 28,
+                      horizontal: 16,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
@@ -316,7 +382,11 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     child: Column(
                       children: [
-                        Icon(Icons.bed_outlined, color: AppTheme.slateMuted.withValues(alpha: 0.4), size: 38),
+                        Icon(
+                          Icons.bed_outlined,
+                          color: AppTheme.slateMuted.withValues(alpha: 0.4),
+                          size: 38,
+                        ),
                         const SizedBox(height: 8),
                         Text(
                           'No Guests Currently In-House',
@@ -330,7 +400,10 @@ class DashboardScreen extends StatelessWidget {
                         Text(
                           'Tap "Quick Check-in" above to scan guest ID and allocate a room.',
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
+                          style: GoogleFonts.inter(
+                            color: AppTheme.slateMuted,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -390,7 +463,11 @@ class DashboardScreen extends StatelessWidget {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF16A34A)),
+                                      const Icon(
+                                        Icons.verified_rounded,
+                                        size: 12,
+                                        color: Color(0xFF16A34A),
+                                      ),
                                     ],
                                   ),
                                   Text(
@@ -401,7 +478,8 @@ class DashboardScreen extends StatelessWidget {
                                     ),
                                   ),
                                   const SizedBox(height: 3),
-                                  Row(
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'In: ${DateFormat('d MMM, hh:mm a').format(stay.checkInAt)}',
@@ -410,25 +488,18 @@ class DashboardScreen extends StatelessWidget {
                                           fontSize: 10,
                                           fontWeight: FontWeight.w500,
                                         ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 5),
-                                        child: Text(
-                                          '→',
-                                          style: GoogleFonts.inter(
-                                            color: AppTheme.slateMuted,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       Text(
                                         'Out: ${DateFormat('d MMM, hh:mm a').format(stay.expectedCheckOut)}',
                                         style: GoogleFonts.inter(
-                                          color: AppTheme.slateMuted,
+                                          color: AppTheme.brandPrimary,
                                           fontSize: 10,
-                                          fontWeight: FontWeight.w500,
+                                          fontWeight: FontWeight.w600,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
                                   ),
@@ -447,16 +518,24 @@ class DashboardScreen extends StatelessWidget {
                             PressableScale(
                               onTap: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => BookingCheckOutScreen(stay: stay)),
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        BookingCheckOutScreen(stay: stay),
+                                  ),
                                 );
                               },
                               pressedScale: 0.92,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppTheme.brandPrimary),
+                                  border: Border.all(
+                                    color: AppTheme.brandPrimary,
+                                  ),
                                 ),
                                 child: const Text(
                                   'Checkout',
@@ -581,7 +660,8 @@ class DashboardScreen extends StatelessWidget {
                   label: 'Occupancy',
                   value: '${store.occupancyRate}%',
                   valueColor: AppTheme.slateDark,
-                  caption: '${store.occupiedRooms} of ${store.totalRooms} rooms',
+                  caption:
+                      '${store.occupiedRooms} of ${store.totalRooms} rooms',
                   onTap: () => _showOccupancyDrawer(context, store),
                 ),
               ),
@@ -683,9 +763,7 @@ class DashboardScreen extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.25),
                   shape: BoxShape.circle,
                 ),
-                child: Center(
-                  child: Icon(icon, color: Colors.white, size: 18),
-                ),
+                child: Center(child: Icon(icon, color: Colors.white, size: 18)),
               ),
             ),
 
@@ -705,7 +783,11 @@ class DashboardScreen extends StatelessWidget {
   }
 
   // ── 4. 2x2 STATUS CARDS (CLEAN & MINIMAL WHITE CARDS) ──
-  Widget _buildStatusCardsGrid(BuildContext context, HotelStore store, NumberFormat currencyFormat) {
+  Widget _buildStatusCardsGrid(
+    BuildContext context,
+    HotelStore store,
+    NumberFormat currencyFormat,
+  ) {
     return Column(
       children: [
         Row(
@@ -717,8 +799,14 @@ class DashboardScreen extends StatelessWidget {
                 iconColor: const Color(0xFF3B82F6), // Blue
                 title: 'Occupied',
                 subtitle: 'Current rooms in use',
-                metric: store.occupiedRooms == 1 ? '1 room' : '${store.occupiedRooms} rooms',
-                onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'booked'),
+                metric: store.occupiedRooms == 1
+                    ? '1 room'
+                    : '${store.occupiedRooms} rooms',
+                onTap: () => _showOccupancyDrawer(
+                  context,
+                  store,
+                  initialFilter: 'booked',
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -729,8 +817,11 @@ class DashboardScreen extends StatelessWidget {
                 iconColor: const Color(0xFF10B981), // Green
                 title: 'Vacant',
                 subtitle: 'Ready to sell',
-                metric: store.vacantRooms == 1 ? '1 room' : '${store.vacantRooms} rooms',
-                onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'free'),
+                metric: store.vacantRooms == 1
+                    ? '1 room'
+                    : '${store.vacantRooms} rooms',
+                onTap: () =>
+                    _showOccupancyDrawer(context, store, initialFilter: 'free'),
               ),
             ),
           ],
@@ -745,8 +836,14 @@ class DashboardScreen extends StatelessWidget {
                 iconColor: const Color(0xFFF59E0B), // Orange / Amber
                 title: 'Needs Cleaning',
                 subtitle: 'Housekeeping status',
-                metric: store.cleaningRooms == 1 ? '1 room' : '${store.cleaningRooms} rooms',
-                onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'cleaning'),
+                metric: store.cleaningRooms == 1
+                    ? '1 room'
+                    : '${store.cleaningRooms} rooms',
+                onTap: () => _showOccupancyDrawer(
+                  context,
+                  store,
+                  initialFilter: 'cleaning',
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -885,12 +982,18 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     Text(
                       '${arrivals.length} check-in${arrivals.length == 1 ? '' : 's'} scheduled for today',
-                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.slateMuted,
+                      ),
                     ),
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEFF6FF),
                     borderRadius: BorderRadius.circular(12),
@@ -913,16 +1016,27 @@ class DashboardScreen extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.event_available_rounded, size: 48, color: Colors.grey.shade300),
+                          Icon(
+                            Icons.event_available_rounded,
+                            size: 48,
+                            color: Colors.grey.shade300,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'No Arrivals Scheduled for Today',
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: AppTheme.slateDark,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Tap "Quick Check-in" above to register a walk-in guest.',
-                            style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
+                            style: GoogleFonts.inter(
+                              color: AppTheme.slateMuted,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -932,7 +1046,8 @@ class DashboardScreen extends StatelessWidget {
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, i) {
                         final stay = arrivals[i];
-                        final isAlreadyInHouse = stay.status == StayStatus.active;
+                        final isAlreadyInHouse =
+                            stay.status == StayStatus.active;
 
                         return Container(
                           padding: const EdgeInsets.all(14),
@@ -968,16 +1083,27 @@ class DashboardScreen extends StatelessWidget {
                                   children: [
                                     Text(
                                       stay.guest?.fullName ?? 'Guest',
-                                      style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.slateDark),
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: AppTheme.slateDark,
+                                      ),
                                     ),
                                     Text(
                                       '${stay.room?.categoryName} • ${stay.numGuests} Guest${stay.numGuests > 1 ? 's' : ''}',
-                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppTheme.slateMuted,
+                                      ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       'Arrival Time: ${DateFormat('hh:mm a').format(stay.checkInAt)}',
-                                      style: GoogleFonts.inter(fontSize: 10.5, color: const Color(0xFF2563EB), fontWeight: FontWeight.w600),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: const Color(0xFF2563EB),
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -986,26 +1112,48 @@ class DashboardScreen extends StatelessWidget {
                                 ElevatedButton(
                                   onPressed: () {
                                     Navigator.pop(ctx);
-                                    onNavigateTab(2, initialMode: BookingMode.checkIn, preselectedRoomId: stay.roomId);
+                                    onNavigateTab(
+                                      2,
+                                      initialMode: BookingMode.checkIn,
+                                      preselectedRoomId: stay.roomId,
+                                    );
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppTheme.brandPrimary,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                     elevation: 0,
                                   ),
-                                  child: const Text('Check In', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  child: const Text(
+                                    'Check In',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 )
                               else
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFECFDF5),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: const Text(
                                     'In-House',
-                                    style: TextStyle(color: Color(0xFF059669), fontSize: 10, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Color(0xFF059669),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                             ],
@@ -1071,12 +1219,18 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     Text(
                       '${departures.length} check-out${departures.length == 1 ? '' : 's'} scheduled for today',
-                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.slateMuted,
+                      ),
                     ),
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF3E8FF),
                     borderRadius: BorderRadius.circular(12),
@@ -1099,16 +1253,27 @@ class DashboardScreen extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.luggage_outlined, size: 48, color: Colors.grey.shade300),
+                          Icon(
+                            Icons.luggage_outlined,
+                            size: 48,
+                            color: Colors.grey.shade300,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'No Departures Remaining Today',
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: AppTheme.slateDark,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'All scheduled check-outs are complete.',
-                            style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
+                            style: GoogleFonts.inter(
+                              color: AppTheme.slateMuted,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -1153,16 +1318,27 @@ class DashboardScreen extends StatelessWidget {
                                   children: [
                                     Text(
                                       stay.guest?.fullName ?? 'Guest',
-                                      style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.slateDark),
+                                      style: GoogleFonts.inter(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: AppTheme.slateDark,
+                                      ),
                                     ),
                                     Text(
                                       '${stay.room?.categoryName} • In-house',
-                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppTheme.slateMuted,
+                                      ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       'Due Out: ${DateFormat('hh:mm a').format(stay.expectedCheckOut)}',
-                                      style: GoogleFonts.inter(fontSize: 10.5, color: const Color(0xFF7C3AED), fontWeight: FontWeight.w600),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: const Color(0xFF7C3AED),
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1171,16 +1347,30 @@ class DashboardScreen extends StatelessWidget {
                                 onPressed: () {
                                   Navigator.pop(ctx);
                                   Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (_) => BookingCheckOutScreen(stay: stay)),
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          BookingCheckOutScreen(stay: stay),
+                                    ),
                                   );
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF7C3AED),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
                                   elevation: 0,
                                 ),
-                                child: const Text('Checkout', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                child: const Text(
+                                  'Checkout',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -1195,7 +1385,11 @@ class DashboardScreen extends StatelessWidget {
   }
 
   // ── OCCUPANCY DRAWER: SHOWS WHICH ROOM IS BOOKED AND FREE ──
-  void _showOccupancyDrawer(BuildContext context, HotelStore store, {String initialFilter = 'all'}) {
+  void _showOccupancyDrawer(
+    BuildContext context,
+    HotelStore store, {
+    String initialFilter = 'all',
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1206,9 +1400,19 @@ class DashboardScreen extends StatelessWidget {
             String activeFilter = initialFilter;
 
             final rooms = store.rooms;
-            final bookedRooms = rooms.where((r) => r.status == RoomStatus.occupied || r.status == RoomStatus.reserved).toList();
-            final freeRooms = rooms.where((r) => r.status == RoomStatus.vacant).toList();
-            final cleaningRooms = rooms.where((r) => r.status == RoomStatus.needsCleaning).toList();
+            final bookedRooms = rooms
+                .where(
+                  (r) =>
+                      r.status == RoomStatus.occupied ||
+                      r.status == RoomStatus.reserved,
+                )
+                .toList();
+            final freeRooms = rooms
+                .where((r) => r.status == RoomStatus.vacant)
+                .toList();
+            final cleaningRooms = rooms
+                .where((r) => r.status == RoomStatus.needsCleaning)
+                .toList();
 
             List<Room> displayedRooms;
             if (activeFilter == 'booked') {
@@ -1258,12 +1462,18 @@ class DashboardScreen extends StatelessWidget {
                           ),
                           Text(
                             '${bookedRooms.length} Booked • ${freeRooms.length} Free • ${cleaningRooms.length} Cleaning',
-                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppTheme.slateMuted,
+                            ),
                           ),
                         ],
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: AppTheme.brandLight,
                           borderRadius: BorderRadius.circular(12),
@@ -1287,21 +1497,41 @@ class DashboardScreen extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        _buildFilterChip('all', 'All Rooms (${rooms.length})', activeFilter, (val) {
-                          setModalState(() => activeFilter = val);
-                        }),
+                        _buildFilterChip(
+                          'all',
+                          'All Rooms (${rooms.length})',
+                          activeFilter,
+                          (val) {
+                            setModalState(() => activeFilter = val);
+                          },
+                        ),
                         const SizedBox(width: 8),
-                        _buildFilterChip('booked', 'Booked (${bookedRooms.length})', activeFilter, (val) {
-                          setModalState(() => activeFilter = val);
-                        }),
+                        _buildFilterChip(
+                          'booked',
+                          'Booked (${bookedRooms.length})',
+                          activeFilter,
+                          (val) {
+                            setModalState(() => activeFilter = val);
+                          },
+                        ),
                         const SizedBox(width: 8),
-                        _buildFilterChip('free', 'Free (${freeRooms.length})', activeFilter, (val) {
-                          setModalState(() => activeFilter = val);
-                        }),
+                        _buildFilterChip(
+                          'free',
+                          'Free (${freeRooms.length})',
+                          activeFilter,
+                          (val) {
+                            setModalState(() => activeFilter = val);
+                          },
+                        ),
                         const SizedBox(width: 8),
-                        _buildFilterChip('cleaning', 'Cleaning (${cleaningRooms.length})', activeFilter, (val) {
-                          setModalState(() => activeFilter = val);
-                        }),
+                        _buildFilterChip(
+                          'cleaning',
+                          'Cleaning (${cleaningRooms.length})',
+                          activeFilter,
+                          (val) {
+                            setModalState(() => activeFilter = val);
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -1314,22 +1544,38 @@ class DashboardScreen extends StatelessWidget {
                         ? Center(
                             child: Text(
                               'No rooms in this category',
-                              style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 13),
+                              style: GoogleFonts.inter(
+                                color: AppTheme.slateMuted,
+                                fontSize: 13,
+                              ),
                             ),
                           )
                         : ListView.separated(
                             itemCount: displayedRooms.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final room = displayedRooms[i];
-                              final isOccupied = room.status == RoomStatus.occupied;
+                              final isOccupied =
+                                  room.status == RoomStatus.occupied;
                               final isVacant = room.status == RoomStatus.vacant;
-                              final isCleaning = room.status == RoomStatus.needsCleaning;
-                              final isReserved = room.status == RoomStatus.reserved;
+                              final isCleaning =
+                                  room.status == RoomStatus.needsCleaning;
+                              final isReserved =
+                                  room.status == RoomStatus.reserved;
 
                               // Find associated stay if booked
-                              final activeStay = store.activeStays.where((s) => s.roomId == room.id).firstOrNull ??
-                                  store.stays.where((s) => s.roomId == room.id && s.status != StayStatus.checkedOut).firstOrNull;
+                              final activeStay =
+                                  store.activeStays
+                                      .where((s) => s.roomId == room.id)
+                                      .firstOrNull ??
+                                  store.stays
+                                      .where(
+                                        (s) =>
+                                            s.roomId == room.id &&
+                                            s.status != StayStatus.checkedOut,
+                                      )
+                                      .firstOrNull;
 
                               Color badgeBg;
                               Color badgeColor;
@@ -1366,8 +1612,8 @@ class DashboardScreen extends StatelessWidget {
                                     color: isOccupied
                                         ? const Color(0xFFBFDBFE)
                                         : isVacant
-                                            ? const Color(0xFFA7F3D0)
-                                            : AppTheme.slateBorder,
+                                        ? const Color(0xFFA7F3D0)
+                                        : AppTheme.slateBorder,
                                   ),
                                 ),
                                 child: Row(
@@ -1378,7 +1624,9 @@ class DashboardScreen extends StatelessWidget {
                                       decoration: BoxDecoration(
                                         color: Colors.white,
                                         borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: AppTheme.slateBorder),
+                                        border: Border.all(
+                                          color: AppTheme.slateBorder,
+                                        ),
                                       ),
                                       child: Center(
                                         child: Text(
@@ -1394,15 +1642,21 @@ class DashboardScreen extends StatelessWidget {
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Row(
                                             children: [
                                               Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 2,
+                                                    ),
                                                 decoration: BoxDecoration(
                                                   color: badgeBg,
-                                                  borderRadius: BorderRadius.circular(6),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
                                                 ),
                                                 child: Text(
                                                   badgeText,
@@ -1416,26 +1670,41 @@ class DashboardScreen extends StatelessWidget {
                                               const SizedBox(width: 6),
                                               Text(
                                                 'Floor ${room.floor}',
-                                                style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 10.5,
+                                                  color: AppTheme.slateMuted,
+                                                ),
                                               ),
                                             ],
                                           ),
                                           const SizedBox(height: 3),
                                           Text(
                                             room.categoryName,
-                                            style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
+                                            style: GoogleFonts.inter(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: AppTheme.slateDark,
+                                            ),
                                           ),
-                                          if (isOccupied && activeStay?.guest != null) ...[
+                                          if (isOccupied &&
+                                              activeStay?.guest != null) ...[
                                             const SizedBox(height: 2),
                                             Text(
                                               'Guest: ${activeStay!.guest!.fullName}',
-                                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF2563EB), fontWeight: FontWeight.w600),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                color: const Color(0xFF2563EB),
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
                                           ] else ...[
                                             const SizedBox(height: 2),
                                             Text(
                                               'Base Rate: ₹${room.baseRate.toInt()}/night',
-                                              style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 10.5,
+                                                color: AppTheme.slateMuted,
+                                              ),
                                             ),
                                           ],
                                         ],
@@ -1445,48 +1714,113 @@ class DashboardScreen extends StatelessWidget {
                                       ElevatedButton(
                                         onPressed: () {
                                           Navigator.pop(ctx);
-                                          onNavigateTab(2, initialMode: BookingMode.checkIn, preselectedRoomId: room.id);
+                                          onNavigateTab(
+                                            2,
+                                            initialMode: BookingMode.checkIn,
+                                            preselectedRoomId: room.id,
+                                          );
                                         },
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF059669),
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          backgroundColor: const Color(
+                                            0xFF059669,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
                                           elevation: 0,
                                         ),
-                                        child: const Text('Book', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        child: const Text(
+                                          'Book',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       )
                                     else if (isCleaning)
                                       ElevatedButton(
                                         onPressed: () {
-                                          store.updateRoomStatus(room.id, RoomStatus.vacant);
+                                          store.updateRoomStatus(
+                                            room.id,
+                                            RoomStatus.vacant,
+                                          );
                                           setModalState(() {});
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text('Room ${room.roomNumber} marked clean & ready to sell.')),
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Room ${room.roomNumber} marked clean & ready to sell.',
+                                              ),
+                                            ),
                                           );
                                         },
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFFD97706),
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          backgroundColor: const Color(
+                                            0xFFD97706,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 6,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
                                           elevation: 0,
                                         ),
-                                        child: const Text('Mark Clean', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                                        child: const Text(
+                                          'Mark Clean',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       )
                                     else if (isOccupied && activeStay != null)
                                       OutlinedButton(
                                         onPressed: () {
                                           Navigator.pop(ctx);
                                           Navigator.of(context).push(
-                                            MaterialPageRoute(builder: (_) => BookingCheckOutScreen(stay: activeStay)),
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  BookingCheckOutScreen(
+                                                    stay: activeStay,
+                                                  ),
+                                            ),
                                           );
                                         },
                                         style: OutlinedButton.styleFrom(
-                                          foregroundColor: const Color(0xFF2563EB),
-                                          side: const BorderSide(color: Color(0xFF2563EB)),
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          foregroundColor: const Color(
+                                            0xFF2563EB,
+                                          ),
+                                          side: const BorderSide(
+                                            color: Color(0xFF2563EB),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
                                         ),
-                                        child: const Text('Folio', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        child: const Text(
+                                          'Folio',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
                                   ],
                                 ),
@@ -1503,7 +1837,12 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFilterChip(String key, String title, String activeFilter, ValueChanged<String> onSelected) {
+  Widget _buildFilterChip(
+    String key,
+    String title,
+    String activeFilter,
+    ValueChanged<String> onSelected,
+  ) {
     final isSelected = activeFilter == key;
     return InkWell(
       onTap: () => onSelected(key),
@@ -1528,7 +1867,11 @@ class DashboardScreen extends StatelessWidget {
 
   // ── TODAY'S COLLECTION DRAWER ──
   void _showCollectionDrawer(BuildContext context, HotelStore store) {
-    final currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final currencyFormat = NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
     final now = DateTime.now();
     final todayPayments = store.payments.where((p) {
       return p.recordedAt.year == now.year &&
@@ -1569,23 +1912,37 @@ class DashboardScreen extends StatelessWidget {
                   children: [
                     Text(
                       'Today\'s Payment Receipts',
-                      style: GoogleFonts.outfit(fontSize: 19, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                      style: GoogleFonts.outfit(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                      ),
                     ),
                     Text(
                       'Total Collected: ${currencyFormat.format(store.revenueToday)}',
-                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.slateMuted,
+                      ),
                     ),
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF3E8FF),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     currencyFormat.format(store.revenueToday),
-                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: const Color(0xFF7C3AED), fontSize: 14),
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF7C3AED),
+                      fontSize: 14,
+                    ),
                   ),
                 ),
               ],
@@ -1597,16 +1954,27 @@ class DashboardScreen extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey.shade300),
+                          Icon(
+                            Icons.receipt_long_outlined,
+                            size: 48,
+                            color: Colors.grey.shade300,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'No Payments Recorded Today',
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: AppTheme.slateDark,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Payments from advance check-ins or checkout settlements appear here.',
-                            style: GoogleFonts.inter(color: AppTheme.slateMuted, fontSize: 12),
+                            style: GoogleFonts.inter(
+                              color: AppTheme.slateMuted,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -1631,17 +1999,28 @@ class DashboardScreen extends StatelessWidget {
                                 children: [
                                   Text(
                                     '${p.method.toUpperCase()} • ${p.paymentType.toUpperCase()}',
-                                    style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
+                                    style: GoogleFonts.inter(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: AppTheme.slateDark,
+                                    ),
                                   ),
                                   Text(
                                     'Recorded: ${DateFormat('hh:mm a').format(p.recordedAt)} ${p.reference != null ? '• Ref: ${p.reference}' : ''}',
-                                    style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10.5,
+                                      color: AppTheme.slateMuted,
+                                    ),
                                   ),
                                 ],
                               ),
                               Text(
                                 currencyFormat.format(p.amount),
-                                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15, color: const Color(0xFF059669)),
+                                style: GoogleFonts.outfit(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: const Color(0xFF059669),
+                                ),
                               ),
                             ],
                           ),
@@ -1694,7 +2073,10 @@ class DashboardScreen extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppTheme.brandLight,
                     borderRadius: BorderRadius.circular(12),
@@ -1713,7 +2095,10 @@ class DashboardScreen extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '${store.currentProperty.name} (${store.currentProperty.city})',
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppTheme.slateMuted,
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -1733,7 +2118,10 @@ class DashboardScreen extends StatelessWidget {
                     children: [
                       Text(
                         'Room Occupancy Rate',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       Text(
                         '${store.occupancyRate}%',
@@ -1749,16 +2137,23 @@ class DashboardScreen extends StatelessWidget {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: LinearProgressIndicator(
-                      value: store.totalRooms > 0 ? (store.occupiedRooms / store.totalRooms) : 0,
+                      value: store.totalRooms > 0
+                          ? (store.occupiedRooms / store.totalRooms)
+                          : 0,
                       backgroundColor: AppTheme.slateBorder,
-                      valueColor: const AlwaysStoppedAnimation(AppTheme.brandPrimary),
+                      valueColor: const AlwaysStoppedAnimation(
+                        AppTheme.brandPrimary,
+                      ),
                       minHeight: 8,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '${store.occupiedRooms} occupied • ${store.vacantRooms} vacant • ${store.cleaningRooms} cleaning of ${store.totalRooms} rooms',
-                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                    ),
                   ),
                 ],
               ),
@@ -1780,11 +2175,21 @@ class DashboardScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Revenue Today', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
+                        Text(
+                          'Revenue Today',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Text(
                           '₹${store.revenueToday.toInt()}',
-                          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.slateDark,
+                          ),
                         ),
                       ],
                     ),
@@ -1802,18 +2207,38 @@ class DashboardScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Avg Room Rate (ADR)', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
+                        Text(
+                          'Avg Room Rate (ADR)',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Builder(
                           builder: (context) {
                             final adr = store.occupiedRooms > 0
-                                ? (store.activeStays.fold<double>(0.0, (sum, s) => sum + s.nightlyRate) / store.occupiedRooms).round()
+                                ? (store.activeStays.fold<double>(
+                                            0.0,
+                                            (sum, s) => sum + s.nightlyRate,
+                                          ) /
+                                          store.occupiedRooms)
+                                      .round()
                                 : (store.rooms.isNotEmpty
-                                    ? (store.rooms.fold<double>(0.0, (sum, r) => sum + r.baseRate) / store.rooms.length).round()
-                                    : 0);
+                                      ? (store.rooms.fold<double>(
+                                                  0.0,
+                                                  (sum, r) => sum + r.baseRate,
+                                                ) /
+                                                store.rooms.length)
+                                            .round()
+                                      : 0);
                             return Text(
                               '₹$adr',
-                              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                              style: GoogleFonts.outfit(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.slateDark,
+                              ),
                             );
                           },
                         ),
@@ -1839,7 +2264,9 @@ class DashboardScreen extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 backgroundColor: AppTheme.brandPrimary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
           ],

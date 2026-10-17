@@ -9,8 +9,7 @@
     "test-images/**",
     "client/",
     "client/**",
-    ".wwebjs_auth/**",
-    ".wwebjs_cache/**",
+    ".baileys_auth/**",
     "data/**",
     "*.log"
   ],

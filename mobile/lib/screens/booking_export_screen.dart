@@ -150,11 +150,13 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         final q = _searchQuery.toLowerCase();
         final primaryMatch = (stay.guest?.fullName.toLowerCase().contains(q) ?? false) ||
             (stay.guest?.phone.toLowerCase().contains(q) ?? false) ||
+            (stay.guest?.displayIdNumber.toLowerCase().contains(q) ?? false) ||
             (stay.guest?.idNumberMasked.toLowerCase().contains(q) ?? false);
 
         final coGuestMatch = stay.coGuests.any((cg) =>
             cg.fullName.toLowerCase().contains(q) ||
             cg.phone.toLowerCase().contains(q) ||
+            cg.displayIdNumber.toLowerCase().contains(q) ||
             cg.idNumberMasked.toLowerCase().contains(q));
 
         final roomMatch = (stay.room?.roomNumber.toLowerCase().contains(q) ?? false) ||
@@ -245,22 +247,22 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
       final coGuests = stay.coGuests;
       final coGuestsSummary = coGuests.map((cg) {
         final phone = cg.phone.isNotEmpty ? ' [${cg.phone}]' : '';
-        final id = cg.idNumberMasked.isNotEmpty ? ' (${cg.idType.toUpperCase()}: ${cg.idNumberMasked})' : '';
+        final id = cg.displayIdNumber.isNotEmpty ? ' (${cg.idType.toUpperCase()}: ${cg.displayIdNumber})' : '';
         return '${cg.fullName}$phone$id';
       }).join('; ');
 
       // Specific co-guest slots
       final cg1Name = coGuests.isNotEmpty ? coGuests[0].fullName : '';
       final cg1Phone = coGuests.isNotEmpty ? coGuests[0].phone : '';
-      final cg1Id = coGuests.isNotEmpty ? '${coGuests[0].idType.toUpperCase()}: ${coGuests[0].idNumberMasked}' : '';
+      final cg1Id = coGuests.isNotEmpty ? '${coGuests[0].idType.toUpperCase()}: ${coGuests[0].displayIdNumber}' : '';
 
       final cg2Name = coGuests.length > 1 ? coGuests[1].fullName : '';
       final cg2Phone = coGuests.length > 1 ? coGuests[1].phone : '';
-      final cg2Id = coGuests.length > 1 ? '${coGuests[1].idType.toUpperCase()}: ${coGuests[1].idNumberMasked}' : '';
+      final cg2Id = coGuests.length > 1 ? '${coGuests[1].idType.toUpperCase()}: ${coGuests[1].displayIdNumber}' : '';
 
       final cg3Name = coGuests.length > 2 ? coGuests[2].fullName : '';
       final cg3Phone = coGuests.length > 2 ? coGuests[2].phone : '';
-      final cg3Id = coGuests.length > 2 ? '${coGuests[2].idType.toUpperCase()}: ${coGuests[2].idNumberMasked}' : '';
+      final cg3Id = coGuests.length > 2 ? '${coGuests[2].idType.toUpperCase()}: ${coGuests[2].displayIdNumber}' : '';
 
       final subtotal = bill?.subtotal ?? (stay.nightlyRate * stay.actualNights);
       final amountPaid = bill?.amountPaid ?? 0.0;
@@ -286,7 +288,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         stay.guest?.phone ?? 'N/A',
         stay.guest?.email ?? 'N/A',
         stay.guest?.idType.toUpperCase() ?? 'AADHAAR',
-        stay.guest?.idNumberMasked ?? 'XXXX',
+        stay.guest?.displayIdNumber ?? 'XXXX',
         stay.guest?.address ?? 'N/A',
         coGuests.length.toString(),
         coGuestsSummary.isNotEmpty ? coGuestsSummary : 'None',
@@ -761,12 +763,12 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                   controller: _searchController,
                   onChanged: (val) => setState(() => _searchQuery = val),
                   decoration: InputDecoration(
-                    hintText: 'Search guest, phone, aadhaar, room...',
-                    hintStyle: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade400),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppTheme.slateMuted),
+                    hintText: 'Search guest, phone, ID, room...',
+                    hintStyle: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.slateMuted),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppTheme.brandPrimary),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear, size: 18),
+                            icon: const Icon(Icons.clear, size: 18, color: AppTheme.slateMuted),
                             onPressed: () {
                               _searchController.clear();
                               setState(() => _searchQuery = '');
@@ -774,11 +776,19 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                           )
                         : null,
                     filled: true,
-                    fillColor: Colors.grey.shade100,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppTheme.brandPrimary),
                     ),
                   ),
                 ),
@@ -819,27 +829,35 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         height: 38,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(color: AppTheme.slateBorder),
                         ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedRoomFilter,
-                            isExpanded: true,
-                            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark),
-                            items: [
-                              const DropdownMenuItem(value: 'all', child: Text('All Rooms')),
-                              ...store.rooms.map((r) => DropdownMenuItem(
-                                    value: r.id,
-                                    child: Text('Room ${r.roomNumber} (${r.categoryName})'),
-                                  )),
-                            ],
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedRoomFilter = val);
-                            },
-                          ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.meeting_room_outlined, size: 15, color: AppTheme.brandPrimary),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedRoomFilter,
+                                  isExpanded: true,
+                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: AppTheme.slateMuted),
+                                  style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                                  items: [
+                                    const DropdownMenuItem(value: 'all', child: Text('All Rooms')),
+                                    ...store.rooms.map((r) => DropdownMenuItem(
+                                          value: r.id,
+                                          child: Text('Room ${r.roomNumber} (${r.categoryName})', overflow: TextOverflow.ellipsis),
+                                        )),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) setState(() => _selectedRoomFilter = val);
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -851,26 +869,34 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         height: 38,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(color: AppTheme.slateBorder),
                         ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedStatusFilter,
-                            isExpanded: true,
-                            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-                            style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark),
-                            items: const [
-                              DropdownMenuItem(value: 'all', child: Text('All Statuses')),
-                              DropdownMenuItem(value: 'active', child: Text('Active / In-House')),
-                              DropdownMenuItem(value: 'checkedOut', child: Text('Checked Out')),
-                              DropdownMenuItem(value: 'reserved', child: Text('Reserved')),
-                            ],
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedStatusFilter = val);
-                            },
-                          ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.tune_rounded, size: 15, color: AppTheme.brandPrimary),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedStatusFilter,
+                                  isExpanded: true,
+                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: AppTheme.slateMuted),
+                                  style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                                  items: const [
+                                    DropdownMenuItem(value: 'all', child: Text('All Statuses')),
+                                    DropdownMenuItem(value: 'active', child: Text('In-House')),
+                                    DropdownMenuItem(value: 'checkedOut', child: Text('Checked Out')),
+                                    DropdownMenuItem(value: 'reserved', child: Text('Reserved')),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) setState(() => _selectedStatusFilter = val);
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -882,8 +908,20 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
 
           // ── SUMMARY METRICS STRIP ──
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: const Color(0xFFF1F5F9),
+            margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.slateBorder),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -893,22 +931,25 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                   Icons.receipt_long_rounded,
                   AppTheme.brandPrimary,
                 ),
+                Container(width: 1, height: 26, color: AppTheme.slateBorder),
                 _buildMetricItem(
-                  'Total Guests',
+                  'Guests',
                   '$totalGuestsCount',
                   Icons.groups_rounded,
                   const Color(0xFF2563EB),
                 ),
+                Container(width: 1, height: 26, color: AppTheme.slateBorder),
                 _buildMetricItem(
                   'Billed Tariff',
                   currencyFormat.format(totalBilled),
-                  Icons.currency_rupee_rounded,
-                  const Color(0xFF059669),
+                  Icons.payments_rounded,
+                  const Color(0xFF0F172A),
                 ),
+                Container(width: 1, height: 26, color: AppTheme.slateBorder),
                 _buildMetricItem(
                   'Collected',
                   currencyFormat.format(totalCollected),
-                  Icons.check_circle_outline_rounded,
+                  Icons.check_circle_rounded,
                   const Color(0xFF16A34A),
                 ),
               ],
@@ -996,21 +1037,47 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
   // ── FILTER CHIPS ──
   Widget _buildPresetChip(String label, DateFilterPreset preset) {
     final isSelected = _selectedPreset == preset;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        if (selected) setState(() => _selectedPreset = preset);
-      },
-      labelStyle: GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-        color: isSelected ? Colors.white : AppTheme.slateDark,
+    return InkWell(
+      onTap: () => setState(() => _selectedPreset = preset),
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.brandPrimary : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            width: 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.25),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isSelected) ...[
+              const Icon(Icons.check_rounded, size: 12, color: Colors.white),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                 fontSize: 11,
+                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                 color: isSelected ? Colors.white : AppTheme.slateDark,
+              ),
+            ),
+          ],
+        ),
       ),
-      selectedColor: AppTheme.brandPrimary,
-      backgroundColor: Colors.grey.shade100,
-      visualDensity: VisualDensity.compact,
-      side: BorderSide(color: isSelected ? AppTheme.brandPrimary : Colors.grey.shade300),
     );
   }
 
@@ -1020,18 +1087,45 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         ? DateFormat('MMM yyyy').format(_selectedMonth!)
         : 'Select Month';
 
-    return ActionChip(
-      avatar: Icon(Icons.calendar_month_rounded, size: 14, color: isSelected ? Colors.white : AppTheme.slateDark),
-      label: Text(label),
-      onPressed: _showMonthPickerSheet,
-      labelStyle: GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-        color: isSelected ? Colors.white : AppTheme.slateDark,
+    return InkWell(
+      onTap: _showMonthPickerSheet,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.brandPrimary : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            width: 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.25),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.calendar_month_rounded, size: 12, color: isSelected ? Colors.white : AppTheme.slateDark),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? Colors.white : AppTheme.slateDark,
+              ),
+            ),
+          ],
+        ),
       ),
-      backgroundColor: isSelected ? AppTheme.brandPrimary : Colors.grey.shade100,
-      side: BorderSide(color: isSelected ? AppTheme.brandPrimary : Colors.grey.shade300),
-      visualDensity: VisualDensity.compact,
     );
   }
 
@@ -1041,43 +1135,71 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         ? '${DateFormat('d MMM').format(_customStartDate!)} - ${DateFormat('d MMM').format(_customEndDate!)}'
         : 'Custom Range';
 
-    return ActionChip(
-      avatar: Icon(Icons.date_range_rounded, size: 14, color: isSelected ? Colors.white : AppTheme.slateDark),
-      label: Text(label),
-      onPressed: _pickCustomRange,
-      labelStyle: GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-        color: isSelected ? Colors.white : AppTheme.slateDark,
+    return InkWell(
+      onTap: _pickCustomRange,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.brandPrimary : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            width: 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.25),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.date_range_rounded, size: 12, color: isSelected ? Colors.white : AppTheme.slateDark),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? Colors.white : AppTheme.slateDark,
+              ),
+            ),
+          ],
+        ),
       ),
-      backgroundColor: isSelected ? AppTheme.brandPrimary : Colors.grey.shade100,
-      side: BorderSide(color: isSelected ? AppTheme.brandPrimary : Colors.grey.shade300),
-      visualDensity: VisualDensity.compact,
     );
   }
 
   Widget _buildMetricItem(String label, String value, IconData icon, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 11, color: color),
-            const SizedBox(width: 3),
-            Text(label, style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted)),
+            Icon(icon, size: 11.5, color: color),
+            const SizedBox(width: 3.5),
+            Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.slateMuted)),
           ],
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 3),
         Text(
           value,
-          style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+          style: GoogleFonts.outfit(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
         ),
       ],
     );
   }
 
-  // ── COMPACT MINIMAL BOOKING CARD ──
+  // ── ELEVATED LUXURY BOOKING CARD ──
   Widget _buildBookingCard(Stay stay, HotelStore store, NumberFormat currencyFormat) {
     Bill? bill;
     try {
@@ -1091,18 +1213,22 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
     // Status styling
     Color statusBg;
     Color statusFg;
+    Color statusBorder;
     String statusLabel;
     if (stay.status == StayStatus.active) {
-      statusBg = const Color(0xFFDCFCE7);
-      statusFg = const Color(0xFF16A34A);
+      statusBg = const Color(0xFFECFDF5);
+      statusFg = const Color(0xFF059669);
+      statusBorder = const Color(0xFFA7F3D0);
       statusLabel = 'In-House';
     } else if (stay.status == StayStatus.checkedOut) {
-      statusBg = const Color(0xFFE0E7FF);
-      statusFg = const Color(0xFF4338CA);
+      statusBg = const Color(0xFFF1F5F9);
+      statusFg = const Color(0xFF475569);
+      statusBorder = const Color(0xFFCBD5E1);
       statusLabel = 'Checked Out';
     } else {
-      statusBg = const Color(0xFFFEF3C7);
+      statusBg = const Color(0xFFFFFBEB);
       statusFg = const Color(0xFFD97706);
+      statusBorder = const Color(0xFFFDE68A);
       statusLabel = 'Reserved';
     }
 
@@ -1132,13 +1258,14 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
           ),
           child: Row(
             children: [
-              // Room badge
+              // Refined Room badge
               Container(
-                width: 46,
-                height: 46,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: AppTheme.slateDark,
-                  borderRadius: BorderRadius.circular(10),
+                  color: const Color(0xFFF5F3FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.2)),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1146,18 +1273,18 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                     Text(
                       'ROOM',
                       style: GoogleFonts.inter(
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white70,
-                        letterSpacing: 0.5,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.brandPrimary,
+                        letterSpacing: 0.8,
                       ),
                     ),
                     Text(
                       stay.room?.roomNumber ?? '—',
                       style: GoogleFonts.outfit(
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: AppTheme.slateDark,
                       ),
                     ),
                   ],
@@ -1188,16 +1315,17 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         if (totalGuests > 1) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                             decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
+                              color: const Color(0xFFEFF6FF),
                               borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFFBFDBFE), width: 0.5),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(Icons.people_alt_rounded, size: 10, color: Color(0xFF2563EB)),
-                                const SizedBox(width: 2),
+                                const SizedBox(width: 3),
                                 Text(
                                   '$totalGuests',
                                   style: GoogleFonts.inter(
@@ -1234,45 +1362,73 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                     decoration: BoxDecoration(
                       color: statusBg,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: statusBorder, width: 0.8),
                     ),
-                    child: Text(
-                      statusLabel,
-                      style: GoogleFonts.inter(
-                        color: statusFg,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 5,
+                          height: 5,
+                          decoration: BoxDecoration(color: statusFg, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          statusLabel,
+                          style: GoogleFonts.inter(
+                            color: statusFg,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     currencyFormat.format(subtotal),
                     style: GoogleFonts.outfit(
-                      fontSize: 13,
+                      fontSize: 13.5,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.slateDark,
                     ),
                   ),
                   if (outstanding > 0)
-                    Text(
-                      '${currencyFormat.format(outstanding)} due',
-                      style: GoogleFonts.inter(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.redAccent,
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${currencyFormat.format(outstanding)} due',
+                        style: GoogleFonts.inter(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFFDC2626),
+                        ),
                       ),
                     )
                   else
-                    Text(
-                      'Paid',
-                      style: GoogleFonts.inter(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF16A34A),
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECFDF5),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Paid',
+                        style: GoogleFonts.inter(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF16A34A),
+                        ),
                       ),
                     ),
                 ],
@@ -1544,7 +1700,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${stay.guest?.phone ?? "No phone"} • ${stay.guest?.idType.toUpperCase() ?? "ID"}: ${stay.guest?.idNumberMasked ?? "—"}',
+                                    '${stay.guest?.phone ?? "No phone"} • ${stay.guest?.idType.toUpperCase() ?? "ID"}: ${stay.guest?.displayIdNumber ?? "—"}',
                                     style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
                                   ),
                                 ],
@@ -1592,7 +1748,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                           style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12, color: AppTheme.slateDark),
                                         ),
                                         Text(
-                                          '${cg.phone.isNotEmpty ? cg.phone : "No phone"} • ${cg.idType.toUpperCase()}: ${cg.idNumberMasked}',
+                                          '${cg.phone.isNotEmpty ? cg.phone : "No phone"} • ${cg.idType.toUpperCase()}: ${cg.displayIdNumber}',
                                           style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted),
                                         ),
                                       ],
@@ -1800,7 +1956,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
               if (guest.email != null && guest.email!.isNotEmpty)
                 _buildProfileDetailRow('Email Address', guest.email!, Icons.email_rounded),
               _buildProfileDetailRow('ID Document Type', guest.idType.toUpperCase(), Icons.badge_rounded),
-              _buildProfileDetailRow('ID Number', guest.idNumberMasked.isNotEmpty ? guest.idNumberMasked : 'Not provided', Icons.credit_card_rounded),
+              _buildProfileDetailRow('ID Number', guest.displayIdNumber.isNotEmpty ? guest.displayIdNumber : 'Not provided', Icons.credit_card_rounded),
               if (guest.dateOfBirth != null && guest.dateOfBirth!.isNotEmpty)
                 _buildProfileDetailRow('Date of Birth', guest.dateOfBirth!, Icons.cake_rounded),
               if (guest.gender != null && guest.gender!.isNotEmpty)

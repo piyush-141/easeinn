@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: easeinn
+    runtime: docker
+    dockerfilePath: ./ocr-server/Dockerfile
+    dockerContext: ./ocr-server
+    healthCheckPath: /
+    disk:
+      name: easeinn-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: WHATSAPP_DATA_DIR
+        value: /data
+      - key: WHATSAPP_AUTH_DIR
+        value: /data/baileys_auth
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false

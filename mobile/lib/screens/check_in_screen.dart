@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -69,7 +70,19 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
   // Form Controllers (Auto-filled by OCR)
   final _nameController = TextEditingController();
-  final _phoneController = TextEditingController(text: '+91 ');
+  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+
+  String _formatPhoneForStorage(String input) {
+    final clean = input.replaceAll(RegExp(r'\D'), '');
+    if (clean.isEmpty) return '';
+    if (clean.length == 10) {
+      return '+91 $clean';
+    } else if (clean.length == 12 && clean.startsWith('91')) {
+      return '+91 ${clean.substring(2)}';
+    }
+    return input.startsWith('+') ? input : '+91 $clean';
+  }
   final _idNumberController = TextEditingController();
   final _dobController = TextEditingController();
   final _genderController = TextEditingController(text: 'Male');
@@ -128,6 +141,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _emailController.dispose();
     _idNumberController.dispose();
     _dobController.dispose();
     _genderController.dispose();
@@ -460,7 +474,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
       _currentStep = 1;
       _activeSection = _AirbnbStep1Section.where;
       _nameController.clear();
-      _phoneController.text = '+91 ';
+      _phoneController.clear();
+      _emailController.clear();
       _idNumberController.clear();
       _dobController.clear();
       _genderController.text = 'Male';
@@ -812,7 +827,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
   void _finalizeCheckIn(HotelStore store, Room selectedRoom, double totalEstimatedAmount, double advance) {
     final coGuestsData = _extraGuests.map((g) => {
       'fullName': g.nameCtrl.text.trim(),
-      'phone': g.phoneCtrl.text.trim(),
+      'phone': _formatPhoneForStorage(g.phoneCtrl.text.trim()),
+      'email': g.emailCtrl.text.trim().isNotEmpty ? g.emailCtrl.text.trim() : null,
       'idType': g.idType,
       'idNumber': g.idNumberCtrl.text.trim(),
       'dateOfBirth': g.dobCtrl.text.trim(),
@@ -821,6 +837,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
       'pincode': g.pincodeCtrl.text.trim(),
       'fatherName': g.fatherNameCtrl.text.trim(),
     }).toList();
+
+    final primaryEmail = _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null;
+    final primaryPhone = _formatPhoneForStorage(_phoneController.text.trim());
 
     final result = _bookingMode == BookingMode.reservation
         ? store.reserveRoom(
@@ -832,7 +851,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
             numKids: _numKids,
             nightlyRate: selectedRoom.baseRate,
             fullName: _nameController.text.trim(),
-            phone: _phoneController.text.trim(),
+            phone: primaryPhone,
+            email: primaryEmail,
             idType: _idType,
             idNumber: _idNumberController.text.trim(),
             dateOfBirth: _dobController.text.trim(),
@@ -853,7 +873,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
             numKids: _numKids,
             nightlyRate: selectedRoom.baseRate,
             fullName: _nameController.text.trim(),
-            phone: _phoneController.text.trim(),
+            phone: primaryPhone,
+            email: primaryEmail,
             idType: _idType,
             idNumber: _idNumberController.text.trim(),
             dateOfBirth: _dobController.text.trim(),
@@ -1348,6 +1369,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
                             children: [
@@ -1358,6 +1380,29 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
                               ),
                             ],
+                          ),
+                          InkWell(
+                            onTap: _addExtraGuest,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: AppTheme.brandLight,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.add_rounded, size: 14, color: AppTheme.brandPrimary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '+ Add Guest',
+                                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -1870,57 +1915,50 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
                 const SizedBox(height: 10),
 
-                // Auto-filled name + ID row
+                // 1. Full Name
+                TextField(
+                  controller: _nameController,
+                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'Full Name',
+                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
+                    prefixIcon: const Icon(Icons.person_outline_rounded, size: 15, color: AppTheme.slateMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // 2. ID Number
+                TextField(
+                  controller: _idNumberController,
+                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'ID Number (${_idType.toUpperCase()})',
+                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
+                    prefixIcon: const Icon(Icons.badge_outlined, size: 15, color: AppTheme.slateMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // 3. DOB & Gender (Option selector)
                 Row(
                   children: [
                     Expanded(
                       flex: 3,
                       child: TextField(
-                        controller: _nameController,
-                        style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'Full Name',
-                          hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.person_outline_rounded, size: 15, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: _idNumberController,
-                        style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'ID No.',
-                          hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.badge_outlined, size: 15, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-
-                // DOB + Gender + Phone row
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
                         controller: _dobController,
                         style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
                         decoration: InputDecoration(
-                          hintText: 'DOB',
+                          hintText: 'DOB (DD/MM/YYYY)',
                           hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
                           prefixIcon: const Icon(Icons.calendar_today_outlined, size: 13, color: AppTheme.slateMuted),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -1933,13 +1971,51 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
+                      flex: 2,
+                      child: Container(
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.slateBorder),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: ['Male', 'Female', 'Other'].contains(_genderController.text)
+                                ? _genderController.text
+                                : 'Male',
+                            icon: const Icon(Icons.arrow_drop_down_rounded, size: 18, color: AppTheme.slateMuted),
+                            isExpanded: true,
+                            style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                            items: const [
+                              DropdownMenuItem(value: 'Male', child: Text('Male')),
+                              DropdownMenuItem(value: 'Female', child: Text('Female')),
+                              DropdownMenuItem(value: 'Other', child: Text('Other')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setState(() => _genderController.text = val);
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+
+                // 4. Address from back & Pincode
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
                       child: TextField(
-                        controller: _genderController,
+                        controller: _addressController,
                         style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
                         decoration: InputDecoration(
-                          hintText: 'Gender',
+                          hintText: 'Address (from back of ID)',
                           hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.wc_outlined, size: 13, color: AppTheme.slateMuted),
+                          prefixIcon: const Icon(Icons.home_outlined, size: 13, color: AppTheme.slateMuted),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           isDense: true,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
@@ -1950,45 +2026,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: TextField(
-                        controller: _phoneController,
-                        keyboardType: TextInputType.phone,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'Phone',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.phone_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-
-                // Address & Back Details row
-                TextField(
-                  controller: _addressController,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: 'Address (from back of ID)',
-                    hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.home_outlined, size: 13, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
+                      flex: 2,
                       child: TextField(
                         controller: _pincodeController,
                         keyboardType: TextInputType.number,
@@ -2005,24 +2043,75 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: TextField(
-                        controller: _fatherNameController,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'Father / Spouse',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.people_outline_rounded, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
+                  ],
+                ),
+
+                // 5. Divider
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 1, color: AppTheme.slateBorder),
+                ),
+
+                // 6. Phone No (Same as WhatsApp live test)
+                TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(10),
+                  ],
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark, letterSpacing: 0.8),
+                  decoration: InputDecoration(
+                    hintText: '9850550645',
+                    hintStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted, letterSpacing: 0.8),
+                    prefixIcon: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: const BoxDecoration(
+                        border: Border(right: BorderSide(color: AppTheme.slateBorder, width: 1)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('🇮🇳', style: TextStyle(fontSize: 13)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '+91',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.slateDark,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // 7. Email (Optional)
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'Email (Optional)',
+                    hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
+                    prefixIcon: const Icon(Icons.email_outlined, size: 13, color: AppTheme.slateMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                  ),
                 ),
               ],
             ),
@@ -2314,57 +2403,50 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
                 const SizedBox(height: 10),
 
-                // Auto-filled name + ID row
+                // 1. Full Name
+                TextField(
+                  controller: g.nameCtrl,
+                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'Full Name',
+                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
+                    prefixIcon: const Icon(Icons.person_outline_rounded, size: 15, color: AppTheme.slateMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // 2. ID Number
+                TextField(
+                  controller: g.idNumberCtrl,
+                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'ID Number (${g.idType.toUpperCase()})',
+                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
+                    prefixIcon: const Icon(Icons.badge_outlined, size: 15, color: AppTheme.slateMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // 3. DOB & Gender (Option selector)
                 Row(
                   children: [
                     Expanded(
                       flex: 3,
                       child: TextField(
-                        controller: g.nameCtrl,
-                        style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'Full Name',
-                          hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.person_outline_rounded, size: 15, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: g.idNumberCtrl,
-                        style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'ID No.',
-                          hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.badge_outlined, size: 15, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-
-                // DOB + Gender + Phone row
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
                         controller: g.dobCtrl,
                         style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
                         decoration: InputDecoration(
-                          hintText: 'DOB',
+                          hintText: 'DOB (DD/MM/YYYY)',
                           hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
                           prefixIcon: const Icon(Icons.calendar_today_outlined, size: 13, color: AppTheme.slateMuted),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -2377,13 +2459,51 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
+                      flex: 2,
+                      child: Container(
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.slateBorder),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: ['Male', 'Female', 'Other'].contains(g.genderCtrl.text)
+                                ? g.genderCtrl.text
+                                : 'Male',
+                            icon: const Icon(Icons.arrow_drop_down_rounded, size: 18, color: AppTheme.slateMuted),
+                            isExpanded: true,
+                            style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                            items: const [
+                              DropdownMenuItem(value: 'Male', child: Text('Male')),
+                              DropdownMenuItem(value: 'Female', child: Text('Female')),
+                              DropdownMenuItem(value: 'Other', child: Text('Other')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setState(() => g.genderCtrl.text = val);
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+
+                // 4. Address from back & Pincode
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
                       child: TextField(
-                        controller: g.genderCtrl,
+                        controller: g.addressCtrl,
                         style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
                         decoration: InputDecoration(
-                          hintText: 'Gender',
+                          hintText: 'Address (from back of ID)',
                           hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.wc_outlined, size: 13, color: AppTheme.slateMuted),
+                          prefixIcon: const Icon(Icons.home_outlined, size: 13, color: AppTheme.slateMuted),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           isDense: true,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
@@ -2394,45 +2514,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: TextField(
-                        controller: g.phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'Phone',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.phone_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-
-                // Address & Back Details row
-                TextField(
-                  controller: g.addressCtrl,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: 'Address (from back of ID)',
-                    hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.home_outlined, size: 13, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
+                      flex: 2,
                       child: TextField(
                         controller: g.pincodeCtrl,
                         keyboardType: TextInputType.number,
@@ -2449,24 +2531,75 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: TextField(
-                        controller: g.fatherNameCtrl,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          hintText: 'Father / Spouse',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.people_outline_rounded, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-                        ),
+                  ],
+                ),
+
+                // 5. Divider
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 1, color: AppTheme.slateBorder),
+                ),
+
+                // 6. Phone No (Same as WhatsApp live test)
+                TextField(
+                  controller: g.phoneCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(10),
+                  ],
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark, letterSpacing: 0.8),
+                  decoration: InputDecoration(
+                    hintText: '9850550645',
+                    hintStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted, letterSpacing: 0.8),
+                    prefixIcon: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: const BoxDecoration(
+                        border: Border(right: BorderSide(color: AppTheme.slateBorder, width: 1)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('🇮🇳', style: TextStyle(fontSize: 13)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '+91',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.slateDark,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // 7. Email (Optional)
+                TextField(
+                  controller: g.emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'Email (Optional)',
+                    hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
+                    prefixIcon: const Icon(Icons.email_outlined, size: 13, color: AppTheme.slateMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                  ),
                 ),
               ],
             ),
@@ -3957,9 +4090,10 @@ class _ExtraGuest {
   bool scanSuccess = false;
   int scanToken = 0;
 
-  // Form controllers (auto-filled by OCR + manual phone)
+  // Form controllers (auto-filled by OCR + manual phone/email)
   final TextEditingController nameCtrl = TextEditingController();
   final TextEditingController phoneCtrl = TextEditingController();
+  final TextEditingController emailCtrl = TextEditingController();
   final TextEditingController idNumberCtrl = TextEditingController();
   final TextEditingController dobCtrl = TextEditingController();
   final TextEditingController genderCtrl = TextEditingController(text: 'Male');
@@ -3970,6 +4104,7 @@ class _ExtraGuest {
   void disposeControllers() {
     nameCtrl.dispose();
     phoneCtrl.dispose();
+    emailCtrl.dispose();
     idNumberCtrl.dispose();
     dobCtrl.dispose();
     genderCtrl.dispose();

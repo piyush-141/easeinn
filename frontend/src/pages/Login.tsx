@@ -1,23 +1,36 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Lock, Mail, ShieldCheck, ArrowRight, Building2 } from 'lucide-react';
+import { Sparkles, Lock, Mail, ShieldCheck, ArrowRight } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('frontdesk@easeinn.com');
-  const [password, setPassword] = useState('••••••••');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const signIn = async (loginEmail: string, loginPassword: string) => {
+    setError(null);
+    setIsSigningIn(true);
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
+    setIsSigningIn(false);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
     navigate('/');
   };
 
-  const handleDemoLogin = () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await signIn(email.trim(), password);
+  };
+
+  const handleDemoLogin = async () => {
     setEmail('frontdesk@easeinn.com');
     setPassword('easeinn2026');
-    setTimeout(() => {
-      navigate('/');
-    }, 400);
+    await signIn('frontdesk@easeinn.com', 'easeinn2026');
   };
 
   return (
@@ -58,6 +71,8 @@ export const Login: React.FC = () => {
             </div>
           </div>
 
+          {error && <p role="alert" className="rounded-xl border border-red-800 bg-red-950/50 px-3 py-2 text-xs text-red-200">{error}</p>}
+
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
               Password
@@ -84,9 +99,10 @@ export const Login: React.FC = () => {
 
           <button
             type="submit"
+            disabled={isSigningIn}
             className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-sm font-bold shadow-lg shadow-brand-500/25 transition transform active:scale-95 flex items-center justify-center gap-2"
           >
-            <span>Sign In to Front Desk</span>
+            <span>{isSigningIn ? 'Signing in…' : 'Sign In to Front Desk'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
@@ -96,6 +112,7 @@ export const Login: React.FC = () => {
           <button
             type="button"
             onClick={handleDemoLogin}
+            disabled={isSigningIn}
             className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-slate-700 text-xs font-bold text-slate-300 hover:text-white transition flex items-center justify-center gap-2"
           >
             <ShieldCheck className="w-4 h-4 text-brand-400" />

@@ -53,8 +53,10 @@ ocr-server/processed/*
 # --- WhatsApp Web Session Credentials (Private) ---
 .wwebjs_auth/
 .wwebjs_cache/
+.baileys_auth/
 **/.wwebjs_auth/
 **/.wwebjs_cache/
+**/.baileys_auth/
 ocr-server/data/
 **/data/whatsapp_logs.json
 

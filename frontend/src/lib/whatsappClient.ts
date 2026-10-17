@@ -5,14 +5,35 @@ import {
   WhatsAppLogEntry,
   WhatsAppPlaceholder,
 } from '../types';
+import { supabase } from './supabase';
 
-const BASE_URL =
-  import.meta.env.VITE_OCR_API_URL ||
-  import.meta.env.VITE_OCR_SERVER_URL ||
-  'http://localhost:3001';
+async function authHeaders(json = false): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('Please sign in to use WhatsApp.');
+  return {
+    Authorization: `Bearer ${session.access_token}`,
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+  };
+}
+
+function resolveBackendUrl(): string {
+  const fromEnv = import.meta.env.VITE_WHATSAPP_API_URL || import.meta.env.VITE_OCR_API_URL || import.meta.env.VITE_OCR_SERVER_URL;
+  if (fromEnv && String(fromEnv).trim()) {
+    return String(fromEnv).replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:3001';
+    }
+  }
+  return 'https://easeinn.onrender.com';
+}
+
+const BASE_URL = resolveBackendUrl();
 
 export async function getWhatsAppStatus(): Promise<WhatsAppSystemStatus> {
-  const res = await fetch(`${BASE_URL}/api/whatsapp/status`);
+  const res = await fetch(`${BASE_URL}/api/whatsapp/status`, { headers: await authHeaders(), signal: AbortSignal.timeout(12000) });
   if (!res.ok) {
     throw new Error(`Failed to fetch WhatsApp status (${res.status})`);
   }
@@ -22,7 +43,7 @@ export async function getWhatsAppStatus(): Promise<WhatsAppSystemStatus> {
 export async function connectWhatsApp(): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/connect`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(true),
   });
   if (!res.ok) {
     throw new Error(`Failed to request WhatsApp connect (${res.status})`);
@@ -33,7 +54,7 @@ export async function connectWhatsApp(): Promise<{ success: boolean; message: st
 export async function disconnectWhatsApp(): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/disconnect`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(true),
   });
   if (!res.ok) {
     throw new Error(`Failed to disconnect WhatsApp (${res.status})`);
@@ -45,7 +66,7 @@ export async function getWhatsAppTemplates(): Promise<{
   templates: Record<string, WhatsAppTemplate>;
   placeholders: WhatsAppPlaceholder[];
 }> {
-  const res = await fetch(`${BASE_URL}/api/whatsapp/templates`);
+  const res = await fetch(`${BASE_URL}/api/whatsapp/templates`, { headers: await authHeaders() });
   if (!res.ok) {
     throw new Error(`Failed to fetch WhatsApp templates (${res.status})`);
   }
@@ -58,7 +79,7 @@ export async function updateWhatsAppTemplate(
 ): Promise<{ success: boolean; template: WhatsAppTemplate }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/templates/${templateId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(true),
     body: JSON.stringify(updates),
   });
   if (!res.ok) {
@@ -73,7 +94,7 @@ export async function resetWhatsAppTemplates(): Promise<{
 }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/templates/reset`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(true),
   });
   if (!res.ok) {
     throw new Error(`Failed to reset templates (${res.status})`);
@@ -88,7 +109,7 @@ export async function previewWhatsAppTemplate(
 ): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/preview`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(true),
     body: JSON.stringify({ templateId, context, templateString }),
   });
   if (!res.ok) {
@@ -107,15 +128,19 @@ export async function sendWhatsAppMessage(payload: {
   bypassDuplicateCheck?: boolean;
 }): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/send`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    method: 'POST', headers: await authHeaders(true),
+    body: JSON.stringify(payload), signal: AbortSignal.timeout(110000),
   });
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && !data.error) data.error = `WhatsApp request failed (${res.status})`;
+  if (data.success && data.accepted !== true) {
+    return { ...data, success: false, error: 'WhatsApp did not confirm acceptance of the message.' };
+  }
+  return data;
 }
 
 export async function getWhatsAppLogs(limit: number = 50): Promise<WhatsAppLogEntry[]> {
-  const res = await fetch(`${BASE_URL}/api/whatsapp/logs?limit=${limit}`);
+  const res = await fetch(`${BASE_URL}/api/whatsapp/logs?limit=${limit}`, { headers: await authHeaders() });
   if (!res.ok) {
     return [];
   }
@@ -138,7 +163,7 @@ export async function triggerCheckInWhatsApp(data: {
   try {
     const res = await fetch(`${BASE_URL}/api/whatsapp/hook/checkin`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await authHeaders(true),
       body: JSON.stringify(data),
     });
     return await res.json();
@@ -163,7 +188,7 @@ export async function triggerCheckOutWhatsApp(data: {
   try {
     const res = await fetch(`${BASE_URL}/api/whatsapp/hook/checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await authHeaders(true),
       body: JSON.stringify(data),
     });
     return await res.json();
@@ -188,7 +213,7 @@ export async function triggerReservationWhatsApp(data: {
   try {
     const res = await fetch(`${BASE_URL}/api/whatsapp/hook/reservation`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await authHeaders(true),
       body: JSON.stringify(data),
     });
     return await res.json();

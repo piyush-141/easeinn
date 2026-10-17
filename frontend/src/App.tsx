@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
 import { HotelProvider } from './context/HotelContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -20,7 +22,31 @@ const Layout: React.FC<{ children: React.ReactNode; onOpenAddHotel: () => void }
   onOpenAddHotel,
 }) => {
   const location = useLocation();
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) {
+        setSession(data.session);
+        setAuthReady(true);
+      }
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
+    });
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
   const isLoginPage = location.pathname === '/login';
+
+  if (!authReady) return <div className="min-h-screen bg-slate-50" />;
+  if (!isLoginPage && !session) return <Navigate to="/login" replace />;
+  if (isLoginPage && session) return <Navigate to="/" replace />;
 
   if (isLoginPage) {
     return <>{children}</>;

@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'supabase_service.dart';
 
 class WhatsAppStatusData {
   final bool success;
-  final String status; // 'DISCONNECTED' | 'QR_READY' | 'AUTHENTICATING' | 'READY'
+  final String status; // 'DISCONNECTED' | 'INITIALIZING' | 'QR_READY' | 'CONNECTED'
   final bool isConnected;
   final bool isReady;
   final String? qrCodeDataUrl;
@@ -127,6 +129,8 @@ class WhatsAppLogItem {
   final String status;
   final String? errorMessage;
   final String messageText;
+  final bool delivered;
+  final String? deliveryStatus;
 
   WhatsAppLogItem({
     required this.id,
@@ -136,6 +140,8 @@ class WhatsAppLogItem {
     required this.status,
     this.errorMessage,
     required this.messageText,
+    this.delivered = false,
+    this.deliveryStatus,
   });
 
   factory WhatsAppLogItem.fromJson(Map<String, dynamic> json) {
@@ -144,20 +150,28 @@ class WhatsAppLogItem {
       timestamp: json['timestamp'] ?? '',
       recipientPhone: json['recipientPhone'] ?? '',
       templateId: json['templateId'] ?? 'custom',
-      status: json['status'] ?? 'SENT',
-      errorMessage: json['errorMessage'],
-      messageText: json['messageText'] ?? '',
+      status: json['status'] ?? 'UNKNOWN',
+        errorMessage: json['errorMessage'] ?? json['error'],
+        messageText: json['messageText'] ?? json['preview'] ?? '',
+        delivered: json['delivered'] == true,
+        deliveryStatus: json['deliveryStatus'],
     );
   }
 }
 
 class WhatsAppService {
+  // Same production host as OCR. Debug/web still talks to the local ocr-server
+  // so QR scan + send can be tested before Render is redeployed.
+  static const String productionBackendUrl = 'https://easeinn.onrender.com';
+  static const String? customBackendUrl = null;
+
   static String? _cachedBaseUrl;
 
-  /// Default server URL resolution:
+  /// Default server URL resolution for local development:
   /// - Android emulator uses 10.0.2.2:3001
   /// - Web / Desktop uses localhost:3001
   static String get defaultBaseUrl {
+    if (kReleaseMode) return productionBackendUrl;
     if (kIsWeb) return 'http://localhost:3001';
     try {
       if (Platform.isAndroid) return 'http://10.0.2.2:3001';
@@ -165,14 +179,46 @@ class WhatsAppService {
     return 'http://localhost:3001';
   }
 
-  static String get baseUrl => _cachedBaseUrl ?? defaultBaseUrl;
+  static String get baseUrl {
+    if (customBackendUrl != null && customBackendUrl!.trim().isNotEmpty) {
+      return customBackendUrl!.trim();
+    }
+    String resolved = _cachedBaseUrl ?? defaultBaseUrl;
+    if (!kIsWeb) {
+      try {
+        if (Platform.isAndroid && (resolved.contains('localhost') || resolved.contains('127.0.0.1'))) {
+          resolved = resolved.replaceAll('localhost', '10.0.2.2').replaceAll('127.0.0.1', '10.0.2.2');
+        }
+      } catch (_) {}
+    }
+    return resolved;
+  }
+
+  static Future<Map<String, String>> _authHeaders({bool json = false}) async {
+    final session = SupabaseConfig.client?.auth.currentSession;
+    if (session == null || session.accessToken.isEmpty) {
+      throw StateError('Please sign in to access WhatsApp.');
+    }
+    return {
+      'Authorization': 'Bearer ${session.accessToken}',
+      if (json) 'Content-Type': 'application/json',
+    };
+  }
 
   static Future<void> loadBaseUrl() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString('whatsapp_server_url');
       if (saved != null && saved.trim().isNotEmpty) {
-        _cachedBaseUrl = saved.trim();
+        String clean = saved.trim();
+        if (!kIsWeb) {
+          try {
+            if (Platform.isAndroid && (clean.contains('localhost') || clean.contains('127.0.0.1'))) {
+              clean = clean.replaceAll('localhost', '10.0.2.2').replaceAll('127.0.0.1', '10.0.2.2');
+            }
+          } catch (_) {}
+        }
+        _cachedBaseUrl = clean;
       }
     } catch (_) {}
   }
@@ -189,7 +235,7 @@ class WhatsAppService {
   static Future<WhatsAppStatusData> getStatus() async {
     try {
       final uri = Uri.parse('$baseUrl/api/whatsapp/status');
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final res = await http.get(uri, headers: await _authHeaders()).timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         return WhatsAppStatusData.fromJson(data);
@@ -222,7 +268,7 @@ class WhatsAppService {
   static Future<bool> connect() async {
     try {
       final uri = Uri.parse('$baseUrl/api/whatsapp/connect');
-      final res = await http.post(uri).timeout(const Duration(seconds: 12));
+      final res = await http.post(uri, headers: await _authHeaders()).timeout(const Duration(seconds: 12));
       final data = jsonDecode(res.body);
       return data['success'] == true;
     } catch (_) {
@@ -234,7 +280,7 @@ class WhatsAppService {
   static Future<bool> disconnect() async {
     try {
       final uri = Uri.parse('$baseUrl/api/whatsapp/disconnect');
-      final res = await http.post(uri).timeout(const Duration(seconds: 10));
+      final res = await http.post(uri, headers: await _authHeaders()).timeout(const Duration(seconds: 12));
       final data = jsonDecode(res.body);
       return data['success'] == true;
     } catch (_) {
@@ -246,7 +292,7 @@ class WhatsAppService {
   static Future<Map<String, WhatsAppTemplateData>> getTemplates() async {
     try {
       final uri = Uri.parse('$baseUrl/api/whatsapp/templates');
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final res = await http.get(uri, headers: await _authHeaders()).timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final rawMap = data['templates'] as Map<String, dynamic>? ?? {};
@@ -268,7 +314,7 @@ class WhatsAppService {
       final uri = Uri.parse('$baseUrl/api/whatsapp/templates/${template.id}');
       final res = await http.put(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: await _authHeaders(json: true),
         body: jsonEncode({
           'name': template.name,
           'description': template.description,
@@ -287,7 +333,7 @@ class WhatsAppService {
   static Future<bool> resetTemplates() async {
     try {
       final uri = Uri.parse('$baseUrl/api/whatsapp/templates/reset');
-      final res = await http.post(uri).timeout(const Duration(seconds: 6));
+      final res = await http.post(uri, headers: await _authHeaders()).timeout(const Duration(seconds: 12));
       final data = jsonDecode(res.body);
       return data['success'] == true;
     } catch (_) {
@@ -305,7 +351,7 @@ class WhatsAppService {
       final uri = Uri.parse('$baseUrl/api/whatsapp/preview');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: await _authHeaders(json: true),
         body: jsonEncode({
           'templateId': templateId,
           'templateString': templateString,
@@ -333,7 +379,7 @@ class WhatsAppService {
       final uri = Uri.parse('$baseUrl/api/whatsapp/send');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: await _authHeaders(json: true),
         body: jsonEncode({
           'recipientPhone': recipientPhone,
           'templateId': templateId,
@@ -341,9 +387,22 @@ class WhatsAppService {
           'variables': context,
           'bypassDuplicateCheck': true,
         }),
-      ).timeout(const Duration(seconds: 15));
-      return jsonDecode(res.body);
+      ).timeout(const Duration(seconds: 110));
+      final data = jsonDecode(res.body);
+      if (data is Map<String, dynamic>) {
+        if (res.statusCode >= 400 && data['error'] == null) {
+          data['error'] = 'WhatsApp request failed (${res.statusCode}).';
+        }
+        if (data['success'] == true && data['accepted'] != true) {
+          return {...data, 'success': false, 'error': 'WhatsApp did not confirm acceptance of the message.'};
+        }
+        return data;
+      }
+      return {'success': false, 'error': 'Unexpected WhatsApp server response.'};
     } catch (e) {
+      if (e is TimeoutException) {
+        return {'success': false, 'accepted': false, 'outcomeUnknown': true, 'code': 'SEND_OUTCOME_UNKNOWN', 'error': 'The send timed out. Check WhatsApp and the delivery log before retrying to avoid a duplicate.'};
+      }
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -352,7 +411,7 @@ class WhatsAppService {
   static Future<List<WhatsAppLogItem>> getLogs() async {
     try {
       final uri = Uri.parse('$baseUrl/api/whatsapp/logs');
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final res = await http.get(uri, headers: await _authHeaders()).timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = data['logs'] as List? ?? [];
@@ -378,7 +437,7 @@ class WhatsAppService {
       final uri = Uri.parse('$baseUrl/api/whatsapp/hook/checkin');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: await _authHeaders(json: true),
         body: jsonEncode({
           'guestName': guestName,
           'phone': phone,
@@ -388,7 +447,7 @@ class WhatsAppService {
           'checkOutDate': checkOutDate,
           'stayId': stayId,
         }),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 110));
 
       final data = jsonDecode(res.body);
       return data['success'] == true;
@@ -412,7 +471,7 @@ class WhatsAppService {
       final uri = Uri.parse('$baseUrl/api/whatsapp/hook/checkout');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: await _authHeaders(json: true),
         body: jsonEncode({
           'guestName': guestName,
           'phone': phone,
@@ -422,7 +481,7 @@ class WhatsAppService {
           'checkOutDate': checkOutDate,
           'stayId': stayId,
         }),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 110));
 
       final data = jsonDecode(res.body);
       return data['success'] == true;
@@ -446,7 +505,7 @@ class WhatsAppService {
       final uri = Uri.parse('$baseUrl/api/whatsapp/hook/reservation');
       final res = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: await _authHeaders(json: true),
         body: jsonEncode({
           'guestName': guestName,
           'phone': phone,
@@ -456,7 +515,7 @@ class WhatsAppService {
           'checkOutDate': checkOutDate,
           'stayId': stayId,
         }),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 110));
 
       final data = jsonDecode(res.body);
       return data['success'] == true;

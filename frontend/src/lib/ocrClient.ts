@@ -1,9 +1,20 @@
 import { OCRScanResult, IdType } from '../types';
 
-const OCR_BASE_URL =
-  import.meta.env.VITE_OCR_API_URL ||
-  import.meta.env.VITE_OCR_SERVER_URL ||
-  'http://localhost:3001';
+function resolveBackendUrl(): string {
+  const fromEnv = import.meta.env.VITE_OCR_API_URL || import.meta.env.VITE_OCR_SERVER_URL;
+  if (fromEnv && String(fromEnv).trim()) {
+    return String(fromEnv).replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:3001';
+    }
+  }
+  return 'https://easeinn.onrender.com';
+}
+
+const OCR_BASE_URL = resolveBackendUrl();
 
 export interface ScanDocumentParams {
   documentType: IdType | 'auto';

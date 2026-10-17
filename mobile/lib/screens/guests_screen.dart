@@ -214,7 +214,7 @@ class _GuestsScreenState extends State<GuestsScreen> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  guest.idNumberMasked,
+                                  guest.displayIdNumber,
                                   style: GoogleFonts.firaCode(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark, letterSpacing: 2),
                                 ),
                               ),
@@ -222,7 +222,7 @@ class _GuestsScreenState extends State<GuestsScreen> {
                                 icon: const Icon(Icons.copy_rounded, size: 18, color: AppTheme.slateMuted),
                                 tooltip: 'Copy ID Number',
                                 onPressed: () {
-                                  Clipboard.setData(ClipboardData(text: guest.idNumberMasked));
+                                  Clipboard.setData(ClipboardData(text: guest.displayIdNumber));
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('ID number copied!'), duration: Duration(seconds: 1)),
                                   );
@@ -514,7 +514,7 @@ EaseInn Guest Record:
 Name: ${guest.fullName}
 Phone: ${guest.phone}
 ID Type: ${guest.idType.toUpperCase()}
-ID Number: ${guest.idNumberMasked}
+ID Number: ${guest.displayIdNumber}
 DOB: ${guest.dateOfBirth ?? "N/A"}
 Gender: ${guest.gender ?? "N/A"}
 Care Of: ${guest.fatherName ?? "N/A"}
@@ -596,6 +596,7 @@ Stay: $stayData
       if (query.isNotEmpty) {
         final matches = g.fullName.toLowerCase().contains(query) ||
             g.phone.contains(query) ||
+            g.displayIdNumber.toLowerCase().contains(query) ||
             g.idNumberMasked.toLowerCase().contains(query) ||
             (g.address?.toLowerCase().contains(query) ?? false);
         if (!matches) return false;
@@ -662,7 +663,7 @@ Stay: $stayData
       'Phone Number',
       'Email',
       'Government ID Type',
-      'Masked ID Number',
+      'Government ID Number',
       'Date of Birth',
       'Gender',
       'Father / Care of Name',
@@ -711,7 +712,7 @@ Stay: $stayData
         guest.phone,
         guest.email ?? 'N/A',
         guest.idType.toUpperCase(),
-        guest.idNumberMasked,
+        guest.displayIdNumber,
         guest.dateOfBirth ?? 'N/A',
         guest.gender ?? 'N/A',
         guest.fatherName ?? 'N/A',
@@ -1157,7 +1158,7 @@ Stay: $stayData
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${guest.idType.toUpperCase()}: ${guest.idNumberMasked} • ${guest.phone}',
+                                    '${guest.idType.toUpperCase()}: ${guest.displayIdNumber} • ${guest.phone}',
                                     style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,

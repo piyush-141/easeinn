@@ -213,6 +213,8 @@ export interface WhatsAppSystemStatus {
   connectedPushname: string | null;
   lastStatusChange: string;
   initializationError: string | null;
+  hasPersistedSession?: boolean;
+  storagePath?: string;
   activeTemplatesCount: number;
   totalTemplatesCount: number;
   supportedPlaceholders: WhatsAppPlaceholder[];
@@ -233,7 +235,9 @@ export interface WhatsAppLogEntry {
   timestamp: string;
   templateId: string;
   recipientPhone: string;
-  status: 'SENT' | 'FAILED' | 'SKIPPED_DISABLED' | 'SKIPPED_DUPLICATE' | 'FAILED_CLIENT_NOT_CONNECTED';
+  status: 'ACCEPTED' | 'SENT' | 'FAILED' | 'SKIPPED_DISABLED' | 'SKIPPED_DUPLICATE' | 'FAILED_CLIENT_NOT_CONNECTED';
+  delivered?: boolean;
+  deliveryStatus?: 'PENDING' | 'DELIVERED' | 'READ' | 'FAILED';
   error?: string;
   messageId?: string;
   preview?: string;

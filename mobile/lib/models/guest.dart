@@ -6,6 +6,7 @@ class Guest {
   final String? email;
   final String idType;
   final String idNumberMasked;
+  final String? idNumber;
   final String? dateOfBirth;
   final String? gender;
   final String? address;
@@ -23,6 +24,7 @@ class Guest {
     this.email,
     required this.idType,
     required this.idNumberMasked,
+    this.idNumber,
     this.dateOfBirth,
     this.gender,
     this.address,
@@ -33,6 +35,9 @@ class Guest {
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
+  /// Returns the full ID number if recorded, otherwise falls back to masked ID
+  String get displayIdNumber => (idNumber != null && idNumber!.trim().isNotEmpty) ? idNumber!.trim() : idNumberMasked;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'property_id': propertyId,
@@ -41,6 +46,7 @@ class Guest {
     'email': email,
     'id_type': idType,
     'id_number_masked': idNumberMasked,
+    'id_number': idNumber,
     'date_of_birth': dateOfBirth,
     'gender': gender,
     'address': address,
@@ -59,6 +65,7 @@ class Guest {
     email: json['email'],
     idType: json['id_type'] ?? 'aadhaar',
     idNumberMasked: json['id_number_masked'] ?? 'XXXX',
+    idNumber: json['id_number'],
     dateOfBirth: json['date_of_birth'],
     gender: json['gender'],
     address: json['address'],

@@ -1,10 +1,11 @@
 // src/config/whatsapp.config.js
 const path = require("path");
 
-const DATA_DIR = path.join(__dirname, "../../data");
+const DATA_DIR = process.env.WHATSAPP_DATA_DIR || path.join(__dirname, "../../data");
 const TEMPLATES_FILE = path.join(DATA_DIR, "whatsapp_templates.json");
 const LOGS_FILE = path.join(DATA_DIR, "whatsapp_logs.json");
-const AUTH_DIR = path.join(__dirname, "../../.wwebjs_auth");
+const AUTH_DIR =
+  process.env.WHATSAPP_AUTH_DIR || path.join(__dirname, "../../.baileys_auth");
 
 const DEFAULT_TEMPLATES = {
   checkin_welcome: {
@@ -41,12 +42,11 @@ const DEFAULT_TEMPLATES = {
     category: "automated",
     trigger: "on_reservation",
     template:
-      "Dear {guestName}, your reservation at {hotelName} is confirmed! 🏨\n\n" +
-      "📋 Reservation Details:\n" +
-      "• Room Assigned: {roomNumber}\n" +
-      "• Arrival Date: {checkInDate}\n" +
-      "• Departure Date: {checkOutDate}\n\n" +
-      "Please carry a valid government ID for express check-in upon arrival. We look forward to hosting you!",
+      "Dear {guestName},\nYour reservation at {hotelName} is confirmed! 🎉\n\n" +
+      "🏨 Room: {roomNumber}\n" +
+      "📅 Check-In: {checkInDate}\n" +
+      "📅 Check-Out: {checkOutDate}\n\n" +
+      "We look forward to hosting you. Please reach out if you require early check-in or airport transport assistance.",
   },
   custom_notification: {
     id: "custom_notification",

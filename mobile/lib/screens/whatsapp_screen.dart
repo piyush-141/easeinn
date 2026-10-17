@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -17,7 +18,6 @@ class WhatsAppScreen extends StatefulWidget {
 }
 
 class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
   Timer? _statusPoller;
 
   WhatsAppStatusData _status = WhatsAppStatusData.initial();
@@ -39,6 +39,8 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   final _testPhoneController = TextEditingController();
   final _testCustomMsgController = TextEditingController();
   String _testTemplateId = 'checkin_welcome';
+  String? _dispatcherFeedbackMessage;
+  bool _dispatcherFeedbackIsError = false;
 
   final List<Map<String, String>> _placeholders = [
     {'key': '{guestName}', 'label': 'Guest Name'},
@@ -51,19 +53,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {
-          _selectedTemplateId = _templateIdForIndex(_tabController.index);
-        });
-      }
-    });
-
     _initData();
 
-    // Auto-poll status every 4 seconds while screen is open (to catch QR scans)
-    _statusPoller = Timer.periodic(const Duration(seconds: 4), (_) {
+    // Keep status current without repeatedly hitting the remote auth/API stack.
+    _statusPoller = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) _fetchStatus(silent: true);
     });
   }
@@ -71,27 +64,12 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   @override
   void dispose() {
     _statusPoller?.cancel();
-    _tabController.dispose();
     for (final c in _templateControllers.values) {
       c.dispose();
     }
     _testPhoneController.dispose();
     _testCustomMsgController.dispose();
     super.dispose();
-  }
-
-  String _templateIdForIndex(int index) {
-    switch (index) {
-      case 0:
-        return 'checkin_welcome';
-      case 1:
-        return 'checkout_thankyou';
-      case 2:
-        return 'booking_confirmation';
-      case 3:
-      default:
-        return 'custom_notification';
-    }
   }
 
   Future<void> _initData() async {
@@ -145,16 +123,32 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   Future<void> _handleConnect() async {
     setState(() => _isConnecting = true);
     final ok = await WhatsAppService.connect();
-    await _fetchStatus(silent: true);
+    if (!ok) {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to connect. Check backend server.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Poll while the WhatsApp socket initializes and generates a QR code.
+    for (int i = 0; i < 20; i++) {
+      await Future.delayed(const Duration(milliseconds: 1000));
+      if (!mounted) break;
+      await _fetchStatus(silent: true);
+      if (_status.hasActiveQr || _status.isReady) {
+        break;
+      }
+    }
+
     if (mounted) {
       setState(() => _isConnecting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(ok ? 'Generating WhatsApp QR Code...' : 'Failed to connect. Check server URL.'),
-          backgroundColor: ok ? const Color(0xFF10B981) : Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
   }
 
@@ -165,13 +159,13 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Disconnect WhatsApp?', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
         content: const Text(
-          'This will terminate the active WhatsApp Web session and clear stored session tokens. You will need to re-scan the QR code to re-enable automated messaging.',
+          'This will unlink your hotel WhatsApp session. Automated guest messages will be paused until you re-link your device.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
             child: const Text('Disconnect'),
           ),
         ],
@@ -194,56 +188,54 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     }
   }
 
-  Future<void> _handleSaveTemplate() async {
-    final template = _templates[_selectedTemplateId];
-    final ctrl = _templateControllers[_selectedTemplateId];
+  Future<void> _handleSaveTemplate(String templateId, StateSetter setModalState) async {
+    final template = _templates[templateId];
+    final ctrl = _templateControllers[templateId];
     if (template == null || ctrl == null) return;
 
     setState(() => _isSavingTemplate = true);
+    setModalState(() {});
+
     final updated = template.copyWith(
       template: ctrl.text.trim(),
-      enabled: _templateEnabledState[_selectedTemplateId] ?? true,
+      enabled: _templateEnabledState[templateId] ?? true,
     );
 
     final ok = await WhatsAppService.updateTemplate(updated);
     if (mounted) {
-      setState(() => _isSavingTemplate = false);
-      if (ok) {
-        _templates[_selectedTemplateId] = updated;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Saved "${updated.name}" template successfully!'),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to save template. Check server connection.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      setState(() {
+        _isSavingTemplate = false;
+        if (ok) {
+          _templates[templateId] = updated;
+        }
+      });
+      setModalState(() {});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok ? 'Template "${updated.name}" saved successfully!' : 'Failed to save template.'),
+          backgroundColor: ok ? const Color(0xFF10B981) : Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
-  Future<void> _handleResetTemplates() async {
+  Future<void> _handleResetTemplates(StateSetter setModalState) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Reset All Templates?', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
         content: const Text(
-          'This will revert all 4 WhatsApp templates back to factory default wording. Any customizations will be lost.',
+          'This will restore all WhatsApp message templates back to their factory default wording.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.brandPrimary, foregroundColor: Colors.white),
-            child: const Text('Reset to Defaults'),
+            child: const Text('Reset Defaults'),
           ),
         ],
       ),
@@ -256,26 +248,39 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     await _fetchTemplates();
     if (mounted) {
       setState(() => _isLoading = false);
+      setModalState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('All templates reset to factory defaults.'),
+          content: Text('All templates have been reset to factory defaults.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
-  Future<void> _handleSendTestMessage() async {
-    final phone = _testPhoneController.text.trim();
-    if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a recipient phone number.'), behavior: SnackBarBehavior.floating),
-      );
+  Future<void> _handleSendTestMessage(StateSetter setModalState) async {
+    String rawDigits = _testPhoneController.text.replaceAll(RegExp(r'\D'), '');
+    if (rawDigits.length == 12 && rawDigits.startsWith('91')) {
+      rawDigits = rawDigits.substring(2);
+    } else if (rawDigits.length == 11 && rawDigits.startsWith('0')) {
+      rawDigits = rawDigits.substring(1);
+    }
+
+    if (rawDigits.length != 10) {
+      _dispatcherFeedbackMessage = 'Please enter a valid 10-digit Indian mobile number.';
+      _dispatcherFeedbackIsError = true;
+      setModalState(() {});
       return;
     }
 
+    // Keep the clean 10 digits in controller
+    _testPhoneController.text = rawDigits;
+    final phone = '+91$rawDigits';
+
     final store = context.read<HotelStore>();
     setState(() => _isSendingTest = true);
+    _dispatcherFeedbackMessage = null;
+    setModalState(() {});
 
     final sampleContext = {
       'guestName': 'Devika Rao',
@@ -294,29 +299,25 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
 
     if (mounted) {
       setState(() => _isSendingTest = false);
-      _fetchLogs();
-      if (res['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Test WhatsApp message delivered to $phone!'),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      if (res['success'] == true && res['accepted'] == true && res['suppressed'] != true) {
+        _dispatcherFeedbackMessage = 'WhatsApp accepted the message for $phone. Recipient delivery is not confirmed.';
+        _dispatcherFeedbackIsError = false;
+      } else if (res['suppressed'] == true) {
+        _dispatcherFeedbackMessage = res['message'] ?? 'Duplicate skipped — this number already received that template recently.';
+        _dispatcherFeedbackIsError = true;
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(res['error'] ?? 'Failed to send WhatsApp message.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _dispatcherFeedbackMessage = res['error'] ?? res['message'] ?? 'Failed to send WhatsApp message. Ensure session is connected.';
+        _dispatcherFeedbackIsError = true;
       }
+      setModalState(() {});
+      _fetchLogs().then((_) {
+        if (mounted) setModalState(() {});
+      });
     }
   }
 
-  void _insertPlaceholder(String placeholder) {
-    final ctrl = _templateControllers[_selectedTemplateId];
+  void _insertPlaceholder(String templateId, String placeholder, StateSetter setModalState) {
+    final ctrl = _templateControllers[templateId];
     if (ctrl == null) return;
 
     final text = ctrl.text;
@@ -332,6 +333,7 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
       ctrl.text = '$text $placeholder';
     }
     setState(() {});
+    setModalState(() {});
   }
 
   String _renderInterpolatedPreview(String rawTemplate) {
@@ -349,84 +351,931 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
         .replaceAll('{checkOutDate}', checkOut);
   }
 
-  void _showServerSettingsDialog() {
-    final current = WhatsAppService.baseUrl;
-    final customCtrl = TextEditingController(text: current);
-
-    showDialog(
+  // ── BEST PRACTICES & GUIDELINES MODAL ──
+  void _showGuidelinesSheet() {
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            const Icon(Icons.dns_rounded, color: AppTheme.brandPrimary, size: 20),
-            const SizedBox(width: 8),
-            Text('WhatsApp Backend URL', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 17)),
-          ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        content: Column(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Select the backend address where EaseInn ocr-server is running:',
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.slateBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            const SizedBox(height: 18),
+            Row(
               children: [
-                ActionChip(
-                  label: const Text('Emulator (10.0.2.2:3001)', style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    customCtrl.text = 'http://10.0.2.2:3001';
-                  },
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.info_outline_rounded, color: Color(0xFFD97706), size: 20),
                 ),
-                ActionChip(
-                  label: const Text('Localhost (3001)', style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    customCtrl.text = 'http://localhost:3001';
-                  },
-                ),
-                ActionChip(
-                  label: const Text('LAN (192.168.104.223)', style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    customCtrl.text = 'http://192.168.104.223:3001';
-                  },
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'WhatsApp Automation Guidelines',
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                      ),
+                      Text(
+                        'Best practices for hotel guest messaging',
+                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: customCtrl,
-              style: GoogleFonts.inter(fontSize: 13),
-              decoration: InputDecoration(
-                labelText: 'Server Base URL',
-                labelStyle: GoogleFonts.inter(fontSize: 12),
-                isDense: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            const SizedBox(height: 20),
+            _buildGuidelineItem(
+              icon: Icons.check_circle_outline_rounded,
+              iconColor: const Color(0xFF10B981),
+              title: 'Operational Messages Only',
+              description: 'Use strictly for 1-on-1 guest interactions such as check-in welcomes, room keys, and checkout invoices.',
+            ),
+            const SizedBox(height: 12),
+            _buildGuidelineItem(
+              icon: Icons.block_flipped,
+              iconColor: const Color(0xFFEF4444),
+              title: 'Avoid Bulk Spam',
+              description: 'Never use this account for bulk advertising or unsolicited marketing blasts to protect your number from restrictions.',
+            ),
+            const SizedBox(height: 12),
+            _buildGuidelineItem(
+              icon: Icons.verified_user_outlined,
+              iconColor: const Color(0xFF25D366),
+              title: 'Direct Phone Link',
+              description: 'Messages are dispatched directly from your linked WhatsApp instance without third-party recurring API fees.',
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 46,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.slateDark,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Understood'),
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              if (customCtrl.text.trim().isNotEmpty) {
-                await WhatsAppService.setBaseUrl(customCtrl.text.trim());
-                if (mounted) {
-                  Navigator.pop(ctx);
-                  _initData();
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.brandPrimary, foregroundColor: Colors.white),
-            child: const Text('Save & Reconnect'),
+      ),
+    );
+  }
+
+  Widget _buildGuidelineItem({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String description,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.slateBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: iconColor, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark)),
+                const SizedBox(height: 2),
+                Text(description, style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.slateMuted, height: 1.35)),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  // ── FULL PAGE DRAWER 1: EDIT MESSAGE TEMPLATES ──
+  void _openTemplateEditorDrawer() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final template = _templates[_selectedTemplateId];
+            final ctrl = _templateControllers[_selectedTemplateId];
+            final isEnabled = _templateEnabledState[_selectedTemplateId] ?? true;
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.92,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  // Drawer drag handle & header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 38,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: AppTheme.slateBorder,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: AppTheme.brandPrimary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.edit_note_rounded, color: AppTheme.brandPrimary, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Message Templates',
+                                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.slateDark),
+                                  ),
+                                  Text(
+                                    'Customize automated guest notifications',
+                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => _handleResetTemplates(setModalState),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(
+                                'Reset Defaults',
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.brandPrimary),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                              onPressed: () => Navigator.pop(ctx),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const Divider(height: 1, color: AppTheme.slateBorder),
+
+                  // Template selection pill tabs
+                  Container(
+                    width: double.infinity,
+                    color: const Color(0xFFF8FAFC),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildTemplateTabItem('checkin_welcome', 'Check-in Welcome', setModalState),
+                          const SizedBox(width: 8),
+                          _buildTemplateTabItem('checkout_thankyou', 'Checkout Thank-you', setModalState),
+                          const SizedBox(width: 8),
+                          _buildTemplateTabItem('booking_confirmation', 'Booking Confirmed', setModalState),
+                          const SizedBox(width: 8),
+                          _buildTemplateTabItem('custom_notification', 'Custom Notice', setModalState),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const Divider(height: 1, color: AppTheme.slateBorder),
+
+                  // Drawer scrollable content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (template != null && ctrl != null) ...[
+                            // Active status & toggle
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: AppTheme.slateBorder),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          template.name,
+                                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13.5, color: AppTheme.slateDark),
+                                        ),
+                                        Text(
+                                          template.description,
+                                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        isEnabled ? 'ACTIVE' : 'MUTED',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: isEnabled ? const Color(0xFF16A34A) : AppTheme.slateMuted,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Switch(
+                                        value: isEnabled,
+                                        activeThumbColor: const Color(0xFF25D366),
+                                        onChanged: (val) {
+                                          setState(() {
+                                            _templateEnabledState[_selectedTemplateId] = val;
+                                          });
+                                          setModalState(() {});
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // 1. Template Wording Editor
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Template Wording:',
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                ),
+                                Text(
+                                  '${ctrl.text.length} chars',
+                                  style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            TextField(
+                              controller: ctrl,
+                              maxLines: 5,
+                              onChanged: (_) {
+                                setState(() {});
+                                setModalState(() {});
+                              },
+                              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.slateDark, height: 1.4),
+                              decoration: InputDecoration(
+                                hintText: 'Type your WhatsApp template message...',
+                                contentPadding: const EdgeInsets.all(14),
+                                filled: true,
+                                fillColor: const Color(0xFFF8FAFC),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            // 2. Minimized Horizontal Variables Row (Below Template Wording)
+                            Row(
+                              children: [
+                                Text(
+                                  'Insert: ',
+                                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.slateMuted),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    physics: const BouncingScrollPhysics(),
+                                    child: Row(
+                                      children: _placeholders.map((p) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(right: 6),
+                                          child: ActionChip(
+                                            label: Text(p['key']!),
+                                            labelStyle: GoogleFonts.robotoMono(fontSize: 10, color: AppTheme.brandDark, fontWeight: FontWeight.w600),
+                                            backgroundColor: AppTheme.brandLight,
+                                            side: BorderSide.none,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 0),
+                                            visualDensity: VisualDensity.compact,
+                                            onPressed: () => _insertPlaceholder(_selectedTemplateId, p['key']!, setModalState),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 18),
+
+                            // WhatsApp Chat Bubble Preview
+                            Text(
+                              'Guest WhatsApp Preview:',
+                              style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFEAE2),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFFE5DDD5)),
+                              ),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  constraints: const BoxConstraints(maxWidth: 300),
+                                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCF8C6),
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(14),
+                                      topRight: Radius.circular(14),
+                                      bottomRight: Radius.circular(14),
+                                      bottomLeft: Radius.circular(3),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.05),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _renderInterpolatedPreview(ctrl.text),
+                                        style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF111827), height: 1.35),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            DateFormat('hh:mm a').format(DateTime.now()),
+                                            style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF6B7280)),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(Icons.done_all_rounded, size: 14, color: Color(0xFF34B7F1)),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Bottom Save Action
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: const Border(top: BorderSide(color: AppTheme.slateBorder)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          offset: const Offset(0, -2),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: PressableScale(
+                        pressedScale: 0.97,
+                        child: ElevatedButton.icon(
+                          onPressed: _isSavingTemplate ? null : () => _handleSaveTemplate(_selectedTemplateId, setModalState),
+                          icon: _isSavingTemplate
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.check_rounded, size: 18),
+                          label: Text(_isSavingTemplate ? 'Saving Changes...' : 'Save Template Changes'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.brandPrimary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildTemplateTabItem(String id, String title, StateSetter setModalState) {
+    final isSelected = _selectedTemplateId == id;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedTemplateId = id;
+        });
+        setModalState(() {});
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.brandPrimary : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder),
+        ),
+        child: Text(
+          title,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? Colors.white : AppTheme.slateDark,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── FULL PAGE DRAWER 2: SEND LIVE MESSAGE & DELIVERY AUDIT LOGS ──
+  void _openLiveDispatcherDrawer() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final isConnected = _status.isReady;
+
+            return DefaultTabController(
+              length: 2,
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.92,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Column(
+                  children: [
+                    // Drag handle & Header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 38,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: AppTheme.slateBorder,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(7),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.send_rounded, color: Color(0xFF10B981), size: 20),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Live WhatsApp Dispatcher',
+                                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.slateDark),
+                                    ),
+                                    Text(
+                                      'Send a test message and see acceptance and recipient receipts',
+                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                                onPressed: () => Navigator.pop(ctx),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Top Tab Bar for Compose vs Logs
+                    TabBar(
+                      labelColor: AppTheme.brandPrimary,
+                      unselectedLabelColor: AppTheme.slateMuted,
+                      labelStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold),
+                      unselectedLabelStyle: GoogleFonts.inter(fontSize: 13),
+                      indicatorColor: AppTheme.brandPrimary,
+                      indicatorWeight: 2.5,
+                      tabs: [
+                        const Tab(text: 'Compose & Send'),
+                        Tab(text: 'Delivery Logs (${_logs.length})'),
+                      ],
+                    ),
+
+                    const Divider(height: 1, color: AppTheme.slateBorder),
+
+                    // Tab View
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          // Tab 1: Compose & Send
+                          SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (!isConnected)
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF2F2),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: const Color(0xFFFECACA)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 18),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            'WhatsApp is currently disconnected. Link your WhatsApp account first to send live messages.',
+                                            style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF991B1B)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                // Recipient Phone Number
+                                Text(
+                                  'Guest Mobile Number (10 digits) *',
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                ),
+                                const SizedBox(height: 6),
+                                TextField(
+                                  controller: _testPhoneController,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(10),
+                                  ],
+                                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 1.1),
+                                  decoration: InputDecoration(
+                                    hintText: '9850550645',
+                                    hintStyle: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.slateMuted, letterSpacing: 1),
+                                    prefixIcon: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                      margin: const EdgeInsets.only(right: 10),
+                                      decoration: const BoxDecoration(
+                                        border: Border(right: BorderSide(color: AppTheme.slateBorder, width: 1)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Text('🇮🇳', style: TextStyle(fontSize: 15)),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            '+91',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppTheme.slateDark,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 16),
+
+                                // Template Selection
+                                Text(
+                                  'Select Message Template',
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                ),
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  initialValue: _testTemplateId,
+                                  style: GoogleFonts.inter(fontSize: 13, color: AppTheme.slateDark),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(value: 'checkin_welcome', child: Text('Check-in Welcome')),
+                                    DropdownMenuItem(value: 'checkout_thankyou', child: Text('Checkout Thank-you')),
+                                    DropdownMenuItem(value: 'booking_confirmation', child: Text('Booking Confirmation')),
+                                    DropdownMenuItem(value: 'custom', child: Text('Custom Text Notice')),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setState(() => _testTemplateId = val);
+                                      setModalState(() {});
+                                    }
+                                  },
+                                ),
+
+                                if (_testTemplateId == 'custom') ...[
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    'Custom Message Text',
+                                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextField(
+                                    controller: _testCustomMsgController,
+                                    maxLines: 4,
+                                    style: GoogleFonts.inter(fontSize: 13),
+                                    decoration: InputDecoration(
+                                      hintText: 'Enter your custom message to dispatch...',
+                                      filled: true,
+                                      fillColor: const Color(0xFFF8FAFC),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Message Content Preview:',
+                                    style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: AppTheme.slateBorder),
+                                    ),
+                                    child: Text(
+                                      _renderInterpolatedPreview(_templates[_testTemplateId]?.template ?? ''),
+                                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark, height: 1.35),
+                                    ),
+                                  ),
+                                ],
+
+                                if (_dispatcherFeedbackMessage != null) ...[
+                                  const SizedBox(height: 16),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                                    decoration: BoxDecoration(
+                                      color: _dispatcherFeedbackIsError ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: _dispatcherFeedbackIsError ? const Color(0xFFFECACA) : const Color(0xFFBBF7D0),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          _dispatcherFeedbackIsError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+                                          color: _dispatcherFeedbackIsError ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            _dispatcherFeedbackMessage!,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                              color: _dispatcherFeedbackIsError ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                                              height: 1.35,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+
+                                const SizedBox(height: 20),
+
+                                SizedBox(
+                                  height: 48,
+                                  child: PressableScale(
+                                    pressedScale: 0.97,
+                                    child: ElevatedButton.icon(
+                                      onPressed: (!isConnected || _isSendingTest) ? null : () => _handleSendTestMessage(setModalState),
+                                      icon: _isSendingTest
+                                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                          : const Icon(Icons.send_rounded, size: 18),
+                                      label: Text(_isSendingTest ? 'Sending Message...' : 'Send WhatsApp Message Now'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF10B981),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        elevation: 0,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // Tab 2: Delivery Logs
+                          RefreshIndicator(
+                            onRefresh: () async {
+                              await _fetchLogs();
+                              setModalState(() {});
+                            },
+                            child: _logs.isEmpty
+                                ? ListView(
+                                    children: [
+                                      const SizedBox(height: 60),
+                                      Center(
+                                        child: Column(
+                                          children: [
+                                            Icon(Icons.mark_email_read_outlined, size: 48, color: AppTheme.slateBorder),
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              'No WhatsApp logs yet',
+                                              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.slateDark),
+                                            ),
+                                            Text(
+                                              'Dispatched messages will show up here.',
+                                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : ListView.separated(
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: _logs.length,
+                                    separatorBuilder: (_, __) => const Divider(color: Color(0xFFF1F5F9), height: 1),
+                                    itemBuilder: (ctx, i) {
+                                      final log = _logs[i];
+                                      final isAccepted = log.status == 'ACCEPTED' || log.status == 'SENT';
+                                      final isDelivered = log.delivered || log.deliveryStatus == 'DELIVERED' || log.deliveryStatus == 'READ';
+
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Container(
+                                              margin: const EdgeInsets.only(top: 2),
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: isAccepted ? const Color(0xFFFEF3C7) : const Color(0xFFFEE2E2),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                isDelivered ? Icons.done_all_rounded : isAccepted ? Icons.schedule_rounded : Icons.close_rounded,
+                                                color: isDelivered ? const Color(0xFF16A34A) : isAccepted ? const Color(0xFFD97706) : const Color(0xFFDC2626),
+                                                size: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(
+                                                        log.recipientPhone,
+                                                        style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
+                                                      ),
+                                                      Text(
+                                                        _formatLogTime(log.timestamp),
+                                                        style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    '${log.templateId} • ${log.messageText}',
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.slateMuted, height: 1.3),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    isDelivered ? 'Delivered to recipient' : isAccepted ? 'Accepted by WhatsApp · awaiting delivery' : log.errorMessage ?? 'Not sent',
+                                                    style: GoogleFonts.inter(fontSize: 10.5, color: isDelivered ? const Color(0xFF15803D) : isAccepted ? const Color(0xFFB45309) : const Color(0xFFB91C1C), fontWeight: FontWeight.w600),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -457,7 +1306,7 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.slateDark),
                 ),
                 Text(
-                  'One-Way Transactional Messaging',
+                  'Guest Transactional Messaging',
                   style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted, fontWeight: FontWeight.w500),
                 ),
               ],
@@ -466,9 +1315,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
         ),
         actions: [
           IconButton(
-            tooltip: 'Server Connection Settings',
-            icon: const Icon(Icons.settings_ethernet_rounded, color: AppTheme.slateMuted, size: 22),
-            onPressed: _showServerSettingsDialog,
+            tooltip: 'Operational Guidelines',
+            icon: const Icon(Icons.info_outline_rounded, color: AppTheme.slateMuted, size: 22),
+            onPressed: _showGuidelinesSheet,
           ),
           IconButton(
             tooltip: 'Refresh Status',
@@ -504,34 +1353,35 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
               color: AppTheme.brandPrimary,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 1. WhatsApp Pairing & Status Card
-                    _buildPairingCard(),
-
-                    const SizedBox(height: 16),
-
-                    // 2. Risk Advisory Card
-                    _buildRiskNoticeCard(),
+                    // 1. WhatsApp Connection Hero Card (No overflow, fully responsive)
+                    _buildConnectionHeroCard(),
 
                     const SizedBox(height: 20),
 
-                    // 3. Template Editor Section
-                    _buildTemplateSection(),
+                    // Section Header
+                    Text(
+                      'Messaging Controls',
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: AppTheme.slateDark,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
 
-                    const SizedBox(height: 20),
+                    // 2. Action Card 1: Message Templates
+                    _buildTemplateActionCard(),
 
-                    // 4. Test Dispatcher
-                    _buildTestDispatcherCard(),
+                    const SizedBox(height: 14),
 
-                    const SizedBox(height: 20),
+                    // 3. Action Card 2: Send Live Message Dispatcher
+                    _buildLiveDispatcherActionCard(),
 
-                    // 5. Audit & Delivery Logs
-                    _buildLogsCard(),
-
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -539,271 +1389,288 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     );
   }
 
-  // ── 1. PAIRING & STATUS CARD ──
-  Widget _buildPairingCard() {
+  // ── 1. WHATSAPP CONNECTION HERO CARD ──
+  Widget _buildConnectionHeroCard() {
     final isReady = _status.isReady;
     final hasQr = _status.hasActiveQr && _status.qrCodeDataUrl != null;
 
-    Color badgeBg;
-    Color badgeText;
-    String statusTitle;
-    IconData statusIcon;
-
     if (isReady) {
-      badgeBg = const Color(0xFFDCFCE7);
-      badgeText = const Color(0xFF15803D);
-      statusTitle = 'Connected & Active';
-      statusIcon = Icons.check_circle_rounded;
-    } else if (_status.status == 'AUTHENTICATING') {
-      badgeBg = const Color(0xFFFEF3C7);
-      badgeText = const Color(0xFFB45309);
-      statusTitle = 'Authenticating...';
-      statusIcon = Icons.hourglass_top_rounded;
-    } else if (hasQr) {
-      badgeBg = const Color(0xFFE0F2FE);
-      badgeText = const Color(0xFF0369A1);
-      statusTitle = 'QR Code Ready to Scan';
-      statusIcon = Icons.qr_code_scanner_rounded;
-    } else {
-      badgeBg = const Color(0xFFF1F5F9);
-      badgeText = const Color(0xFF64748B);
-      statusTitle = 'Disconnected';
-      statusIcon = Icons.link_off_rounded;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0FDF4),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFBBF7D0)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFDCFCE7),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.verified_rounded, color: Color(0xFF16A34A), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _status.connectedPushname?.isNotEmpty == true
+                              ? _status.connectedPushname!
+                              : 'Hotel WhatsApp',
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: const Color(0xFF14532D),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'Active',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF15803D),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _status.connectedNumber != null ? '+${_status.connectedNumber}' : 'Automated messages active',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF15803D),
+                    ),
+                  ),
+                  Text(
+                    WhatsAppService.baseUrl.replaceFirst(RegExp(r'https?://'), ''),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: const Color(0xFF86EFAC),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            InkWell(
+              onTap: _isDisconnecting ? null : _handleDisconnect,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Text(
+                  _isDisconnecting ? 'Unlinking...' : 'Disconnect',
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFDC2626),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
+    if (hasQr) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFBAE6FD), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              'Scan WhatsApp QR Code',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Open WhatsApp on phone > Settings > Linked Devices > Link a Device',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.slateBorder, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _renderQrImage(_status.qrCodeDataUrl!),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 42,
+              child: PressableScale(
+                pressedScale: 0.97,
+                child: ElevatedButton.icon(
+                  onPressed: _isConnecting ? null : _handleConnect,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Refresh QR Code'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.brandPrimary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Actively generating QR code state
+    if (_isConnecting || _status.status == 'INITIALIZING') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 26),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFBAE6FD), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            const SizedBox(
+              width: 38,
+              height: 38,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: Color(0xFF25D366),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Generating WhatsApp QR Code...',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Initializing secure session. The QR code will appear here in a few seconds.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted, height: 1.35),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Disconnected state
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isReady ? const Color(0xFF86EFAC) : AppTheme.slateBorder, width: isReady ? 1.5 : 1),
+        border: Border.all(color: AppTheme.slateBorder),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
-            offset: const Offset(0, 4),
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header row with status badge
           Row(
-            mainAxisAlignment: MainAxisAlignment.between,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF25D366),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'WhatsApp Account Pairing',
-                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.slateDark),
-                      ),
-                      Text(
-                        'Session: LocalAuth (.wwebjs_auth)',
-                        style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: badgeBg,
+                  color: const Color(0xFF25D366).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF25D366), size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(statusIcon, color: badgeText, size: 13),
-                    const SizedBox(width: 4),
                     Text(
-                      statusTitle,
-                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: badgeText),
+                      'Connect WhatsApp',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                    ),
+                    Text(
+                      'Link your hotel account to automate guest messages',
+                      style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.slateMuted),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          // If connected
-          if (isReady) ...[
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFBBF7D0)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.verified_rounded, color: Color(0xFF16A34A), size: 28),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _status.connectedPushname?.isNotEmpty == true
-                              ? _status.connectedPushname!
-                              : 'Linked Hotel Account',
-                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14, color: const Color(0xFF14532D)),
-                        ),
-                        Text(
-                          _status.connectedNumber != null ? '+${_status.connectedNumber}' : 'Session active & authenticated',
-                          style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF15803D)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 42,
-              child: PressableScale(
-                pressedScale: 0.96,
-                child: OutlinedButton.icon(
-                  onPressed: _isDisconnecting ? null : _handleDisconnect,
-                  icon: _isDisconnecting
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.link_off_rounded, size: 16),
-                  label: const Text('Disconnect / Switch Account'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFDC2626),
-                    side: const BorderSide(color: Color(0xFFFCA5A5)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
+          SizedBox(
+            height: 46,
+            child: PressableScale(
+              pressedScale: 0.97,
+              child: ElevatedButton.icon(
+                onPressed: _isConnecting ? null : _handleConnect,
+                icon: _isConnecting
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.qr_code_rounded, size: 18),
+                label: Text(_isConnecting ? 'Initializing Session...' : 'Connect WhatsApp & Show QR Code'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
-          ] else if (hasQr) ...[
-            // QR Code rendering
-            Center(
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.slateBorder, width: 2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: _renderQrImage(_status.qrCodeDataUrl!),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Scan with WhatsApp on your phone',
-                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
-                  ),
-                  Text(
-                    'WhatsApp > Linked Devices > Link a Device',
-                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: PressableScale(
-                    pressedScale: 0.96,
-                    child: ElevatedButton.icon(
-                      onPressed: _isConnecting ? null : _handleConnect,
-                      icon: const Icon(Icons.refresh_rounded, size: 15),
-                      label: const Text('Refresh QR Code'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.brandPrimary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else ...[
-            // Disconnected State
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.slateBorder),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.qr_code_2_rounded, color: AppTheme.slateMuted, size: 30),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'No Active WhatsApp Session',
-                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13.5, color: AppTheme.slateDark),
-                        ),
-                        Text(
-                          'Tap below to initialize Puppeteer and generate a pairing QR code.',
-                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: PressableScale(
-                pressedScale: 0.96,
-                child: ElevatedButton.icon(
-                  onPressed: _isConnecting ? null : _handleConnect,
-                  icon: _isConnecting
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.qr_code_rounded, size: 18),
-                  label: Text(_isConnecting ? 'Launching Session...' : 'Connect WhatsApp & Show QR Code'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF25D366),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ],
       ),
     );
@@ -831,491 +1698,166 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     }
   }
 
-  // ── 2. RISK NOTICE ADVISORY ──
-  Widget _buildRiskNoticeCard() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFFDE68A)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline_rounded, color: Color(0xFFD97706), size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Unofficial WhatsApp Automation Notice',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 12, color: const Color(0xFF92400E)),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'This service connects via whatsapp-web.js with zero third-party API fees. Use strictly for 1-to-1 operational guest notices (check-in, check-out, bookings). Avoid bulk marketing spam to safeguard your WhatsApp account from rate-limiting or restrictions.',
-                  style: GoogleFonts.inter(fontSize: 10.5, color: const Color(0xFFB45309), height: 1.3),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // ── 2. CARD: EDIT MESSAGE TEMPLATES (Minimal & Clean) ──
+  Widget _buildTemplateActionCard() {
+    final activeCount = _templateEnabledState.values.where((v) => v).length;
 
-  // ── 3. TEMPLATE MANAGEMENT SECTION ──
-  Widget _buildTemplateSection() {
-    final currentTemplate = _templates[_selectedTemplateId];
-    final ctrl = _templateControllers[_selectedTemplateId];
-    final isEnabled = _templateEnabledState[_selectedTemplateId] ?? true;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.slateBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.between,
-            children: [
-              Text(
-                'Editable Message Templates (4)',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
-              ),
-              InkWell(
-                onTap: _handleResetTemplates,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  child: Text(
-                    'Reset Defaults',
-                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.brandPrimary),
-                  ),
-                ),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: _openTemplateEditorDrawer,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.slateBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-
-          // Tab Bar for 4 Templates
-          TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelColor: AppTheme.brandPrimary,
-            unselectedLabelColor: AppTheme.slateMuted,
-            labelStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold),
-            unselectedLabelStyle: GoogleFonts.inter(fontSize: 12),
-            indicatorColor: AppTheme.brandPrimary,
-            indicatorWeight: 2.5,
-            tabs: const [
-              Tab(text: 'Check-in Welcome'),
-              Tab(text: 'Checkout Thank-you'),
-              Tab(text: 'Booking Confirmation'),
-              Tab(text: 'Custom Notice'),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          if (currentTemplate != null && ctrl != null) ...[
-            // Enable / Disable Row
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.slateBorder),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.between,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        currentTemplate.name,
-                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
-                      ),
-                      Text(
-                        currentTemplate.description,
-                        style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Text(
-                        isEnabled ? 'ACTIVE' : 'MUTED',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: isEnabled ? const Color(0xFF16A34A) : AppTheme.slateMuted,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Switch(
-                        value: isEnabled,
-                        activeThumbColor: const Color(0xFF25D366),
-                        onChanged: (val) {
-                          setState(() {
-                            _templateEnabledState[_selectedTemplateId] = val;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Dynamic Placeholder Chips
-            Text(
-              'Dynamic Placeholders (Tap to insert):',
-              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _placeholders.map((p) {
-                return ActionChip(
-                  label: Text('${p['key']} • ${p['label']}'),
-                  labelStyle: GoogleFonts.mono(fontSize: 10, color: AppTheme.brandDark, fontWeight: FontWeight.w600),
-                  backgroundColor: AppTheme.brandLight,
-                  side: BorderSide.none,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  onPressed: () => _insertPlaceholder(p['key']!),
-                );
-              }).toList(),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Template Text Area
-            TextField(
-              controller: ctrl,
-              maxLines: 6,
-              onChanged: (_) => setState(() {}),
-              style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.slateDark, height: 1.4),
-              decoration: InputDecoration(
-                hintText: 'Type your WhatsApp template text here...',
-                contentPadding: const EdgeInsets.all(12),
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // WhatsApp Bubble Simulation Preview
-            Text(
-              'Live Guest Preview (WhatsApp simulation):',
-              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
-            ),
-            const SizedBox(height: 8),
-
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFEAE2), // WhatsApp chat wallpaper color
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE5DDD5)),
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 290),
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDCF8C6), // WhatsApp sent bubble
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
-                      bottomRight: Radius.circular(12),
-                      bottomLeft: Radius.circular(3),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _renderInterpolatedPreview(ctrl.text),
-                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF111827), height: 1.35),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text(
-                            DateFormat('hh:mm a').format(DateTime.now()),
-                            style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF6B7280)),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.done_all_rounded, size: 14, color: Color(0xFF34B7F1)), // Blue ticks
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // Save Template Button
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: PressableScale(
-                pressedScale: 0.96,
-                child: ElevatedButton.icon(
-                  onPressed: _isSavingTemplate ? null : _handleSaveTemplate,
-                  icon: _isSavingTemplate
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.save_rounded, size: 17),
-                  label: Text(_isSavingTemplate ? 'Saving...' : 'Save Template Changes'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.brandPrimary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ── 4. TEST DISPATCHER CARD ──
-  Widget _buildTestDispatcherCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.slateBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+          child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(8),
+                  color: AppTheme.brandPrimary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.send_rounded, color: Color(0xFF2563EB), size: 18),
+                child: const Icon(Icons.edit_note_rounded, color: AppTheme.brandPrimary, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Message Templates',
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: AppTheme.slateDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Check-in, checkout & booking messages',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: AppTheme.slateMuted,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(width: 8),
-              Text(
-                'Live Test Message Dispatcher',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.slateDark),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Recipient Phone
-          TextField(
-            controller: _testPhoneController,
-            keyboardType: TextInputType.phone,
-            style: GoogleFonts.inter(fontSize: 13),
-            decoration: InputDecoration(
-              labelText: 'Recipient WhatsApp Number *',
-              hintText: '+91 9876543210',
-              isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Template Selector
-          DropdownButtonFormField<String>(
-            value: _testTemplateId,
-            style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.slateDark),
-            decoration: InputDecoration(
-              labelText: 'Select Template to Test',
-              isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            items: const [
-              DropdownMenuItem(value: 'checkin_welcome', child: Text('Check-in Welcome')),
-              DropdownMenuItem(value: 'checkout_thankyou', child: Text('Checkout Thank-you')),
-              DropdownMenuItem(value: 'booking_confirmation', child: Text('Booking Confirmation')),
-              DropdownMenuItem(value: 'custom', child: Text('Custom Text Message')),
-            ],
-            onChanged: (val) {
-              if (val != null) setState(() => _testTemplateId = val);
-            },
-          ),
-
-          if (_testTemplateId == 'custom') ...[
-            const SizedBox(height: 10),
-            TextField(
-              controller: _testCustomMsgController,
-              maxLines: 3,
-              style: GoogleFonts.inter(fontSize: 12.5),
-              decoration: InputDecoration(
-                hintText: 'Enter custom test message...',
-                isDense: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 14),
-
-          SizedBox(
-            width: double.infinity,
-            height: 42,
-            child: PressableScale(
-              pressedScale: 0.96,
-              child: ElevatedButton.icon(
-                onPressed: _isSendingTest ? null : _handleSendTestMessage,
-                icon: _isSendingTest
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.send_rounded, size: 16),
-                label: Text(_isSendingTest ? 'Sending Test...' : 'Send Test WhatsApp Message'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.brandLight,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$activeCount/4 Active',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.brandDark,
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right_rounded, color: AppTheme.slateMuted, size: 20),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  // ── 5. AUDIT LOGS CARD ──
-  Widget _buildLogsCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.slateBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.between,
-            children: [
-              Text(
-                'Recent Delivery Logs (${_logs.length})',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.slateDark),
-              ),
-              InkWell(
-                onTap: _fetchLogs,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Text(
-                    'Refresh',
-                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary),
-                  ),
-                ),
+  // ── 3. CARD: SEND LIVE MESSAGE DISPATCHER (Minimal & Clean) ──
+  Widget _buildLiveDispatcherActionCard() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: _openLiveDispatcherDrawer,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.slateBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-
-          if (_logs.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: Text(
-                  'No WhatsApp messages logged yet.',
-                  style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.send_rounded, color: Color(0xFF10B981), size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Send Live Message',
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: AppTheme.slateDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Direct notices, test sends & logs',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: AppTheme.slateMuted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _logs.take(6).length,
-              separatorBuilder: (_, __) => const Divider(color: Color(0xFFF1F5F9), height: 1),
-              itemBuilder: (ctx, i) {
-                final log = _logs[i];
-                final isSent = log.status == 'SENT';
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: isSent ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          isSent ? Icons.check_rounded : Icons.close_rounded,
-                          color: isSent ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                          size: 14,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.between,
-                              children: [
-                                Text(
-                                  log.recipientPhone,
-                                  style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.slateDark),
-                                ),
-                                Text(
-                                  _formatLogTime(log.timestamp),
-                                  style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Template: ${log.templateId} • ${log.messageText}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${_logs.length} Sent Logs',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.slateDark,
                   ),
-                );
-              },
-            ),
-        ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right_rounded, color: AppTheme.slateMuted, size: 20),
+            ],
+          ),
+        ),
       ),
     );
   }
