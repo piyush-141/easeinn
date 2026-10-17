@@ -251,6 +251,8 @@ export const WhatsAppSettings: React.FC = () => {
         roomNumber: '102',
         checkInDate: '16 Oct 2026, 12:00 PM',
         checkOutDate: '18 Oct 2026, 11:00 AM',
+        message: 'Your laundry is ready for collection.',
+        messageHindi: 'आपकी लॉन्ड्री संग्रह के लिए तैयार है।',
       }, raw);
       setPreviewText(preview);
     } catch (_) {
@@ -260,7 +262,9 @@ export const WhatsAppSettings: React.FC = () => {
         .replace('{hotelName}', currentProperty.name)
         .replace('{roomNumber}', '102')
         .replace('{checkInDate}', '16 Oct 2026, 12:00 PM')
-        .replace('{checkOutDate}', '18 Oct 2026, 11:00 AM');
+        .replace('{checkOutDate}', '18 Oct 2026, 11:00 AM')
+        .replace('{message}', 'Your laundry is ready for collection.')
+        .replace('{messageHindi}', 'आपकी लॉन्ड्री संग्रह के लिए तैयार है।');
       setPreviewText(fallback);
     } finally {
       setIsPreviewLoading(false);

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+
 import '../models/stay.dart';
 import '../models/bill.dart';
+import '../models/room.dart';
 import '../services/hotel_store.dart';
+import '../services/whatsapp_service.dart';
+import '../services/invoice_pdf_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/pressable_scale.dart';
 
@@ -128,129 +133,956 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
     );
   }
 
-  void _showGenerateInvoice(Stay stay, Bill? bill, double roomTotal) {
+  Future<Uint8List> _getPdfBytes({
+    required Stay stay,
+    required Bill? bill,
+    required double totalBilled,
+    required double advancePaid,
+    required double balancePaid,
+    required double balanceDue,
+    required Room? room,
+  }) {
+    final store = context.read<HotelStore>();
+    return InvoicePdfService.generateInvoicePdf(
+      property: store.currentProperty,
+      stay: stay,
+      bill: bill,
+      totalBilled: totalBilled,
+      advancePaid: advancePaid,
+      balancePaid: balancePaid,
+      balanceDue: balanceDue,
+      room: room,
+      paymentMethod: _paymentMethod,
+    );
+  }
+
+  Future<void> _sharePdfInvoice({
+    required Stay stay,
+    required Bill? bill,
+    required double totalBilled,
+    required double advancePaid,
+    required double balancePaid,
+    required double balanceDue,
+    required Room? room,
+    required String invoiceNo,
+  }) async {
+    try {
+      final pdfBytes = await _getPdfBytes(
+        stay: stay,
+        bill: bill,
+        totalBilled: totalBilled,
+        advancePaid: advancePaid,
+        balancePaid: balancePaid,
+        balanceDue: balanceDue,
+        room: room,
+      );
+      await InvoicePdfService.shareInvoicePdf(
+        pdfBytes: pdfBytes,
+        fileName: 'Invoice_$invoiceNo.pdf',
+        guestName: stay.guest?.fullName ?? 'Guest',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not share PDF: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendInvoicePdfViaWhatsApp({
+    required Stay stay,
+    required Bill? bill,
+    required double totalBilled,
+    required double advancePaid,
+    required double balancePaid,
+    required double balanceDue,
+    required Room? room,
+    required String invoiceNo,
+  }) async {
+    final phone = stay.guest?.phone;
+    if (phone == null || phone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No guest phone number available to send WhatsApp.'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final store = context.read<HotelStore>();
+      final df = DateFormat('dd MMM yyyy');
+      final pdfBytes = await _getPdfBytes(
+        stay: stay,
+        bill: bill,
+        totalBilled: totalBilled,
+        advancePaid: advancePaid,
+        balancePaid: balancePaid,
+        balanceDue: balanceDue,
+        room: room,
+      );
+      final pdfBase64 = InvoicePdfService.toBase64(pdfBytes);
+      final fileName = 'Invoice_$invoiceNo.pdf';
+
+      final success = await WhatsAppService.triggerCheckOut(
+        guestName: stay.guest?.fullName ?? 'Valued Guest',
+        phone: phone,
+        hotelName: store.currentProperty.name,
+        roomNumber: room?.roomNumber ?? stay.room?.roomNumber ?? '',
+        checkInDate: df.format(stay.checkInAt),
+        checkOutDate: df.format(stay.checkOutAt ?? DateTime.now()),
+        stayId: stay.id,
+        pdfBase64: pdfBase64,
+        pdfFileName: fileName,
+      );
+
+      await InvoicePdfService.shareInvoicePdf(
+        pdfBytes: pdfBytes,
+        fileName: fileName,
+        guestName: stay.guest?.fullName ?? 'Guest',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success
+                ? 'Invoice PDF dispatched via WhatsApp to ${stay.guest?.fullName}!'
+                : 'Invoice PDF prepared for ${stay.guest?.fullName}!'),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error dispatching PDF: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveInvoicePdf({
+    required Stay stay,
+    required Bill? bill,
+    required double totalBilled,
+    required double advancePaid,
+    required double balancePaid,
+    required double balanceDue,
+    required Room? room,
+    required String invoiceNo,
+  }) async {
+    try {
+      final pdfBytes = await _getPdfBytes(
+        stay: stay,
+        bill: bill,
+        totalBilled: totalBilled,
+        advancePaid: advancePaid,
+        balancePaid: balancePaid,
+        balanceDue: balanceDue,
+        room: room,
+      );
+      final fileName = 'Invoice_$invoiceNo.pdf';
+      final file = await InvoicePdfService.saveInvoicePdfToFile(
+        pdfBytes: pdfBytes,
+        fileName: fileName,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('PDF Invoice saved: ${file.path.split("/").last}'),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            action: SnackBarAction(
+              label: 'Share',
+              textColor: Colors.white,
+              onPressed: () => InvoicePdfService.shareInvoicePdf(
+                pdfBytes: pdfBytes,
+                fileName: fileName,
+                guestName: stay.guest?.fullName ?? 'Guest',
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving PDF: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _printInvoicePdf({
+    required Stay stay,
+    required Bill? bill,
+    required double totalBilled,
+    required double advancePaid,
+    required double balancePaid,
+    required double balanceDue,
+    required Room? room,
+    required String invoiceNo,
+  }) async {
+    try {
+      final pdfBytes = await _getPdfBytes(
+        stay: stay,
+        bill: bill,
+        totalBilled: totalBilled,
+        advancePaid: advancePaid,
+        balancePaid: balancePaid,
+        balanceDue: balanceDue,
+        room: room,
+      );
+      await InvoicePdfService.printInvoicePdf(
+        pdfBytes: pdfBytes,
+        documentName: 'Invoice_$invoiceNo.pdf',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open print spooler: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showGenerateInvoice(Stay stay, Bill? bill, double roomTotal, {bool isFinalized = false}) {
+    final store = context.read<HotelStore>();
+    final property = store.currentProperty;
+    final guest = stay.guest;
     final nights = stay.actualNights;
     final advancePaid = bill?.amountPaid ?? 0.0;
-    final balance = (roomTotal - advancePaid).clamp(0.0, roomTotal);
 
-    showModalBottomSheet(
+    final double totalBilled = isFinalized ? (bill?.subtotal ?? roomTotal) : roomTotal;
+    final double balanceDue = isFinalized ? (bill?.outstanding ?? 0.0) : (roomTotal - advancePaid).clamp(0.0, roomTotal);
+    final double balancePaid = isFinalized ? (totalBilled - advancePaid).clamp(0.0, totalBilled) : 0.0;
+
+    final room = stay.room ??
+        store.rooms.cast<Room?>().firstWhere((r) => r?.id == stay.roomId, orElse: () => null);
+
+    final invoiceNo = bill != null && bill.billNumber.isNotEmpty && bill.billNumber != 'INV-DRAFT'
+        ? bill.billNumber
+        : 'INV-${DateTime.now().year}-${stay.id.replaceAll(RegExp(r'[^0-9]'), '').padLeft(4, '0')}';
+    final issueDate = DateFormat('dd MMM yyyy, hh:mm a').format(bill?.createdAt ?? DateTime.now());
+    final checkIn = DateFormat('dd MMM yyyy, hh:mm a').format(stay.checkInAt);
+    final checkOut = DateFormat('dd MMM yyyy, hh:mm a').format(stay.checkOutAt ?? stay.expectedCheckOut);
+
+    final baseAmount = (totalBilled / 1.12).round();
+    final cgst = ((totalBilled / 1.12) * 0.06).round();
+    final sgst = ((totalBilled / 1.12) * 0.06).round();
+
+    final sheetFuture = showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppTheme.slateBorder,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Invoice header
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppTheme.brandPrimary, AppTheme.brandAccent],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'INVOICE',
-                        style: GoogleFonts.outfit(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 2,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.92,
+        minChildSize: 0.6,
+        maxChildSize: 0.96,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              // Drag handle & top bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 16, 6),
+                child: Column(
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppTheme.slateBorder,
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                      Text(
-                        bill?.billNumber ?? 'INV-DRAFT',
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    context.read<HotelStore>().currentProperty.name,
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      color: Colors.white60,
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Invoice rows
-            _invoiceRow('Guest', stay.guest?.fullName ?? 'Guest'),
-            _invoiceRow(
-              'Room',
-              '${stay.room?.roomNumber} (${stay.room?.categoryName})',
-            ),
-            _invoiceRow(
-              'Check-In',
-              DateFormat('d MMM yyyy, hh:mm a').format(stay.checkInAt),
-            ),
-            _invoiceRow(
-              'Check-Out',
-              DateFormat('d MMM yyyy, hh:mm a').format(stay.expectedCheckOut),
-            ),
-            _invoiceRow('Duration', '$nights night${nights > 1 ? "s" : ""}'),
-            _invoiceRow('Rate/Night', '₹${stay.nightlyRate.toInt()}'),
-            const Divider(color: AppTheme.slateBorder),
-            _invoiceRow('Subtotal', '₹${roomTotal.toInt()}', bold: true),
-            _invoiceRow('Advance Paid', '₹${advancePaid.toInt()}'),
-            const Divider(color: AppTheme.slateBorder),
-            _invoiceRow(
-              'Balance Due',
-              '₹${balance.toInt()}',
-              bold: true,
-              color: balance > 0 ? Colors.red.shade600 : AppTheme.statusVacant,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invoice printed/shared 🖨️')),
-                );
-              },
-              icon: const Icon(Icons.print_rounded, size: 16),
-              label: const Text('Print / Share Invoice'),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppTheme.brandPrimary),
-                foregroundColor: AppTheme.brandPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: AppTheme.brandLight,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.receipt_long_rounded,
+                            size: 18,
+                            color: AppTheme.brandPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tax Invoice & Guest Folio',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
+                              Text(
+                                '${property.name} • Official GST Bill',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: AppTheme.slateMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          color: AppTheme.slateMuted,
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              const Divider(height: 1, color: AppTheme.slateBorder),
+
+              // Scrollable Paper Invoice Card
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: AppTheme.slateBorder),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 1. Hotel Header & Status Badge
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      property.name,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${property.address}, ${property.city}, ${property.state} - ${property.pincode}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'GSTIN: ${property.gstNumber}  •  Ph: ${property.phone}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppTheme.slateMuted,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: balanceDue <= 0
+                                      ? const Color(0xFFDCFCE7)
+                                      : const Color(0xFFFEF3C7),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: balanceDue <= 0
+                                        ? const Color(0xFF86EFAC)
+                                        : const Color(0xFFFDE68A),
+                                  ),
+                                ),
+                                child: Text(
+                                  balanceDue <= 0 ? 'PAID IN FULL' : 'PAYMENT DUE',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                    color: balanceDue <= 0
+                                        ? const Color(0xFF15803D)
+                                        : const Color(0xFFB45309),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 24, color: AppTheme.slateBorder),
+
+                          // 2. Invoice Meta & Guest Info
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'BILLED TO',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateMuted,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      guest?.fullName ?? 'Valued Guest',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      guest?.phone ?? 'No phone recorded',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                    if (guest?.displayIdNumber != null &&
+                                        guest!.displayIdNumber.isNotEmpty)
+                                      Text(
+                                        '${guest.idType.toUpperCase()}: ${guest.displayIdNumber}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: AppTheme.slateMuted,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      'INVOICE NO.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateMuted,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      invoiceNo,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.brandPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Issued: $issueDate',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Stay ID: #${stay.id.toUpperCase()}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+
+                          // 3. Stay Details Banner
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Room ${room?.roomNumber ?? stay.room?.roomNumber ?? "N/A"} (${room?.categoryName ?? stay.room?.categoryName ?? "Standard"})',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
+                                    ),
+                                    Text(
+                                      '$nights Night${nights > 1 ? "s" : ""} · ${stay.guestSummary}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.brandPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'In: $checkIn',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Out: $checkOut',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // 4. Itemized Charges Table
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 5,
+                                  child: Text(
+                                    'PARTICULARS',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateMuted,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    'QTY',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateMuted,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    'RATE',
+                                    textAlign: TextAlign.right,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateMuted,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(
+                                    'AMOUNT',
+                                    textAlign: TextAlign.right,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 5,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Room Accommodation',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.slateDark,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Room ${room?.roomNumber} (${room?.categoryName})',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: AppTheme.slateMuted,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    '$nights N',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: AppTheme.slateDark,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    '₹${stay.nightlyRate.toInt()}',
+                                    textAlign: TextAlign.right,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: AppTheme.slateDark,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(
+                                    '₹${(stay.nightlyRate * nights).toInt()}',
+                                    textAlign: TextAlign.right,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateDark,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 16, color: AppTheme.slateBorder),
+
+                          // Tax Breakdown
+                          _subDetailRow('Base Room Charges', '₹$baseAmount'),
+                          _subDetailRow('CGST (6%)', '₹$cgst'),
+                          _subDetailRow('SGST (6%)', '₹$sgst'),
+                          _subDetailRow(
+                            'Total Room Tariff (GST Inclusive)',
+                            '₹${totalBilled.toInt()}',
+                            isBold: true,
+                          ),
+                          const Divider(height: 16, color: AppTheme.slateBorder),
+
+                          // Settlement Breakdown
+                          _subDetailRow(
+                            'Advance Deposit Received',
+                            '-₹${advancePaid.toInt()}',
+                            color: const Color(0xFF16A34A),
+                          ),
+                          if (balancePaid > 0)
+                            _subDetailRow(
+                              'Paid at Check-Out (${_paymentMethod.toUpperCase()})',
+                              '-₹${balancePaid.toInt()}',
+                              color: const Color(0xFF16A34A),
+                            ),
+                          const Divider(height: 16, color: AppTheme.slateBorder),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'NET BALANCE DUE',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
+                              Text(
+                                '₹${balanceDue.toInt()}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: balanceDue > 0
+                                      ? Colors.red.shade700
+                                      : const Color(0xFF16A34A),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Terms & Declaration
+                          Text(
+                            'Thank you for staying with us at ${property.name}!',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                              color: AppTheme.slateMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Official computer-generated GST tax invoice issued via EaseInn PMS.',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: AppTheme.slateMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Action Buttons Card
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.slateBorder),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _sharePdfInvoice(
+                                    stay: stay,
+                                    bill: bill,
+                                    totalBilled: totalBilled,
+                                    advancePaid: advancePaid,
+                                    balancePaid: balancePaid,
+                                    balanceDue: balanceDue,
+                                    room: room,
+                                    invoiceNo: invoiceNo,
+                                  ),
+                                  icon: const Icon(Icons.share_rounded, size: 16),
+                                  label: const Text('Share PDF'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppTheme.slateDark,
+                                    side: const BorderSide(color: AppTheme.slateBorder),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _sendInvoicePdfViaWhatsApp(
+                                    stay: stay,
+                                    bill: bill,
+                                    totalBilled: totalBilled,
+                                    advancePaid: advancePaid,
+                                    balancePaid: balancePaid,
+                                    balanceDue: balanceDue,
+                                    room: room,
+                                    invoiceNo: invoiceNo,
+                                  ),
+                                  icon: const Icon(Icons.chat_rounded, size: 16),
+                                  label: const Text('WhatsApp PDF'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF16A34A),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    elevation: 0,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _saveInvoicePdf(
+                                    stay: stay,
+                                    bill: bill,
+                                    totalBilled: totalBilled,
+                                    advancePaid: advancePaid,
+                                    balancePaid: balancePaid,
+                                    balanceDue: balanceDue,
+                                    room: room,
+                                    invoiceNo: invoiceNo,
+                                  ),
+                                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
+                                  label: const Text('Save PDF'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppTheme.slateDark,
+                                    side: const BorderSide(color: AppTheme.slateBorder),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _printInvoicePdf(
+                                    stay: stay,
+                                    bill: bill,
+                                    totalBilled: totalBilled,
+                                    advancePaid: advancePaid,
+                                    balancePaid: balancePaid,
+                                    balanceDue: balanceDue,
+                                    room: room,
+                                    invoiceNo: invoiceNo,
+                                  ),
+                                  icon: const Icon(Icons.print_rounded, size: 16),
+                                  label: const Text('Print PDF'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.brandPrimary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    elevation: 0,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+
+    if (isFinalized) {
+      sheetFuture.then((_) {
+        if (mounted) {
+          Navigator.pop(context, true);
+        }
+      });
+    }
+  }
+
+  Widget _subDetailRow(
+    String label,
+    String value, {
+    bool isBold = false,
+    Color? color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+              color: isBold ? AppTheme.slateDark : AppTheme.slateMuted,
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+              color: color ?? AppTheme.slateDark,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -436,15 +1268,56 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(ctx);
+
+                String? pdfBase64;
+                String? pdfFileName;
+                final room = stay.room ??
+                    store.rooms.cast<Room?>().firstWhere(
+                          (r) => r?.id == stay.roomId,
+                          orElse: () => null,
+                        );
+                final totalBilled =
+                    bill?.subtotal ?? (stay.actualNights * stay.nightlyRate);
+                final advancePaid = bill?.amountPaid ?? 0.0;
+                final balancePaid =
+                    (totalBilled - advancePaid).clamp(0.0, totalBilled);
+                final invoiceNo = bill != null &&
+                        bill.billNumber.isNotEmpty &&
+                        bill.billNumber != 'INV-DRAFT'
+                    ? bill.billNumber
+                    : 'INV-${DateTime.now().year}-${stay.id.replaceAll(RegExp(r'[^0-9]'), '').padLeft(4, '0')}';
+
+                try {
+                  final pdfBytes = await InvoicePdfService.generateInvoicePdf(
+                    property: store.currentProperty,
+                    stay: stay,
+                    bill: bill,
+                    totalBilled: totalBilled,
+                    advancePaid: advancePaid,
+                    balancePaid: balancePaid,
+                    balanceDue: balanceDue,
+                    room: room,
+                    paymentMethod: _paymentMethod,
+                  );
+                  pdfBase64 = InvoicePdfService.toBase64(pdfBytes);
+                  pdfFileName = 'Invoice_$invoiceNo.pdf';
+                } catch (e) {
+                  debugPrint('Could not pre-generate PDF for checkout hook: $e');
+                }
+
                 final finalBill = store.checkOutGuest(
                   stayId: stay.id,
                   paymentAmount: balanceDue,
                   paymentMethod: _paymentMethod,
                   sendWhatsApp: _sendWhatsAppMessage,
+                  pdfBase64: pdfBase64,
+                  pdfFileName: pdfFileName,
                 );
-                _showSuccessDialog(stay, finalBill);
+                if (mounted) {
+                  _showSuccessDialog(stay, finalBill);
+                }
               },
               child: Text(
                 'Confirm Check-Out',
@@ -584,16 +1457,23 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Invoice printed 🖨️')),
+                        _showGenerateInvoice(
+                          stay,
+                          finalBill,
+                          finalBill.subtotal,
+                          isFinalized: true,
                         );
                       },
-                      icon: const Icon(Icons.print_rounded, size: 14),
+                      icon: const Icon(Icons.receipt_long_rounded, size: 14),
                       label: const Text(
-                        'Print',
-                        style: TextStyle(fontSize: 12),
+                        'View / Share Folio',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.slateDark,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),

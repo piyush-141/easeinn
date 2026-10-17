@@ -1156,6 +1156,8 @@ class HotelStore extends ChangeNotifier {
     required double paymentAmount,
     required String paymentMethod,
     bool sendWhatsApp = true,
+    String? pdfBase64,
+    String? pdfFileName,
   }) {
     final stayIndex = _stays.indexWhere((s) => s.id == stayId);
     if (stayIndex == -1) throw Exception('Active stay not found');
@@ -1208,7 +1210,7 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
 
-    // Trigger automated WhatsApp checkout thank-you notification (non-blocking)
+    // Trigger automated WhatsApp checkout thank-you notification with straight PDF invoice (non-blocking)
     final guestPhone = targetStay.guest?.phone;
     if (sendWhatsApp && guestPhone != null && guestPhone.trim().isNotEmpty) {
       final df = DateFormat('dd MMM yyyy');
@@ -1221,6 +1223,12 @@ class HotelStore extends ChangeNotifier {
         checkInDate: df.format(targetStay.checkInAt),
         checkOutDate: df.format(targetStay.checkOutAt ?? DateTime.now()),
         stayId: stayId,
+        pdfBase64: pdfBase64,
+        pdfFileName: pdfFileName,
+        totalAmount: bill.subtotal,
+        amountPaid: bill.amountPaid,
+        balanceDue: bill.outstanding,
+        paymentMethod: paymentMethod,
       );
     }
 

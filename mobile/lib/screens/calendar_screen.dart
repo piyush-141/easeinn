@@ -145,11 +145,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
             tooltip: 'Jump to Today',
             onPressed: _jumpToToday,
           ),
-          IconButton(
-            icon: const Icon(Icons.calendar_month_outlined, color: AppTheme.slateMuted),
-            tooltip: 'Pick Date',
-            onPressed: _pickCustomDate,
-          ),
           const SizedBox(width: 8),
         ],
         bottom: PreferredSize(
@@ -454,37 +449,42 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ? DateFormat('EEEE, d MMMM yyyy').format(dates.first)
         : '${formatter.format(dates.first)} – ${formatter.format(dates.last)}, ${dates.first.year}';
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.slateBorder),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left_rounded, color: AppTheme.slateDark),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            onPressed: _previousPeriod,
-          ),
-          Expanded(
-            child: InkWell(
-              onTap: _pickCustomDate,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.calendar_today_rounded, size: 14, color: AppTheme.brandPrimary),
-                    const SizedBox(width: 6),
-                    Flexible(
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.slateBorder),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.chevron_left_rounded,
+                    color: AppTheme.slateDark,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 36,
+                  ),
+                  onPressed: _previousPeriod,
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: _pickCustomDate,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 6,
+                      ),
                       child: Text(
                         rangeText,
+                        textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           fontSize: 12.5,
                           fontWeight: FontWeight.bold,
@@ -494,19 +494,47 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         maxLines: 1,
                       ),
                     ),
-                  ],
+                  ),
                 ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppTheme.slateDark,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 36,
+                  ),
+                  onPressed: _nextPeriod,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: _pickCustomDate,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.slateBorder),
+              ),
+              child: const Icon(
+                Icons.calendar_month_outlined,
+                color: AppTheme.slateMuted,
+                size: 21,
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right_rounded, color: AppTheme.slateDark),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            onPressed: _nextPeriod,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

@@ -48,6 +48,20 @@ let pendingSends = new Map();
 // resolves and the accepted log entry is written. Keep those receipts briefly
 // so the eventual log entry cannot get stuck in PENDING.
 const earlyDeliveryReceipts = new Map();
+
+// Message Store for handling Signal protocol retry receipts and preventing
+// the "Waiting for this message. This may take a while." WhatsApp decryption error.
+const messageStore = new Map();
+const MAX_CACHED_MESSAGES = 1500;
+
+function cacheMessage(id, message) {
+  if (!id || !message) return;
+  if (messageStore.size >= MAX_CACHED_MESSAGES) {
+    const oldestKey = messageStore.keys().next().value;
+    messageStore.delete(oldestKey);
+  }
+  messageStore.set(id, message);
+}
 const configuredSendTimeout = Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 90000);
 const SEND_TIMEOUT_MS = Number.isFinite(configuredSendTimeout) && configuredSendTimeout >= 10000 && configuredSendTimeout <= 180000
   ? configuredSendTimeout
@@ -242,12 +256,42 @@ function sendWithTimeout(promise, timeoutMs) {
 
 function interpolateTemplate(templateString, context = {}) {
   let result = templateString || "";
+
+  // Check if room number is assigned
+  const rawRoom = context.roomNumber ? String(context.roomNumber).trim() : "";
+  const unassignedValues = ["", "unassigned", "pending", "tbd", "n/a", "none", "null", "undefined"];
+  const hasRoom = rawRoom !== "" && !unassignedValues.includes(rawRoom.toLowerCase());
+
+  if (!hasRoom) {
+    // For reservations and bookings where room has not yet been assigned, omit the room lines
+    result = result.replace(/^[ \t]*[🛏️\s•\-\*]*Room:?\s*\{roomNumber\}[^\r\n]*(\r?\n)?/gim, "");
+    result = result.replace(/^[ \t]*[🛏️\s•\-\*]*कमरा:?\s*\{roomNumber\}[^\r\n]*(\r?\n)?/gim, "");
+    // Clean up inline room references in other templates if unassigned
+    result = result.replace(/\s+in Room\s*\{roomNumber\}/gi, "");
+    result = result.replace(/कमरे\s*\{roomNumber\}\s*में\s*/gi, "");
+    result = result.replace(/to Room\s*\{roomNumber\}\s*/gi, "");
+    result = result.replace(/कमरा\s*\{roomNumber\}\s*में\s*/gi, "");
+    result = result.replace(/from Room\s*\{roomNumber\}\s*/gi, "");
+    result = result.replace(/कमरा\s*\{roomNumber\}\s*से\s*/gi, "");
+  }
+
+  const sampleEn = "We have an update regarding your stay.";
+  const sampleHi = "आपके प्रवास के संबंध में एक जानकारी।";
+  const msgEn = context.message !== undefined && context.message !== null && String(context.message).trim() !== ""
+    ? String(context.message)
+    : (context.isSample ? sampleEn : "");
+  const msgHi = context.messageHindi !== undefined && context.messageHindi !== null && String(context.messageHindi).trim() !== ""
+    ? String(context.messageHindi)
+    : (context.message ? String(context.message) : (context.isSample ? sampleHi : ""));
+
   const replacements = {
     "{guestName}": context.guestName || "Valued Guest",
     "{hotelName}": context.hotelName || "EaseInn Hotel",
-    "{roomNumber}": context.roomNumber ? String(context.roomNumber) : "Unassigned",
+    "{roomNumber}": hasRoom ? rawRoom : "",
     "{checkInDate}": context.checkInDate || "Today",
     "{checkOutDate}": context.checkOutDate || "Tomorrow",
+    "{message}": msgEn,
+    "{messageHindi}": msgHi,
   };
 
   for (const [placeholder, value] of Object.entries(replacements)) {
@@ -299,6 +343,15 @@ function bindSocketEvents(client, saveCreds) {
           ? "DELIVERED"
           : null;
       if (deliveryStatus) recordDeliveryReceipt(messageId, deliveryStatus);
+    }
+  });
+
+  // Track all incoming and outgoing messages in store for Signal protocol decryption retry requests
+  client.ev.on("messages.upsert", async ({ messages }) => {
+    for (const msg of messages || []) {
+      if (msg?.key?.id && msg?.message) {
+        cacheMessage(msg.key.id, msg.message);
+      }
     }
   });
 
@@ -436,14 +489,21 @@ async function initializeWhatsAppClientInternal() {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
       },
-      browser: Browsers.windows("EaseInn Hotel"),
-      markOnlineOnConnect: false,
+      browser: Browsers.ubuntu("Chrome"),
+      markOnlineOnConnect: true,
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
       connectTimeoutMs: 60_000,
       keepAliveIntervalMs: 25_000,
       retryRequestDelayMs: 250,
+      maxMsgRetryCount: 5,
       defaultQueryTimeoutMs: 60_000,
+      getMessage: async (key) => {
+        if (key && key.id && messageStore.has(key.id)) {
+          return messageStore.get(key.id);
+        }
+        return undefined;
+      },
     });
 
     if (currentGeneration !== generation) {
@@ -553,9 +613,10 @@ async function sendWhatsAppNotification({
   context = {},
   bypassDuplicateCheck = false,
   stayId,
+  document,
 }) {
   const currentSend = sendQueue.then(() => sendWhatsAppNotificationNow({
-    templateId, recipientPhone, customMessage, context, bypassDuplicateCheck, stayId,
+    templateId, recipientPhone, customMessage, context, bypassDuplicateCheck, stayId, document,
   }));
   sendQueue = currentSend.catch(() => {});
   return currentSend;
@@ -568,6 +629,7 @@ async function sendWhatsAppNotificationNow({
   context = {},
   bypassDuplicateCheck = false,
   stayId,
+  document,
 }) {
   const norm = normalizePhoneNumber(recipientPhone);
   if (!norm) {
@@ -595,11 +657,20 @@ async function sendWhatsAppNotificationNow({
     if (!templateConfig.enabled) {
       return { success: false, delivered: false, error: `Template "${templateId}" is muted/disabled.`, code: "TEMPLATE_DISABLED" };
     }
-    messageBody = interpolateTemplate(templateConfig.template, context);
+    const effectiveContext = {
+      ...context,
+      message: (context && context.message) || customMessage || "",
+      messageHindi: (context && context.messageHindi) || (context && context.message) || customMessage || "",
+    };
+    messageBody = interpolateTemplate(templateConfig.template, effectiveContext);
   }
 
   if (!messageBody || !messageBody.trim()) {
-    return { success: false, delivered: false, error: "Cannot send empty WhatsApp message body.", code: "EMPTY_BODY" };
+    if (document && document.buffer) {
+      messageBody = document.caption || "Tax Invoice & Guest Folio";
+    } else {
+      return { success: false, delivered: false, error: "Cannot send empty WhatsApp message body.", code: "EMPTY_BODY" };
+    }
   }
 
   if (Buffer.byteLength(messageBody, "utf8") > 65536) {
@@ -654,13 +725,6 @@ async function sendWhatsAppNotificationNow({
     }
   }
 
-  if (!bypassDuplicateCheck && duplicateCache.has(dedupeKey)) {
-    const previous = duplicateCache.get(dedupeKey);
-    if (Date.now() - previous.timestamp < 300000) {
-      return { success: false, accepted: false, delivered: false, suppressed: true, messageId: previous.messageId, message: "Duplicate message skipped because WhatsApp already accepted it within the last 5 minutes.", code: "DUPLICATE_SUPPRESSED" };
-    }
-  }
-
   const resolved = await resolveRecipientJid(norm.cleanPhone);
   if (!resolved.jid) {
     const errorMsg = resolved.exists === false
@@ -673,11 +737,40 @@ async function sendWhatsAppNotificationNow({
   try {
     console.log(`[WhatsApp] Sending to ${resolved.jid}...`);
     const sendingSocket = sock;
-    const sendPromise = sendingSocket.sendMessage(resolved.jid, { text: messageBody });
+    let sendPromise;
+    let lateDocPromise = null;
+
+    if (document && document.buffer) {
+      // 1. Send the text notification first so the guest immediately receives the message
+      if (messageBody && messageBody.trim()) {
+        try {
+          const textMsg = await sendingSocket.sendMessage(resolved.jid, { text: messageBody });
+          if (textMsg?.key?.id && textMsg?.message) {
+            cacheMessage(textMsg.key.id, textMsg.message);
+          }
+        } catch (textErr) {
+          console.warn("[WhatsApp] Text notice dispatch note:", textErr.message);
+        }
+      }
+
+      // 2. Send the PDF Document attachment with a concise caption to avoid media caption limits
+      const docPayload = {
+        document: document.buffer,
+        mimetype: document.mimetype || "application/pdf",
+        fileName: document.fileName || "Tax_Invoice.pdf",
+        caption: `📄 Tax Invoice & Guest Folio - ${document.fileName || "Invoice.pdf"}`,
+      };
+      sendPromise = sendingSocket.sendMessage(resolved.jid, docPayload);
+    } else {
+      sendPromise = sendingSocket.sendMessage(resolved.jid, { text: messageBody });
+    }
     sendAttempt.promise = sendPromise;
     let acceptanceRecorded = false;
     const recordAccepted = (acceptedMessage) => {
       if (acceptanceRecorded || !isConfirmedSendResult(acceptedMessage)) return;
+      if (acceptedMessage?.key?.id && acceptedMessage?.message) {
+        cacheMessage(acceptedMessage.key.id, acceptedMessage.message);
+      }
       acceptanceRecorded = true;
       const acceptedAt = Date.now();
       const acceptedMessageId = acceptedMessage.key.id;

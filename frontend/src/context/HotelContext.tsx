@@ -602,6 +602,10 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         checkInDate: new Date(stay.check_in_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
         checkOutDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
         stayId,
+        totalAmount: updatedBill.total_amount,
+        amountPaid: updatedBill.amount_paid,
+        balanceDue: updatedBill.balance_due,
+        paymentMethod: paymentMethod || 'UPI',
       }).catch((err) => console.warn('[WhatsApp] Check-out message hook error:', err));
     }
 

@@ -1,5 +1,6 @@
 // src/controllers/whatsapp.controller.js
 const whatsappService = require("../services/whatsapp.service");
+const invoiceService = require("../services/invoice.service");
 const { DEFAULT_TEMPLATES } = require("../config/whatsapp.config");
 
 /**
@@ -127,7 +128,8 @@ exports.previewTemplate = async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing templateId or templateString" });
     }
 
-    const preview = whatsappService.interpolateTemplate(rawText, context || variables || {});
+    const userContext = context || variables || {};
+    const preview = whatsappService.interpolateTemplate(rawText, { isSample: true, ...userContext });
     return res.json({ success: true, preview });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -139,12 +141,30 @@ exports.previewTemplate = async (req, res) => {
  */
 exports.sendMessage = async (req, res) => {
   try {
-    const { templateId, recipientPhone, customMessage, context, variables, bypassDuplicateCheck, stayId } = req.body;
+    const {
+      templateId,
+      recipientPhone,
+      customMessage,
+      context,
+      variables,
+      bypassDuplicateCheck,
+      stayId,
+      pdfBase64,
+      pdfFileName,
+    } = req.body;
     const ctx = context || variables || {};
 
     if (!recipientPhone) {
       return res.status(400).json({ success: false, error: "recipientPhone is required." });
     }
+
+    const document = pdfBase64
+      ? {
+          buffer: Buffer.from(pdfBase64, "base64"),
+          fileName: pdfFileName || "Tax_Invoice.pdf",
+          mimetype: "application/pdf",
+        }
+      : undefined;
 
     const result = await whatsappService.sendWhatsAppNotification({
       templateId,
@@ -153,6 +173,7 @@ exports.sendMessage = async (req, res) => {
       context: ctx,
       bypassDuplicateCheck,
       stayId,
+      document,
     });
 
     const statusCode = result.success ? 200 : ["NOT_CONNECTED", "SEND_OUTCOME_UNKNOWN", "SEND_IN_PROGRESS"].includes(result.code) ? 503 : result.code === "SEND_FAILED" ? 502 : 400;
@@ -213,15 +234,64 @@ exports.onCheckIn = async (req, res) => {
  */
 exports.onCheckOut = async (req, res) => {
   try {
-    const { guestName, phone, hotelName, roomNumber, checkInDate, checkOutDate, stayId } = req.body;
+    const {
+      guestName,
+      phone,
+      hotelName,
+      roomNumber,
+      checkInDate,
+      checkOutDate,
+      stayId,
+      pdfBase64,
+      pdfFileName,
+      totalAmount,
+      amountPaid,
+      balanceDue,
+      paymentMethod,
+    } = req.body;
     if (!phone) {
       return res.json({ success: false, error: "Guest phone number is required", nonBlocking: true });
+    }
+
+    let document;
+    if (pdfBase64 && typeof pdfBase64 === "string" && pdfBase64.trim().length > 50) {
+      const cleanB64 = pdfBase64.includes(";base64,") ? pdfBase64.split(";base64,").pop().trim() : pdfBase64.trim();
+      document = {
+        buffer: Buffer.from(cleanB64, "base64"),
+        fileName: pdfFileName || `Tax_Invoice_${roomNumber || "checkout"}.pdf`,
+        mimetype: "application/pdf",
+      };
+    } else {
+      // Auto-generate detailed PDF invoice on the server so the guest ALWAYS receives their invoice
+      try {
+        const generatedBuffer = await invoiceService.generateInvoicePdfBuffer({
+          guestName: guestName || "Valued Guest",
+          guestPhone: phone,
+          hotelName: hotelName || "EaseInn Hotel",
+          roomNumber: roomNumber || "101",
+          checkInDate: checkInDate || "Today",
+          checkOutDate: checkOutDate || "Tomorrow",
+          invoiceNo: pdfFileName ? pdfFileName.replace(/\.pdf$/i, "") : undefined,
+          totalAmount: Number(totalAmount) || 2500,
+          amountPaid: amountPaid !== undefined ? Number(amountPaid) : 2500,
+          balanceDue: balanceDue !== undefined ? Number(balanceDue) : 0,
+          paymentMethod: paymentMethod || "UPI",
+        });
+        document = {
+          buffer: generatedBuffer,
+          fileName: pdfFileName || `Tax_Invoice_${roomNumber || "checkout"}.pdf`,
+          mimetype: "application/pdf",
+        };
+      } catch (genErr) {
+        console.warn("[WhatsApp] Could not auto-generate invoice PDF:", genErr.message);
+      }
     }
 
     const result = await whatsappService.sendWhatsAppNotification({
       templateId: "checkout_thankyou",
       recipientPhone: phone,
       stayId,
+      document,
       context: {
         guestName,
         hotelName,

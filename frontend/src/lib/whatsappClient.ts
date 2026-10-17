@@ -183,6 +183,12 @@ export async function triggerCheckOutWhatsApp(data: {
   checkInDate: string;
   checkOutDate: string;
   stayId?: string;
+  pdfBase64?: string;
+  pdfFileName?: string;
+  totalAmount?: number;
+  amountPaid?: number;
+  balanceDue?: number;
+  paymentMethod?: string;
 }): Promise<any> {
   try {
     const res = await fetch(`${BASE_URL}/api/whatsapp/hook/checkout`, {

@@ -12,6 +12,7 @@ import '../services/hotel_store.dart';
 import '../services/export_file_service.dart';
 import '../models/guest.dart';
 import '../models/stay.dart';
+import '../models/room.dart';
 import '../theme/app_theme.dart';
 import '../widgets/pressable_scale.dart';
 
@@ -28,8 +29,10 @@ class _GuestsScreenState extends State<GuestsScreen> {
   final _searchController = TextEditingController();
   String _filter = 'all'; // 'all', 'in_house', 'past'
   String _roomFilter = 'all'; // 'all' or roomId/roomNumber
+  String _idTypeFilter = 'all';
   GuestDateFilter _dateFilter = GuestDateFilter.all;
   DateTimeRange? _customDateRange;
+  String _sortBy = 'recent'; // 'recent', 'name', 'room', 'status'
 
   @override
   void dispose() {
@@ -762,15 +765,23 @@ Stay: $stayData
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    return store.guests.where((g) {
+    final list = store.guests.where((g) {
       // 1. Search Query
       if (query.isNotEmpty) {
+        final stay = _findStayForGuest(store, g.id);
+        final room = stay?.room ??
+            (stay != null
+                ? store.rooms
+                    .cast<Room?>()
+                    .firstWhere((r) => r?.id == stay.roomId, orElse: () => null)
+                : null);
         final matches =
             g.fullName.toLowerCase().contains(query) ||
             g.phone.contains(query) ||
             g.displayIdNumber.toLowerCase().contains(query) ||
             g.idNumberMasked.toLowerCase().contains(query) ||
-            (g.address?.toLowerCase().contains(query) ?? false);
+            (g.address?.toLowerCase().contains(query) ?? false) ||
+            (room != null && room.roomNumber.toLowerCase().contains(query));
         if (!matches) return false;
       }
 
@@ -778,6 +789,10 @@ Stay: $stayData
       final isInHouse = activeGuestIds.contains(g.id);
       if (_filter == 'in_house' && !isInHouse) return false;
       if (_filter == 'past' && isInHouse) return false;
+      if (_idTypeFilter != 'all' &&
+          g.idType.toLowerCase() != _idTypeFilter) {
+        return false;
+      }
 
       // 3. Room & Date Filter (via linked stay)
       final stay = _findStayForGuest(store, g.id);
@@ -835,8 +850,9 @@ Stay: $stayData
                 59,
                 59,
               );
-              if (checkInDate.isBefore(start) || stay.checkInAt.isAfter(end))
+              if (checkInDate.isBefore(start) || stay.checkInAt.isAfter(end)) {
                 return false;
+              }
             }
             break;
         }
@@ -844,6 +860,42 @@ Stay: $stayData
 
       return true;
     }).toList();
+
+    // 4. Sorting
+    if (_sortBy == 'name') {
+      list.sort((a, b) =>
+          a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+    } else if (_sortBy == 'room') {
+      list.sort((a, b) {
+        final stayA = _findStayForGuest(store, a.id);
+        final roomA = stayA?.room?.roomNumber ??
+            (stayA != null
+                ? store.rooms
+                    .cast<Room?>()
+                    .firstWhere((r) => r?.id == stayA.roomId, orElse: () => null)
+                    ?.roomNumber
+                : '') ??
+            '';
+        final stayB = _findStayForGuest(store, b.id);
+        final roomB = stayB?.room?.roomNumber ??
+            (stayB != null
+                ? store.rooms
+                    .cast<Room?>()
+                    .firstWhere((r) => r?.id == stayB.roomId, orElse: () => null)
+                    ?.roomNumber
+                : '') ??
+            '';
+        return roomA.compareTo(roomB);
+      });
+    } else if (_sortBy == 'status') {
+      list.sort((a, b) {
+        final aIn = activeGuestIds.contains(a.id) ? 0 : 1;
+        final bIn = activeGuestIds.contains(b.id) ? 0 : 1;
+        return aIn.compareTo(bIn);
+      });
+    }
+
+    return list;
   }
 
   String _generateGuestSheetCsv(List<Guest> guests, HotelStore store) {
@@ -1370,37 +1422,46 @@ Stay: $stayData
   @override
   Widget build(BuildContext context) {
     final store = context.watch<HotelStore>();
-    final activeGuestIds = store.activeStays.map((s) => s.guestId).toSet();
+    final activeGuestIds = <String>{
+      for (final stay in store.activeStays) ...[
+        stay.guestId,
+        ...stay.coGuests.map((guest) => guest.id),
+      ],
+    };
+    final inHouseGuestCount = store.guests
+        .where((guest) => activeGuestIds.contains(guest.id))
+        .length;
     final filtered = _filterGuestsForExport(store);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header Row with Title and Export Button
+              // Header
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Guest Directory & ID Folios',
+                          'Guest Directory',
                           style: GoogleFonts.outfit(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
                             color: AppTheme.slateDark,
                           ),
                         ),
+                        const SizedBox(height: 2),
                         Text(
-                          'Government ID records, OCR data & stay histories',
+                          '${store.guests.length} guests · $inHouseGuestCount in-house',
                           style: GoogleFonts.inter(
-                            fontSize: 11,
+                            fontSize: 13,
                             color: AppTheme.slateMuted,
                           ),
                         ),
@@ -1408,17 +1469,23 @@ Stay: $stayData
                     ),
                   ),
                   PressableScale(
-                    pressedScale: 0.94,
+                    pressedScale: 0.96,
                     child: ElevatedButton.icon(
                       onPressed: () => _exportGuestSheet(context, store),
-                      icon: const Icon(Icons.file_upload_outlined, size: 15),
-                      label: const Text('Export Sheet'),
+                      icon: const Icon(Icons.file_download_outlined, size: 16),
+                      label: Text(
+                        'Export',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.brandPrimary,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
+                          horizontal: 14,
+                          vertical: 10,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -1429,114 +1496,169 @@ Stay: $stayData
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
-              // Search Bar
+              // Search Bar with Sliders/Tune Icon
               TextField(
                 controller: _searchController,
                 onChanged: (_) => setState(() {}),
-                style: const TextStyle(fontSize: 13, color: AppTheme.slateDark),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: AppTheme.slateDark,
+                ),
                 decoration: InputDecoration(
-                  hintText: 'Search by name, phone, Aadhaar, address...',
-                  hintStyle: const TextStyle(
-                    fontSize: 12,
+                  hintText: 'Name, phone, Aadhaar, room...',
+                  hintStyle: GoogleFonts.inter(
+                    fontSize: 14,
                     color: AppTheme.slateMuted,
                   ),
                   prefixIcon: const Icon(
                     Icons.search_rounded,
-                    size: 20,
+                    size: 21,
                     color: AppTheme.slateMuted,
                   ),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_searchController.text.isNotEmpty)
+                        IconButton(
+                          tooltip: 'Clear search',
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          color: AppTheme.slateMuted,
                           onPressed: () {
                             _searchController.clear();
                             setState(() {});
                           },
-                        )
-                      : null,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
+                        ),
+                      IconButton(
+                        tooltip: 'Filters',
+                        icon: const Icon(Icons.tune_rounded, size: 20),
+                        color: AppTheme.slateMuted,
+                        onPressed: () => _showFilterBottomSheet(context),
+                      ),
+                    ],
                   ),
                   filled: true,
                   fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(color: AppTheme.slateBorder),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(color: AppTheme.slateBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(
+                      color: AppTheme.brandPrimary,
+                      width: 1.3,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
 
-              // Filter Chips Row
+              // Primary Category Chips: All (7), In-House (3), Past Guests
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    _buildChip('all', 'All Guests (${store.guests.length})'),
+                    _buildChip('all', 'All (${store.guests.length})'),
                     const SizedBox(width: 8),
                     _buildChip(
                       'in_house',
-                      'In-House (${activeGuestIds.length})',
+                      'In-House ($inHouseGuestCount)',
                     ),
                     const SizedBox(width: 8),
-                    _buildChip('past', 'Past Guests'),
-                    const SizedBox(width: 8),
-                    // Room Filter Dropdown Chip
-                    _buildRoomFilterChip(store),
-                    const SizedBox(width: 8),
-                    // Date Filter Chip
-                    _buildDateFilterChip(),
+                    _buildChip(
+                      'past',
+                      'Past Guests',
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
 
-              // Guest Cards List
+              // Secondary Filter Chips: All Rooms, All Time, ID Type
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildRoomFilterChip(store),
+                    const SizedBox(width: 8),
+                    _buildDateFilterChip(),
+                    const SizedBox(width: 8),
+                    _buildIdTypeFilterChip(store),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // Section Header: "Guest records" + "View by"
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Guest records',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.slateMuted,
+                      ),
+                    ),
+                  ),
+                  _buildViewByButton(),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Guest Records List
               if (filtered.isEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 40),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 36,
+                    horizontal: 16,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: AppTheme.slateBorder),
                   ),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.people_outline_rounded,
-                          size: 40,
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.people_outline_rounded,
+                        size: 36,
+                        color: AppTheme.slateMuted,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        store.guests.isEmpty
+                            ? 'No guests yet'
+                            : 'No matching guests',
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.slateDark,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        store.guests.isEmpty
+                            ? 'Guests will appear here after check-in.'
+                            : 'Try another search or filter.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
                           color: AppTheme.slateMuted,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          store.guests.isEmpty
-                              ? 'No Guests Registered Yet'
-                              : 'No matching guests found',
-                          style: GoogleFonts.outfit(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.slateDark,
-                          ),
-                        ),
-                        Text(
-                          store.guests.isEmpty
-                              ? 'Complete a check-in to auto-save guest profiles.'
-                              : 'Try adjusting your search query or room filter.',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: AppTheme.slateMuted,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 )
               else
@@ -1544,138 +1666,133 @@ Stay: $stayData
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final guest = filtered[index];
-                    final isInHouse = activeGuestIds.contains(guest.id);
                     final stay = _findStayForGuest(store, guest.id);
+                    final isInHouse = activeGuestIds.contains(guest.id);
+                    final statusLabel = isInHouse
+                        ? 'In-House'
+                        : stay?.status == StayStatus.reserved
+                        ? 'Reservation'
+                        : 'Past Guest';
+                    final statusColor = isInHouse
+                        ? const Color(0xFF16834A)
+                        : stay?.status == StayStatus.reserved
+                        ? const Color(0xFF2563EB)
+                        : AppTheme.slateMuted;
+                    final statusBackground = isInHouse
+                        ? const Color(0xFFE8F9ED)
+                        : stay?.status == StayStatus.reserved
+                        ? const Color(0xFFE5F0FF)
+                        : const Color(0xFFF1F5F9);
+
+                    final room = stay?.room ??
+                        (stay != null
+                            ? store.rooms
+                                .cast<Room?>()
+                                .firstWhere(
+                                  (r) => r?.id == stay.roomId,
+                                  orElse: () => null,
+                                )
+                            : null);
+                    final roomLabel = room != null
+                        ? 'Room ${room.roomNumber}'
+                        : guest.phone.isNotEmpty
+                        ? guest.phone
+                        : 'Guest record';
 
                     return PressableScale(
                       onTap: () => _showGuestProfile(context, guest, store),
-                      pressedScale: 0.97,
+                      pressedScale: 0.985,
                       child: Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.slateBorder),
+                          border: Border.all(
+                            color:
+                                AppTheme.slateBorder.withValues(alpha: 0.85),
+                          ),
                         ),
                         child: Row(
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: AppTheme.brandPrimary.withValues(
-                                alpha: 0.12,
-                              ),
+                              backgroundColor: const Color(0xFFE5F0FF),
                               child: Text(
                                 guest.fullName.isNotEmpty
-                                    ? guest.fullName
-                                          .substring(0, 1)
-                                          .toUpperCase()
+                                    ? guest.fullName[0].toUpperCase()
                                     : 'G',
-                                style: const TextStyle(
+                                style: GoogleFonts.inter(
                                   color: AppTheme.brandPrimary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Row(
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          guest.fullName,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppTheme.slateDark,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      if (isInHouse) ...[
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 1.5,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.statusOccupiedBg,
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                          child: const Text(
-                                            'In-House',
-                                            style: TextStyle(
-                                              color: AppTheme.statusOccupied,
-                                              fontSize: 8,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      if (stay != null &&
-                                          stay.room != null) ...[
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 1.5,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.shade100,
-                                            borderRadius: BorderRadius.circular(
-                                              5,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Rm ${stay.room!.roomNumber}',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 8.5,
-                                              fontWeight: FontWeight.bold,
-                                              color: AppTheme.slateDark,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: 2),
                                   Text(
-                                    '${guest.idType.toUpperCase()}: ${guest.displayIdNumber} • ${guest.phone}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      color: AppTheme.slateMuted,
-                                    ),
+                                    guest.fullName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (guest.address != null &&
-                                      guest.address!.isNotEmpty)
-                                    Text(
-                                      guest.address!,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 9.5,
-                                        color: Colors.grey.shade400,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.slateDark,
                                     ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    roomLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      color: AppTheme.slateMuted,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                            const Icon(
-                              Icons.chevron_right_rounded,
-                              color: AppTheme.slateMuted,
-                              size: 20,
+                            const SizedBox(width: 10),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusBackground,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    statusLabel,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: AppTheme.slateMuted,
+                                  size: 18,
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -1697,20 +1814,73 @@ Stay: $stayData
       onTap: () => setState(() => _filter = id),
       pressedScale: 0.94,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           color: isSel ? AppTheme.brandPrimary : Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSel ? AppTheme.brandPrimary : AppTheme.slateBorder,
           ),
         ),
         child: Text(
           label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
             color: isSel ? Colors.white : AppTheme.slateDark,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewByButton() {
+    String currentSortLabel = 'View by';
+    if (_sortBy == 'name') currentSortLabel = 'By Name';
+    if (_sortBy == 'room') currentSortLabel = 'By Room';
+    if (_sortBy == 'status') currentSortLabel = 'By Status';
+
+    return PressableScale(
+      pressedScale: 0.94,
+      child: PopupMenuButton<String>(
+        onSelected: (val) => setState(() => _sortBy = val),
+        itemBuilder: (context) => const [
+          PopupMenuItem(value: 'recent', child: Text('Recent / Default')),
+          PopupMenuItem(value: 'name', child: Text('Name (A - Z)')),
+          PopupMenuItem(value: 'room', child: Text('Room Number')),
+          PopupMenuItem(value: 'status', child: Text('Status (In-House first)')),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppTheme.slateBorder),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.filter_list_rounded,
+                size: 14,
+                color: AppTheme.slateMuted,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                currentSortLabel,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.slateDark,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 15,
+                color: AppTheme.slateMuted,
+              ),
+            ],
           ),
         ),
       ),
@@ -1719,7 +1889,11 @@ Stay: $stayData
 
   Widget _buildRoomFilterChip(HotelStore store) {
     final isFiltered = _roomFilter != 'all';
-    final label = isFiltered ? 'Room $_roomFilter' : 'All Rooms';
+    final label = isFiltered
+        ? (store.rooms.any((r) => r.id == _roomFilter || r.roomNumber == _roomFilter)
+            ? 'Room ${store.rooms.firstWhere((r) => r.id == _roomFilter || r.roomNumber == _roomFilter).roomNumber}'
+            : 'Room: $_roomFilter')
+        : 'All Rooms';
 
     return PressableScale(
       pressedScale: 0.94,
@@ -1735,10 +1909,10 @@ Stay: $stayData
           ),
         ],
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             color: isFiltered ? AppTheme.brandPrimary : Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isFiltered ? AppTheme.brandPrimary : AppTheme.slateBorder,
             ),
@@ -1747,23 +1921,87 @@ Stay: $stayData
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.meeting_room_outlined,
-                size: 13,
-                color: isFiltered ? Colors.white : AppTheme.slateDark,
+                Icons.bed_outlined,
+                size: 14,
+                color: isFiltered ? Colors.white : AppTheme.slateMuted,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 5),
               Text(
                 label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                   color: isFiltered ? Colors.white : AppTheme.slateDark,
                 ),
               ),
-              const SizedBox(width: 2),
+              const SizedBox(width: 4),
               Icon(
                 Icons.keyboard_arrow_down_rounded,
+                size: 15,
+                color: isFiltered ? Colors.white : AppTheme.slateMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIdTypeFilterChip(HotelStore store) {
+    final idTypes = store.guests
+        .map((guest) => guest.idType.trim().toLowerCase())
+        .where((idType) => idType.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final isFiltered = _idTypeFilter != 'all';
+    final label = isFiltered
+        ? '${_idTypeFilter[0].toUpperCase()}${_idTypeFilter.substring(1)}'
+        : 'ID Type';
+
+    return PressableScale(
+      pressedScale: 0.94,
+      child: PopupMenuButton<String>(
+        onSelected: (value) => setState(() => _idTypeFilter = value),
+        itemBuilder: (context) => [
+          const PopupMenuItem(value: 'all', child: Text('All ID Types')),
+          ...idTypes.map(
+            (idType) => PopupMenuItem(
+              value: idType,
+              child: Text('${idType[0].toUpperCase()}${idType.substring(1)}'),
+            ),
+          ),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: isFiltered ? AppTheme.brandPrimary : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isFiltered ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.badge_outlined,
                 size: 14,
+                color: isFiltered ? Colors.white : AppTheme.slateMuted,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: isFiltered ? Colors.white : AppTheme.slateDark,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 15,
                 color: isFiltered ? Colors.white : AppTheme.slateMuted,
               ),
             ],
@@ -1828,10 +2066,10 @@ Stay: $stayData
           ),
         ],
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             color: isFiltered ? AppTheme.brandPrimary : Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isFiltered ? AppTheme.brandPrimary : AppTheme.slateBorder,
             ),
@@ -1842,22 +2080,117 @@ Stay: $stayData
               Icon(
                 Icons.calendar_today_outlined,
                 size: 13,
-                color: isFiltered ? Colors.white : AppTheme.slateDark,
+                color: isFiltered ? Colors.white : AppTheme.slateMuted,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 5),
               Text(
                 label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                   color: isFiltered ? Colors.white : AppTheme.slateDark,
                 ),
               ),
-              const SizedBox(width: 2),
+              const SizedBox(width: 4),
               Icon(
                 Icons.keyboard_arrow_down_rounded,
-                size: 14,
+                size: 15,
                 color: isFiltered ? Colors.white : AppTheme.slateMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFilterBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      backgroundColor: Colors.white,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.slateBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Guest Directory Filters',
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.slateDark,
+                    ),
+                  ),
+                  if (_filter != 'all' ||
+                      _roomFilter != 'all' ||
+                      _idTypeFilter != 'all' ||
+                      _dateFilter != GuestDateFilter.all ||
+                      _searchController.text.isNotEmpty)
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _filter = 'all';
+                          _roomFilter = 'all';
+                          _idTypeFilter = 'all';
+                          _dateFilter = GuestDateFilter.all;
+                          _customDateRange = null;
+                          _searchController.clear();
+                        });
+                        Navigator.pop(ctx);
+                      },
+                      child: Text(
+                        'Reset All',
+                        style: GoogleFonts.inter(
+                          color: AppTheme.brandPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Filter guests easily using the category and status chips above the list.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppTheme.slateMuted,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.brandPrimary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                  child: const Text('Done'),
+                ),
               ),
             ],
           ),

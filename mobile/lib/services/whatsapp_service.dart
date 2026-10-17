@@ -519,6 +519,12 @@ class WhatsAppService {
     required String checkInDate,
     required String checkOutDate,
     String? stayId,
+    String? pdfBase64,
+    String? pdfFileName,
+    double? totalAmount,
+    double? amountPaid,
+    double? balanceDue,
+    String? paymentMethod,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl/api/whatsapp/hook/checkout');
@@ -534,6 +540,12 @@ class WhatsAppService {
               'checkInDate': checkInDate,
               'checkOutDate': checkOutDate,
               'stayId': stayId,
+              if (pdfBase64 != null) 'pdfBase64': pdfBase64,
+              if (pdfFileName != null) 'pdfFileName': pdfFileName,
+              if (totalAmount != null) 'totalAmount': totalAmount,
+              if (amountPaid != null) 'amountPaid': amountPaid,
+              if (balanceDue != null) 'balanceDue': balanceDue,
+              if (paymentMethod != null) 'paymentMethod': paymentMethod,
             }),
           )
           .timeout(const Duration(seconds: 110));

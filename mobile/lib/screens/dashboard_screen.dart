@@ -158,16 +158,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Bottom Right: Insights (Purple/Indigo Gradient)
+                    // Bottom Right: Dynamic Room Timeline (Blue Gradient)
                     Expanded(
                       child: _buildGradientQuickCard(
-                        title: 'Insights',
-                        icon: Icons.bar_chart_rounded,
+                        title: 'Timeline',
+                        icon: Icons.calendar_month_rounded,
                         gradientColors: const [
-                          Color(0xFF4361EE),
-                          Color(0xFF7209B7),
+                          Color(0xFF0369A1),
+                          Color(0xFF1E3A8A),
                         ],
-                        onTap: () => _showInsightsSheet(context, store),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CalendarScreen(),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -175,206 +181,37 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                 const SizedBox(height: 18),
 
-                // ── 3. DYNAMIC ROOM TIMELINE BANNER ──
-                PressableScale(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const CalendarScreen()),
-                    );
-                  },
-                  pressedScale: 0.96,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF0369A1),
-                          Color(0xFF1D4ED8),
-                          Color(0xFF1E3A8A),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                // ── 3. QUICK LINKS ──
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppTheme.slateBorder),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: const Color(0xFF60A5FA),
-                        width: 1.0,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(
-                            0xFF1D4ED8,
-                          ).withValues(alpha: 0.18),
-                          blurRadius: 18,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.16),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.calendar_month_rounded,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Dynamic Room Timeline',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Text(
-                                'Weekly, 3 Days & Today schedule matrix',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.white.withValues(alpha: 0.84),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 14,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // ── WHATSAPP AUTOMATION BANNER ──
-                PressableScale(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const WhatsAppScreen()),
-                    );
-                  },
-                  pressedScale: 0.96,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF0F5132), Color(0xFF198754)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  child: Column(
+                    children: [
+                      PressableScale(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const WhatsAppScreen(),
+                            ),
+                          );
+                        },
+                        child: _buildDashboardShortcutRow(
+                          icon: Icons.chat_rounded,
+                          title: 'WhatsApp Automation',
+                          subtitle: 'Pair QR code, edit templates & view logs',
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(
-                            0xFF198754,
-                          ).withValues(alpha: 0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.chat_rounded,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    'WhatsApp Automation',
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  // Container(
-                                  //   padding: const EdgeInsets.symmetric(
-                                  //     horizontal: 6,
-                                  //     vertical: 2,
-                                  // ),
-                                  // decoration: BoxDecoration(
-                                  //   color: Colors.white.withValues(
-                                  //     alpha: 0.25,
-                                  //   ),
-                                  //   borderRadius: BorderRadius.circular(6),
-                                  // ),
-                                  // child: const Text(
-                                  //   'AUTO',
-                                  //   style: TextStyle(
-                                  //     color: Colors.white,
-                                  //     fontSize: 9,
-                                  //     fontWeight: FontWeight.bold,
-                                  //     letterSpacing: 0.5,
-                                  //   ),
-                                  // ),
-                                  // ),
-                                ],
-                              ),
-                              Text(
-                                'Pair QR code, edit templates & view logs',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.white.withValues(alpha: 0.85),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 14,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
 
@@ -836,6 +673,57 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardShortcutRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F3F5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: AppTheme.slateDark, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: AppTheme.slateMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.arrow_forward_ios_rounded,
+            size: 14,
+            color: AppTheme.slateMuted,
+          ),
+        ],
       ),
     );
   }
@@ -2146,247 +2034,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                         );
                       },
                     ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── INSIGHTS BOTTOM SHEET ──
-  void _showInsightsSheet(BuildContext context, HotelStore store) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppTheme.slateBorder,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Hotel Insights & Analytics',
-                  style: GoogleFonts.outfit(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.slateDark,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.brandLight,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'Realtime',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.brandPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${store.currentProperty.name} (${store.currentProperty.city})',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppTheme.slateMuted,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Occupancy Progress Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.slateBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Room Occupancy Rate',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '${store.occupancyRate}%',
-                        style: GoogleFonts.outfit(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.brandPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: store.totalRooms > 0
-                          ? (store.occupiedRooms / store.totalRooms)
-                          : 0,
-                      backgroundColor: AppTheme.slateBorder,
-                      valueColor: const AlwaysStoppedAnimation(
-                        AppTheme.brandPrimary,
-                      ),
-                      minHeight: 8,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${store.occupiedRooms} occupied • ${store.vacantRooms} vacant • ${store.cleaningRooms} cleaning of ${store.totalRooms} rooms',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppTheme.slateMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // Revenue and ADR Grid
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.slateBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Revenue Today',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: AppTheme.slateMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '₹${store.revenueToday.toInt()}',
-                          style: GoogleFonts.outfit(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.slateDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.slateBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Avg Room Rate (ADR)',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: AppTheme.slateMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Builder(
-                          builder: (context) {
-                            final adr = store.occupiedRooms > 0
-                                ? (store.activeStays.fold<double>(
-                                            0.0,
-                                            (sum, s) => sum + s.nightlyRate,
-                                          ) /
-                                          store.occupiedRooms)
-                                      .round()
-                                : (store.rooms.isNotEmpty
-                                      ? (store.rooms.fold<double>(
-                                                  0.0,
-                                                  (sum, r) => sum + r.baseRate,
-                                                ) /
-                                                store.rooms.length)
-                                            .round()
-                                      : 0);
-                            return Text(
-                              '₹$adr',
-                              style: GoogleFonts.outfit(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.slateDark,
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 18),
-
-            // Button to open Full Timeline Calendar
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const CalendarScreen()),
-                );
-              },
-              icon: const Icon(Icons.calendar_month_rounded, size: 18),
-              label: const Text('Open Dynamic Calendar Timeline'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                backgroundColor: AppTheme.brandPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
             ),
           ],
         ),

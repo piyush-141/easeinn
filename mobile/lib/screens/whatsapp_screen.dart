@@ -53,6 +53,8 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
     {'key': '{roomNumber}', 'label': 'Room Number'},
     {'key': '{checkInDate}', 'label': 'Check-In Date'},
     {'key': '{checkOutDate}', 'label': 'Check-Out Date'},
+    {'key': '{message}', 'label': 'Message (EN)'},
+    {'key': '{messageHindi}', 'label': 'Message (HI)'},
   ];
 
   @override
@@ -453,7 +455,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
         .replaceAll('{hotelName}', hotelName)
         .replaceAll('{roomNumber}', '104')
         .replaceAll('{checkInDate}', checkIn)
-        .replaceAll('{checkOutDate}', checkOut);
+        .replaceAll('{checkOutDate}', checkOut)
+        .replaceAll('{message}', 'Your laundry is ready for collection.')
+        .replaceAll('{messageHindi}', 'आपकी लॉन्ड्री संग्रह के लिए तैयार है।');
   }
 
   // ── BEST PRACTICES & GUIDELINES MODAL ──
