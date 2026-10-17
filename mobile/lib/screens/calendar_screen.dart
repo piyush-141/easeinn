@@ -821,9 +821,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final double startDayFraction = (inMinutes / 1440.0).clamp(0.0, visibleDates.length.toDouble());
     final double endDayFraction = (outMinutes / 1440.0).clamp(0.0, visibleDates.length.toDouble());
 
-    final double leftOffset = startDayFraction * colWidth + 2.0;
-    final double rightOffset = endDayFraction * colWidth - 2.0;
-    final double pillWidth = (rightOffset - leftOffset).clamp(42.0, (visibleDates.length * colWidth) - leftOffset);
+    final double totalTimelineWidth = visibleDates.length * colWidth;
+    final double leftOffset = (startDayFraction * colWidth + 2.0).clamp(0.0, totalTimelineWidth);
+    final double rightOffset = (endDayFraction * colWidth - 2.0).clamp(leftOffset, totalTimelineWidth);
+    final double maxAvailableWidth = (totalTimelineWidth - leftOffset).clamp(0.0, totalTimelineWidth);
+    final double rawWidth = (rightOffset - leftOffset);
+    final double pillWidth = maxAvailableWidth <= 0.0
+        ? 0.0
+        : (maxAvailableWidth < 42.0 ? maxAvailableWidth : rawWidth.clamp(42.0, maxAvailableWidth));
 
     // Color theme matching image 2: Emerald Green (#16A34A / #22C55E) for occupied
     Color pillColor;
