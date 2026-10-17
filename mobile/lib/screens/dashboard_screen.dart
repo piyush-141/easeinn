@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,7 +15,7 @@ import 'booking_export_screen.dart';
 import 'whatsapp_screen.dart';
 import '../widgets/pressable_scale.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   final void Function(
     int tabIndex, {
     BookingMode? initialMode,
@@ -22,11 +24,42 @@ class DashboardScreen extends StatelessWidget {
   onNavigateTab;
   const DashboardScreen({super.key, required this.onNavigateTab});
 
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
+  Timer? _clockTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _clockTimer?.cancel();
+    super.dispose();
+  }
+
   String _getTimeGreeting() {
     final hour = DateTime.now().hour;
+    if (hour < 5) return 'Good night';
     if (hour < 12) return 'Good morning';
     if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 21) return 'Good evening';
+    return 'Good night';
   }
 
   @override
@@ -79,7 +112,7 @@ class DashboardScreen extends StatelessWidget {
                           Color(0xFF00C9A7),
                           Color(0xFF00B4D8),
                         ],
-                        onTap: () => onNavigateTab(
+                        onTap: () => widget.onNavigateTab(
                           2,
                           initialMode: BookingMode.reservation,
                         ),
@@ -95,8 +128,10 @@ class DashboardScreen extends StatelessWidget {
                           Color(0xFFFF3366),
                           Color(0xFFFF5E7E),
                         ],
-                        onTap: () =>
-                            onNavigateTab(2, initialMode: BookingMode.checkIn),
+                        onTap: () => widget.onNavigateTab(
+                          2,
+                          initialMode: BookingMode.checkIn,
+                        ),
                       ),
                     ),
                   ],
@@ -154,17 +189,27 @@ class DashboardScreen extends StatelessWidget {
                       vertical: 14,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFF0369A1),
+                          Color(0xFF1D4ED8),
+                          Color(0xFF1E3A8A),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: AppTheme.slateBorder,
+                        color: const Color(0xFF60A5FA),
                         width: 1.0,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
+                          color: const Color(
+                            0xFF1D4ED8,
+                          ).withValues(alpha: 0.18),
+                          blurRadius: 18,
+                          offset: const Offset(0, 5),
                         ),
                       ],
                     ),
@@ -174,13 +219,15 @@ class DashboardScreen extends StatelessWidget {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: AppTheme.brandPrimary,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF38BDF8), Color(0xFF2563EB)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                color: AppTheme.brandPrimary.withValues(
-                                  alpha: 0.3,
-                                ),
+                                color: Colors.black.withValues(alpha: 0.16),
                                 blurRadius: 8,
                                 offset: const Offset(0, 3),
                               ),
@@ -202,14 +249,14 @@ class DashboardScreen extends StatelessWidget {
                                 style: GoogleFonts.outfit(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
-                                  color: AppTheme.slateDark,
+                                  color: Colors.white,
                                 ),
                               ),
                               Text(
                                 'Weekly, 3 Days & Today schedule matrix',
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
-                                  color: AppTheme.slateMuted,
+                                  color: Colors.white.withValues(alpha: 0.84),
                                 ),
                               ),
                             ],
@@ -218,7 +265,7 @@ class DashboardScreen extends StatelessWidget {
                         const Icon(
                           Icons.arrow_forward_ios_rounded,
                           size: 14,
-                          color: AppTheme.brandPrimary,
+                          color: Colors.white,
                         ),
                       ],
                     ),
@@ -352,7 +399,7 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     if (store.activeStays.isNotEmpty)
                       InkWell(
-                        onTap: () => onNavigateTab(4),
+                        onTap: () => widget.onNavigateTab(4),
                         child: Text(
                           'View all',
                           style: GoogleFonts.inter(
@@ -477,7 +524,8 @@ class DashboardScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 3),
                                   Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'In: ${DateFormat('d MMM, hh:mm a').format(stay.checkInAt)}',
@@ -563,109 +611,177 @@ class DashboardScreen extends StatelessWidget {
   // ── 1. GREETING OVERVIEW (WRAPPED IN ONE MINIMAL CARD) ──
   Widget _buildGreetingOverview(BuildContext context, HotelStore store) {
     final staffFirstName = store.staffName.split(' ').first;
-    final formattedDate = DateFormat('EEEE, d MMMM').format(DateTime.now());
+    final now = DateTime.now();
+    final formattedDate = DateFormat('EEEE, d MMMM').format(now);
+    final hour = now.hour;
+    final IconData timeIcon;
+    if (hour < 5 || hour >= 21) {
+      timeIcon = Icons.nightlight_round;
+    } else if (hour < 12) {
+      timeIcon = Icons.wb_sunny_rounded;
+    } else if (hour < 17) {
+      timeIcon = Icons.wb_sunny_rounded;
+    } else {
+      timeIcon = Icons.wb_twilight_rounded;
+    }
 
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTheme.slateBorder),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.92),
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: const Color(0xFF64748B).withValues(alpha: 0.12),
+            blurRadius: 22,
+            spreadRadius: 1,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.72),
+            blurRadius: 5,
+            offset: const Offset(-2, -2),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Greeting Row with Sun Icon
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFEF3C7), // Warm golden tint
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.wb_sunny_rounded,
-                  color: Color(0xFFF59E0B), // Warm Sun Amber
-                  size: 24,
-                ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.58),
+                  Colors.white.withValues(alpha: 0.38),
+                  Colors.white.withValues(alpha: 0.68),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${_getTimeGreeting()}, $staffFirstName',
-                      style: GoogleFonts.outfit(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.slateDark,
-                        letterSpacing: -0.3,
+            ),
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Greeting Row with a restrained time-of-day accent.
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.66),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.92),
+                              ),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              timeIcon,
+                              color: const Color(0xFF475569),
+                              size: 23,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${_getTimeGreeting()}, $staffFirstName',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$formattedDate · Today\'s overview',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppTheme.slateMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // 3 Info Columns (Arrivals, Departures, Occupancy)
+                      Row(
+                        children: [
+                          // Arrivals
+                          Expanded(
+                            child: _buildInfoItem(
+                              label: 'Arrivals',
+                              value: '${store.arrivalsToday}',
+                              valueColor: const Color(
+                                0xFF2563EB,
+                              ), // Blue accent
+                              caption: 'Expected today',
+                              onTap: () => _showArrivalsDrawer(context, store),
+                            ),
+                          ),
+                          // Departures
+                          Expanded(
+                            child: _buildInfoItem(
+                              label: 'Departures',
+                              value: '${store.departuresToday}',
+                              valueColor: const Color(0xFFFF9500),
+                              caption: 'Expected today',
+                              onTap: () =>
+                                  _showDeparturesDrawer(context, store),
+                            ),
+                          ),
+                          // Occupancy
+                          Expanded(
+                            child: _buildInfoItem(
+                              label: 'Occupancy',
+                              value: '${store.occupancyRate}%',
+                              valueColor: AppTheme.slateDark,
+                              caption:
+                                  '${store.occupiedRooms} of ${store.totalRooms} rooms',
+                              onTap: () => _showOccupancyDrawer(context, store),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 22,
+                  right: 22,
+                  child: Container(
+                    height: 1,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white.withValues(alpha: 0),
+                          Colors.white.withValues(alpha: 0.98),
+                          Colors.white.withValues(alpha: 0),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$formattedDate · Today\'s overview',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: AppTheme.slateMuted,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-
-          const SizedBox(height: 18),
-
-          // 3 Info Columns (Arrivals, Departures, Occupancy)
-          Row(
-            children: [
-              // Arrivals
-              Expanded(
-                child: _buildInfoItem(
-                  label: 'Arrivals',
-                  value: '${store.arrivalsToday}',
-                  valueColor: const Color(0xFF2563EB), // Blue accent
-                  caption: 'Expected today',
-                  onTap: () => _showArrivalsDrawer(context, store),
-                ),
-              ),
-              // Departures
-              Expanded(
-                child: _buildInfoItem(
-                  label: 'Departures',
-                  value: '${store.departuresToday}',
-                  valueColor: const Color(0xFFFF9500), // Apple System Orange
-                  caption: 'Expected today',
-                  onTap: () => _showDeparturesDrawer(context, store),
-                ),
-              ),
-              // Occupancy
-              Expanded(
-                child: _buildInfoItem(
-                  label: 'Occupancy',
-                  value: '${store.occupancyRate}%',
-                  valueColor: AppTheme.slateDark,
-                  caption:
-                      '${store.occupiedRooms} of ${store.totalRooms} rooms',
-                  onTap: () => _showOccupancyDrawer(context, store),
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -680,8 +796,13 @@ class DashboardScreen extends StatelessWidget {
     return PressableScale(
       onTap: onTap,
       pressedScale: 0.93,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.025),
+          borderRadius: BorderRadius.circular(10),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1110,7 +1231,7 @@ class DashboardScreen extends StatelessWidget {
                                 ElevatedButton(
                                   onPressed: () {
                                     Navigator.pop(ctx);
-                                    onNavigateTab(
+                                    widget.onNavigateTab(
                                       2,
                                       initialMode: BookingMode.checkIn,
                                       preselectedRoomId: stay.roomId,
@@ -1712,7 +1833,7 @@ class DashboardScreen extends StatelessWidget {
                                       ElevatedButton(
                                         onPressed: () {
                                           Navigator.pop(ctx);
-                                          onNavigateTab(
+                                          widget.onNavigateTab(
                                             2,
                                             initialMode: BookingMode.checkIn,
                                             preselectedRoomId: room.id,
