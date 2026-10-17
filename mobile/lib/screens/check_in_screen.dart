@@ -66,8 +66,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
   DateTime _expectedCheckOut = DateTime.now().add(const Duration(days: 1));
   int _numAdults = 1; // Default 1 adult
   int _numKids = 0;
-  bool _customDurationSelected = false;
-  bool _guestsExpanded = false;
   int _selectedFloorFilter = 0; // 0 = all floors
 
   // Additional guests (beyond primary guest)
@@ -602,8 +600,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
     setState(() {
       _primaryScanToken++;
       _currentStep = 1;
-      _guestsExpanded = false;
-      _customDurationSelected = false;
       _nameController.clear();
       _phoneController.clear();
       _emailController.clear();
@@ -1086,54 +1082,71 @@ class _CheckInScreenState extends State<CheckInScreen> {
         : null;
     final primaryPhone = _formatPhoneForStorage(_phoneController.text.trim());
 
-    final result = _bookingMode == BookingMode.reservation
-        ? store.reserveRoom(
-            roomId: selectedRoom.id,
-            checkInDate: _checkInDate,
-            checkOutDate: _expectedCheckOut,
-            numGuests: _totalGuests,
-            numAdults: _numAdults,
-            numKids: _numKids,
-            nightlyRate: selectedRoom.baseRate,
-            fullName: _nameController.text.trim(),
-            phone: primaryPhone,
-            email: primaryEmail,
-            idType: _idType,
-            idNumber: _idNumberController.text.trim(),
-            dateOfBirth: _dobController.text.trim(),
-            gender: _genderController.text.trim(),
-            address: _addressController.text.trim(),
-            pincode: _pincodeController.text.trim(),
-            fatherName: _fatherNameController.text.trim(),
-            advanceAmount: advance,
-            paymentMethod: _paymentMethod,
-            paymentRef: _paymentRefController.text.trim(),
-            coGuests: coGuestsData,
-            sendWhatsApp: _sendWhatsAppMessage,
-          )
-        : store.checkInGuest(
-            roomId: selectedRoom.id,
-            expectedCheckOut: _expectedCheckOut,
-            numGuests: _totalGuests,
-            numAdults: _numAdults,
-            numKids: _numKids,
-            nightlyRate: selectedRoom.baseRate,
-            fullName: _nameController.text.trim(),
-            phone: primaryPhone,
-            email: primaryEmail,
-            idType: _idType,
-            idNumber: _idNumberController.text.trim(),
-            dateOfBirth: _dobController.text.trim(),
-            gender: _genderController.text.trim(),
-            address: _addressController.text.trim(),
-            pincode: _pincodeController.text.trim(),
-            fatherName: _fatherNameController.text.trim(),
-            advanceAmount: advance,
-            paymentMethod: _paymentMethod,
-            paymentRef: _paymentRefController.text.trim(),
-            coGuests: coGuestsData,
-            sendWhatsApp: _sendWhatsAppMessage,
-          );
+    late final Map<String, dynamic> result;
+    try {
+      result = _bookingMode == BookingMode.reservation
+          ? store.reserveRoom(
+              roomId: selectedRoom.id,
+              checkInDate: _checkInDate,
+              checkOutDate: _expectedCheckOut,
+              numGuests: _totalGuests,
+              numAdults: _numAdults,
+              numKids: _numKids,
+              nightlyRate: selectedRoom.baseRate,
+              fullName: _nameController.text.trim(),
+              phone: primaryPhone,
+              email: primaryEmail,
+              idType: _idType,
+              idNumber: _idNumberController.text.trim(),
+              dateOfBirth: _dobController.text.trim(),
+              gender: _genderController.text.trim(),
+              address: _addressController.text.trim(),
+              pincode: _pincodeController.text.trim(),
+              fatherName: _fatherNameController.text.trim(),
+              advanceAmount: advance,
+              paymentMethod: _paymentMethod,
+              paymentRef: _paymentRefController.text.trim(),
+              coGuests: coGuestsData,
+              sendWhatsApp: _sendWhatsAppMessage,
+            )
+          : store.checkInGuest(
+              roomId: selectedRoom.id,
+              expectedCheckOut: _expectedCheckOut,
+              numGuests: _totalGuests,
+              numAdults: _numAdults,
+              numKids: _numKids,
+              nightlyRate: selectedRoom.baseRate,
+              fullName: _nameController.text.trim(),
+              phone: primaryPhone,
+              email: primaryEmail,
+              idType: _idType,
+              idNumber: _idNumberController.text.trim(),
+              dateOfBirth: _dobController.text.trim(),
+              gender: _genderController.text.trim(),
+              address: _addressController.text.trim(),
+              pincode: _pincodeController.text.trim(),
+              fatherName: _fatherNameController.text.trim(),
+              advanceAmount: advance,
+              paymentMethod: _paymentMethod,
+              paymentRef: _paymentRefController.text.trim(),
+              coGuests: coGuestsData,
+              sendWhatsApp: _sendWhatsAppMessage,
+            );
+    } catch (error) {
+      if (!mounted) return;
+      final details = error.toString().replaceFirst('Exception: ', '');
+      final message = details.contains('already reserved or occupied')
+          ? 'This room is no longer available for these dates. Choose another room or dates.'
+          : 'Could not complete ${_bookingMode == BookingMode.reservation ? 'the reservation' : 'check-in'}: $details';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
 
     final isReservation = _bookingMode == BookingMode.reservation;
 
@@ -1302,16 +1315,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
         ? store.rooms.where((r) => r.status == RoomStatus.vacant).toList()
         : store.getAvailableRoomsForRange(_checkInDate, _expectedCheckOut);
 
-    Room? selectedRoom;
-    if (_selectedRoomId != null) {
-      try {
-        selectedRoom = store.rooms.firstWhere((r) => r.id == _selectedRoomId);
-      } catch (_) {
-        selectedRoom = availableRooms.isNotEmpty ? availableRooms.first : null;
-      }
-    } else if (availableRooms.isNotEmpty) {
-      selectedRoom = availableRooms.first;
-    }
+    final selectedRoom = availableRooms.cast<Room?>().firstWhere(
+      (room) => room?.id == _selectedRoomId,
+      orElse: () => availableRooms.isEmpty ? null : availableRooms.first,
+    );
 
     final nights = _expectedCheckOut
         .difference(_checkInDate)
@@ -1458,7 +1465,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 _expectedCheckOut = _checkInDate.add(
                                   const Duration(days: 1),
                                 );
-                                _customDurationSelected = false;
                               });
                             }
                           },
@@ -1529,7 +1535,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                     const Duration(days: 2),
                                   );
                                 }
-                                _customDurationSelected = false;
                               });
                             }
                           },
@@ -1593,12 +1598,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
               // STEP 1: AIRBNB-STYLE CHOOSER (WHERE • WHEN • WHO)
               // ==========================================
               if (_currentStep == 1) ...[
-                _buildCompactRoomChooser(availableRooms, selectedRoom, store),
-                const SizedBox(height: 10),
-                _buildCompactStaySelector(nights),
-                const SizedBox(height: 4),
-                _buildCompactGuestSelector(),
+                _buildWizardSectionCard(
+                  child: _buildCompactRoomChooser(
+                    availableRooms,
+                    selectedRoom,
+                    store,
+                  ),
+                ),
                 const SizedBox(height: 8),
+                _buildWizardSectionCard(
+                  child: _buildCompactStaySelector(nights),
+                ),
+                const SizedBox(height: 8),
+                _buildWizardSectionCard(child: _buildCompactGuestSelector()),
+                const SizedBox(height: 4),
               ],
 
               // ==========================================
@@ -4085,6 +4098,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
   // AIRBNB STEP 1 CHOOSER HELPER METHODS
   // ─────────────────────────────────────────────────────────────────────────
 
+  Widget _buildWizardSectionCard({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppTheme.slateBorder.withValues(alpha: .8)),
+      ),
+      child: child,
+    );
+  }
+
   Widget _buildCompactRoomChooser(
     List<Room> availableRooms,
     Room? selectedRoom,
@@ -4200,7 +4225,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
               separatorBuilder: (_, __) => const SizedBox(width: 9),
               itemBuilder: (context, index) {
                 final room = filtered[index];
-                final selected = room.id == _selectedRoomId;
+                final selected = room.id == selectedRoom?.id;
                 return InkWell(
                   borderRadius: BorderRadius.circular(15),
                   onTap: () => setState(() => _selectedRoomId = room.id),
@@ -4338,25 +4363,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
     if (picked == null || !mounted) return;
     setState(() {
-      final duration = _expectedCheckOut
-          .difference(_checkInDate)
-          .inDays
-          .clamp(1, 365);
       _checkInDate = DateTime(picked.year, picked.month, picked.day);
-      _expectedCheckOut = _checkInDate.add(Duration(days: duration));
+      if (!_expectedCheckOut.isAfter(_checkInDate)) {
+        _expectedCheckOut = _checkInDate.add(const Duration(days: 1));
+      }
     });
   }
 
-  Future<void> _pickCustomCheckout() async {
+  Future<void> _pickCheckoutDate() async {
     final picked = await _showDatePickerSheet(
-      title: 'Choose check-out date',
+      title: 'Check-out date',
       initialDate: _expectedCheckOut,
       firstDate: _checkInDate.add(const Duration(days: 1)),
     );
     if (picked == null || !mounted) return;
     setState(() {
       _expectedCheckOut = DateTime(picked.year, picked.month, picked.day);
-      _customDurationSelected = true;
     });
   }
 
@@ -4414,30 +4436,39 @@ class _CheckInScreenState extends State<CheckInScreen> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'CHECK-OUT',
-                    style: GoogleFonts.inter(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.slateMuted,
-                      letterSpacing: .4,
-                    ),
+              child: InkWell(
+                onTap: _bookingMode == BookingMode.reservation
+                    ? _pickCheckoutDate
+                    : null,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'CHECK-OUT',
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.slateMuted,
+                          letterSpacing: .4,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('EEE, d MMM').format(_expectedCheckOut),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.slateDark,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    DateFormat('EEE, d MMM').format(_expectedCheckOut),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.slateDark,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
@@ -4450,7 +4481,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
               Expanded(
                 child: _buildDurationChip(
                   durations[i].$2,
-                  !_customDurationSelected && nights == durations[i].$1,
+                  nights == durations[i].$1,
                   () => setState(() {
                     if (_bookingMode == BookingMode.checkIn) {
                       _checkInDate = DateTime(
@@ -4462,7 +4493,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     _expectedCheckOut = _checkInDate.add(
                       Duration(days: durations[i].$1),
                     );
-                    _customDurationSelected = false;
                   }),
                 ),
               ),
@@ -4471,8 +4501,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
             Expanded(
               child: _buildDurationChip(
                 'Custom',
-                _customDurationSelected,
-                _pickCustomCheckout,
+                nights < 1 || nights > 3,
+                _pickCheckoutDate,
               ),
             ),
           ],
@@ -4515,69 +4545,58 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
   Widget _buildCompactGuestSelector() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => setState(() => _guestsExpanded = !_guestsExpanded),
-          child: SizedBox(
-            height: 48,
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.people_alt_outlined,
-                  size: 18,
-                  color: AppTheme.brandPrimary,
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    '$_totalGuests ${_totalGuests == 1 ? 'guest' : 'guests'}  ·  $_numAdults ${_numAdults == 1 ? 'adult' : 'adults'}${_numKids > 0 ? '  ·  $_numKids ${_numKids == 1 ? 'child' : 'children'}' : ''}',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.slateDark,
-                    ),
+        SizedBox(
+          height: 38,
+          child: Row(
+            children: [
+              const Icon(
+                Icons.people_alt_outlined,
+                size: 18,
+                color: AppTheme.brandPrimary,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  '$_totalGuests ${_totalGuests == 1 ? 'guest' : 'guests'}  ·  $_numAdults ${_numAdults == 1 ? 'adult' : 'adults'}${_numKids > 0 ? '  ·  $_numKids ${_numKids == 1 ? 'child' : 'children'}' : ''}',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.slateDark,
                   ),
                 ),
-                Icon(
-                  _guestsExpanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: AppTheme.slateMuted,
-                ),
-              ],
-            ),
+              ),
+              const Icon(
+                Icons.keyboard_arrow_up_rounded,
+                color: AppTheme.slateMuted,
+              ),
+            ],
           ),
         ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          child: _guestsExpanded
-              ? Padding(
-                  padding: const EdgeInsets.only(bottom: 8, left: 27),
-                  child: Column(
-                    children: [
-                      _buildCompactGuestCounter(
-                        'Adults',
-                        _numAdults,
-                        _numAdults > 1,
-                        _numAdults < 10,
-                        () => setState(() => _numAdults--),
-                        () => setState(() => _numAdults++),
-                      ),
-                      const Divider(height: 1, color: AppTheme.slateBorder),
-                      _buildCompactGuestCounter(
-                        'Children',
-                        _numKids,
-                        _numKids > 0,
-                        _numKids < 10,
-                        () => setState(() => _numKids--),
-                        () => setState(() => _numKids++),
-                      ),
-                    ],
-                  ),
-                )
-              : const SizedBox.shrink(),
+        Padding(
+          padding: const EdgeInsets.only(left: 27),
+          child: Column(
+            children: [
+              _buildCompactGuestCounter(
+                'Adults',
+                _numAdults,
+                _numAdults > 1,
+                _numAdults < 10,
+                () => setState(() => _numAdults--),
+                () => setState(() => _numAdults++),
+              ),
+              const Divider(height: 1, color: AppTheme.slateBorder),
+              _buildCompactGuestCounter(
+                'Children',
+                _numKids,
+                _numKids > 0,
+                _numKids < 10,
+                () => setState(() => _numKids--),
+                () => setState(() => _numKids++),
+              ),
+            ],
+          ),
         ),
       ],
     );

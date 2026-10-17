@@ -9,7 +9,6 @@ const apiRoutes = require("./src/routes/api.routes");
 const whatsappRoutes = require("./src/routes/whatsapp.routes");
 const whatsappService = require("./src/services/whatsapp.service");
 const { errorHandler } = require("./src/middleware/error.middleware");
-const { requireSupabaseSession } = require("./src/middleware/require-supabase-session");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -67,7 +66,7 @@ app.get("/", (req, res) => {
 
 // API Routes
 app.use("/api", apiRoutes);
-app.use("/api/whatsapp", requireSupabaseSession, whatsappRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
 
 // Global error handler
 app.use(errorHandler);
