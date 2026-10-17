@@ -5,32 +5,6 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-test("protects WhatsApp endpoints with a verified Supabase access token", async () => {
-  const { createWhatsAppAuthMiddleware } = require("../src/middleware/whatsapp-auth.middleware");
-  const createResponse = () => ({ statusCode: 200, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } });
-
-  const unconfigured = createWhatsAppAuthMiddleware({ authUrl: "", anonKey: "" });
-  const missingResponse = createResponse();
-  await unconfigured({ get: () => "" }, missingResponse, () => assert.fail("must not continue"));
-  assert.equal(missingResponse.statusCode, 503);
-
-  const verify = createWhatsAppAuthMiddleware({
-    authUrl: "https://auth.example.test/",
-    anonKey: "public-anon-key",
-    fetcher: async (url, options) => {
-      assert.equal(url, "https://auth.example.test/auth/v1/user");
-      assert.equal(options.headers.Authorization, "Bearer signed-user-token");
-      return { ok: true, json: async () => ({ id: "user-1" }) };
-    },
-  });
-  const request = { get: (name) => name === "authorization" ? "Bearer signed-user-token" : "" };
-  const response = createResponse();
-  let continued = false;
-  await verify(request, response, () => { continued = true; });
-  assert.equal(continued, true);
-  assert.equal(request.user.id, "user-1");
-});
-
 test("normalizes local Indian phone number formats without duplicating country code", () => {
   const service = require("../src/services/whatsapp.service");
   for (const value of ["9850550645", "+91 98505 50645", "919850550645", "09850550645"]) {

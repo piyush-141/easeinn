@@ -9,7 +9,7 @@ EaseInn connects to a single WhatsApp linked device from the Node.js backend usi
 - Session storage: `WHATSAPP_AUTH_DIR`, which must live on persistent storage. Render uses `/data/baileys_auth` on its persistent disk.
 - Templates, bounded logs, and send-idempotency records: `WHATSAPP_DATA_DIR`, set to `/data` on Render.
 - Frontend and mobile use the same backend. Local web development defaults to `localhost:3001`; set `VITE_WHATSAPP_API_URL` to override the frontend service URL.
-- Every WhatsApp route requires a valid Supabase access token. Configure `SUPABASE_URL` and `SUPABASE_ANON_KEY` on the backend; the web and mobile apps send their signed-in user's access token, which the backend verifies with Supabase Auth.
+- WhatsApp routes do not require EaseInn sign-in; the web and mobile clients can use the WhatsApp controls without an app account session.
 - The Render Blueprint intentionally leaves these Supabase values unsynced. Add the same Supabase project URL and publishable/anon key used by the clients to the Render service environment before deploying; without them, WhatsApp endpoints fail closed with `AUTH_NOT_CONFIGURED`.
 - The backend rate-limits WhatsApp API traffic and message sends to reduce abuse.
 

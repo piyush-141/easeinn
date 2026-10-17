@@ -126,9 +126,12 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     if (!ok) {
       if (mounted) {
         setState(() => _isConnecting = false);
+        final details = WhatsAppService.lastConnectError ?? _status.initializationError;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to connect. Check backend server.'),
+          SnackBar(
+            content: Text(details == null || details.isEmpty
+                ? 'Could not reach WhatsApp service. Check your connection and try again.'
+                : 'WhatsApp: $details'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),

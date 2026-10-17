@@ -18,7 +18,3 @@ services:
         value: /data
       - key: WHATSAPP_AUTH_DIR
         value: /data/baileys_auth
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false

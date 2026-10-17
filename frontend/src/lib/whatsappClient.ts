@@ -5,13 +5,8 @@ import {
   WhatsAppLogEntry,
   WhatsAppPlaceholder,
 } from '../types';
-import { supabase } from './supabase';
-
-async function authHeaders(json = false): Promise<Record<string, string>> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error('Please sign in to use WhatsApp.');
+function requestHeaders(json = false): Record<string, string> {
   return {
-    Authorization: `Bearer ${session.access_token}`,
     ...(json ? { 'Content-Type': 'application/json' } : {}),
   };
 }
@@ -33,7 +28,7 @@ function resolveBackendUrl(): string {
 const BASE_URL = resolveBackendUrl();
 
 export async function getWhatsAppStatus(): Promise<WhatsAppSystemStatus> {
-  const res = await fetch(`${BASE_URL}/api/whatsapp/status`, { headers: await authHeaders(), signal: AbortSignal.timeout(12000) });
+  const res = await fetch(`${BASE_URL}/api/whatsapp/status`, { headers: requestHeaders(), signal: AbortSignal.timeout(12000) });
   if (!res.ok) {
     throw new Error(`Failed to fetch WhatsApp status (${res.status})`);
   }
@@ -43,7 +38,7 @@ export async function getWhatsAppStatus(): Promise<WhatsAppSystemStatus> {
 export async function connectWhatsApp(): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/connect`, {
     method: 'POST',
-    headers: await authHeaders(true),
+    headers: requestHeaders(true),
   });
   if (!res.ok) {
     throw new Error(`Failed to request WhatsApp connect (${res.status})`);
@@ -54,7 +49,7 @@ export async function connectWhatsApp(): Promise<{ success: boolean; message: st
 export async function disconnectWhatsApp(): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/disconnect`, {
     method: 'POST',
-    headers: await authHeaders(true),
+    headers: requestHeaders(true),
   });
   if (!res.ok) {
     throw new Error(`Failed to disconnect WhatsApp (${res.status})`);
@@ -66,7 +61,7 @@ export async function getWhatsAppTemplates(): Promise<{
   templates: Record<string, WhatsAppTemplate>;
   placeholders: WhatsAppPlaceholder[];
 }> {
-  const res = await fetch(`${BASE_URL}/api/whatsapp/templates`, { headers: await authHeaders() });
+  const res = await fetch(`${BASE_URL}/api/whatsapp/templates`, { headers: requestHeaders() });
   if (!res.ok) {
     throw new Error(`Failed to fetch WhatsApp templates (${res.status})`);
   }
@@ -79,7 +74,7 @@ export async function updateWhatsAppTemplate(
 ): Promise<{ success: boolean; template: WhatsAppTemplate }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/templates/${templateId}`, {
     method: 'PUT',
-    headers: await authHeaders(true),
+    headers: requestHeaders(true),
     body: JSON.stringify(updates),
   });
   if (!res.ok) {
@@ -94,7 +89,7 @@ export async function resetWhatsAppTemplates(): Promise<{
 }> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/templates/reset`, {
     method: 'POST',
-    headers: await authHeaders(true),
+    headers: requestHeaders(true),
   });
   if (!res.ok) {
     throw new Error(`Failed to reset templates (${res.status})`);
@@ -109,7 +104,7 @@ export async function previewWhatsAppTemplate(
 ): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/preview`, {
     method: 'POST',
-    headers: await authHeaders(true),
+    headers: requestHeaders(true),
     body: JSON.stringify({ templateId, context, templateString }),
   });
   if (!res.ok) {
@@ -128,7 +123,7 @@ export async function sendWhatsAppMessage(payload: {
   bypassDuplicateCheck?: boolean;
 }): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/whatsapp/send`, {
-    method: 'POST', headers: await authHeaders(true),
+    method: 'POST', headers: requestHeaders(true),
     body: JSON.stringify(payload), signal: AbortSignal.timeout(110000),
   });
   const data = await res.json().catch(() => ({}));
@@ -140,7 +135,7 @@ export async function sendWhatsAppMessage(payload: {
 }
 
 export async function getWhatsAppLogs(limit: number = 50): Promise<WhatsAppLogEntry[]> {
-  const res = await fetch(`${BASE_URL}/api/whatsapp/logs?limit=${limit}`, { headers: await authHeaders() });
+  const res = await fetch(`${BASE_URL}/api/whatsapp/logs?limit=${limit}`, { headers: requestHeaders() });
   if (!res.ok) {
     return [];
   }
@@ -163,7 +158,7 @@ export async function triggerCheckInWhatsApp(data: {
   try {
     const res = await fetch(`${BASE_URL}/api/whatsapp/hook/checkin`, {
       method: 'POST',
-      headers: await authHeaders(true),
+      headers: requestHeaders(true),
       body: JSON.stringify(data),
     });
     return await res.json();
@@ -188,7 +183,7 @@ export async function triggerCheckOutWhatsApp(data: {
   try {
     const res = await fetch(`${BASE_URL}/api/whatsapp/hook/checkout`, {
       method: 'POST',
-      headers: await authHeaders(true),
+      headers: requestHeaders(true),
       body: JSON.stringify(data),
     });
     return await res.json();
@@ -213,7 +208,7 @@ export async function triggerReservationWhatsApp(data: {
   try {
     const res = await fetch(`${BASE_URL}/api/whatsapp/hook/reservation`, {
       method: 'POST',
-      headers: await authHeaders(true),
+      headers: requestHeaders(true),
       body: JSON.stringify(data),
     });
     return await res.json();
