@@ -10,7 +10,6 @@ import '../theme/app_theme.dart';
 import 'check_in_screen.dart';
 import 'booking_checkout_screen.dart';
 import 'room_detail_screen.dart';
-import '../widgets/airbnb_date_picker_sheet.dart';
 
 enum TimelineViewMode { weekly, threeDays, today }
 
@@ -82,12 +81,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _pickCustomDate() async {
-    final picked = await AirbnbDatePickerSheet.showSingleDate(
-      context,
+    final picked = await showDatePicker(
+      context: context,
       initialDate: _startDate,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      title: 'Jump to Timeline Date',
+      initialEntryMode: DatePickerEntryMode.calendar,
+      helpText: 'Select Timeline Date',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppTheme.brandPrimary,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppTheme.slateDark,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -2191,12 +2204,26 @@ class _DateInsightsSheetState extends State<_DateInsightsSheet> {
                   ),
                   InkWell(
                     onTap: () async {
-                      final picked = await AirbnbDatePickerSheet.showSingleDate(
-                        context,
+                      final picked = await showDatePicker(
+                        context: context,
                         initialDate: _selectedDate,
                         firstDate: DateTime.now().subtract(const Duration(days: 365)),
                         lastDate: DateTime.now().add(const Duration(days: 365)),
-                        title: 'Date Insights Calendar',
+                        initialEntryMode: DatePickerEntryMode.calendar,
+                        helpText: 'Select Date for Insights',
+                        builder: (context, child) {
+                          return Theme(
+                            data: Theme.of(context).copyWith(
+                              colorScheme: const ColorScheme.light(
+                                primary: AppTheme.brandPrimary,
+                                onPrimary: Colors.white,
+                                surface: Colors.white,
+                                onSurface: AppTheme.slateDark,
+                              ),
+                            ),
+                            child: child!,
+                          );
+                        },
                       );
                       if (picked != null) setState(() => _selectedDate = picked);
                     },

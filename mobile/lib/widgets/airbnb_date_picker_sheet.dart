@@ -27,6 +27,7 @@ class AirbnbDatePickerSheet extends StatefulWidget {
   });
 
   /// Static helper to show the Airbnb Date Range Picker bottom sheet
+  /// Static helper to show the standard Android / Material Date Range Picker
   static Future<DateTimeRange?> show(
     BuildContext context, {
     required DateTime initialCheckIn,
@@ -37,44 +38,71 @@ class AirbnbDatePickerSheet extends StatefulWidget {
     String? roomName,
     String? guestCountSummary,
   }) {
-    return showModalBottomSheet<DateTimeRange>(
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final minD = firstDate ?? today.subtract(const Duration(days: 365));
+    final maxD = lastDate ?? today.add(const Duration(days: 730));
+
+    return showDateRangePicker(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => AirbnbDatePickerSheet(
-        initialCheckIn: initialCheckIn,
-        initialCheckOut: initialCheckOut,
-        firstDate: firstDate,
-        lastDate: lastDate,
-        title: title,
-        roomName: roomName,
-        guestCountSummary: guestCountSummary,
+      initialDateRange: DateTimeRange(
+        start: initialCheckIn.isBefore(minD) ? minD : initialCheckIn,
+        end: initialCheckOut.isAfter(maxD) ? maxD : initialCheckOut,
       ),
+      firstDate: minD,
+      lastDate: maxD,
+      initialEntryMode: DatePickerEntryMode.calendar,
+      helpText: title,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF0066CC),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Color(0xFF1D1D1F),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
   }
 
-  /// Static helper to pick a single date with Airbnb style
+  /// Static helper to pick a single date with standard Android / Material Month view
   static Future<DateTime?> showSingleDate(
     BuildContext context, {
     required DateTime initialDate,
     DateTime? firstDate,
     DateTime? lastDate,
     String title = 'Select Date',
-  }) async {
-    final range = await showModalBottomSheet<DateTimeRange>(
+  }) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final minD = firstDate ?? today.subtract(const Duration(days: 365));
+    final maxD = lastDate ?? today.add(const Duration(days: 730));
+
+    return showDatePicker(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => AirbnbDatePickerSheet(
-        initialCheckIn: initialDate,
-        initialCheckOut: initialDate,
-        firstDate: firstDate,
-        lastDate: lastDate,
-        title: title,
-        isRange: false,
-      ),
+      initialDate: initialDate.isBefore(minD) ? minD : (initialDate.isAfter(maxD) ? maxD : initialDate),
+      firstDate: minD,
+      lastDate: maxD,
+      initialEntryMode: DatePickerEntryMode.calendar,
+      helpText: title,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF0066CC),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Color(0xFF1D1D1F),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-    return range?.start;
   }
 
   @override
