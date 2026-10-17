@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../services/hotel_store.dart';
 import '../services/whatsapp_service.dart';
 import '../theme/app_theme.dart';
@@ -62,8 +63,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
     super.initState();
     _initData();
 
-    // Keep status current without repeatedly hitting the remote auth/API stack.
-    _statusPoller = Timer.periodic(const Duration(seconds: 5), (_) {
+    // Keep status current. Poll every 2s while QR is active so it stays fresh
+    // (WhatsApp QR codes expire ~60s — faster polling prevents scanning stale ones).
+    _statusPoller = Timer.periodic(const Duration(seconds: 2), (_) {
       if (mounted) _fetchStatus(silent: true);
     });
     _deliveryPoller = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -2018,7 +2020,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
   // ── 1. WHATSAPP CONNECTION HERO CARD ──
   Widget _buildConnectionHeroCard() {
     final isReady = _status.isReady;
-    final hasQr = _status.hasActiveQr && _status.qrCodeDataUrl != null;
+    // Prefer the raw QR string for native rendering; fall back to PNG data URL
+    final hasQr = _status.hasActiveQr &&
+        (_status.qrRawString != null || _status.qrCodeDataUrl != null);
 
     if (isReady) {
       return Container(
@@ -2155,13 +2159,63 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
                 color: AppTheme.slateDark,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Open WhatsApp on phone > Settings > Linked Devices > Link a Device',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: AppTheme.slateMuted,
+            const SizedBox(height: 6),
+            // Step-by-step scanning guide
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'How to scan:',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: const Color(0xFF14532D),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '1. On a DIFFERENT device, open WhatsApp\n2. Tap ⋮ Menu (Android) or Settings (iOS)\n3. Tap Linked Devices → Link a Device\n4. Point the camera at the QR code below',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: const Color(0xFF166534),
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Warning about same-device limitation
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      color: Color(0xFFD97706), size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'QR codes expire in ~60 seconds. Scan immediately after it appears. Do NOT screenshot and scan later.',
+                      style: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        color: const Color(0xFF92400E),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 14),
@@ -2181,7 +2235,7 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: _renderQrImage(_status.qrCodeDataUrl!),
+                child: _renderQrWidget(),
               ),
             ),
             const SizedBox(height: 14),
@@ -2353,6 +2407,35 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
         ],
       ),
     );
+  }
+
+  /// Render the QR code widget.
+  /// Prefers native rendering via QrImageView (qr_flutter) using the raw QR
+  /// string from the backend — this has zero encoding latency so the code is
+  /// always fresh when displayed. Falls back to the pre-rendered PNG if the
+  /// raw string is unavailable (older backend versions).
+  Widget _renderQrWidget() {
+    final raw = _status.qrRawString;
+    if (raw != null && raw.isNotEmpty) {
+      // Native rendering — renders the QR code directly on-device from the
+      // raw data string. No network image, no base64 decode, no PNG latency.
+      return QrImageView(
+        data: raw,
+        version: QrVersions.auto,
+        size: 190,
+        backgroundColor: Colors.white,
+        eyeStyle: const QrEyeStyle(
+          eyeShape: QrEyeShape.square,
+          color: Color(0xFF0F172A),
+        ),
+        dataModuleStyle: const QrDataModuleStyle(
+          dataModuleShape: QrDataModuleShape.square,
+          color: Color(0xFF0F172A),
+        ),
+      );
+    }
+    // Fallback: decode and display the server-rendered PNG
+    return _renderQrImage(_status.qrCodeDataUrl ?? '');
   }
 
   Widget _renderQrImage(String dataUrl) {

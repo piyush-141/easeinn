@@ -12,6 +12,8 @@ class WhatsAppStatusData {
   final bool isConnected;
   final bool isReady;
   final String? qrCodeDataUrl;
+  // Raw QR string for native rendering (no base64 PNG latency)
+  final String? qrRawString;
   final bool hasActiveQr;
   final String? connectedNumber;
   final String? connectedPushname;
@@ -26,6 +28,7 @@ class WhatsAppStatusData {
     required this.isConnected,
     required this.isReady,
     this.qrCodeDataUrl,
+    this.qrRawString,
     required this.hasActiveQr,
     this.connectedNumber,
     this.connectedPushname,
@@ -42,6 +45,7 @@ class WhatsAppStatusData {
       isConnected: json['isConnected'] ?? false,
       isReady: json['isReady'] ?? false,
       qrCodeDataUrl: json['qrCodeDataUrl'],
+      qrRawString: json['qrRawString'],
       hasActiveQr: json['hasActiveQr'] ?? false,
       connectedNumber: json['connectedNumber'],
       connectedPushname: json['connectedPushname'],
@@ -58,6 +62,7 @@ class WhatsAppStatusData {
       status: 'DISCONNECTED',
       isConnected: false,
       isReady: false,
+      qrRawString: null,
       hasActiveQr: false,
       activeTemplatesCount: 0,
       totalTemplatesCount: 0,

@@ -35,6 +35,7 @@ let isInitializing = false;
 let allowReconnect = true;
 let reconnectTimer = null;
 let currentQrCodeDataUrl = null;
+let currentQrRawString = null;
 let connectedNumber = null;
 let connectedPushname = null;
 let lastStatusChange = new Date().toISOString();
@@ -361,6 +362,9 @@ function bindSocketEvents(client, saveCreds) {
 
     if (qr) {
       try {
+        // Store raw QR string so native clients (Flutter) can render it directly
+        // without the round-trip PNG encoding delay that causes "Couldn't link device".
+        currentQrRawString = qr;
         currentQrCodeDataUrl = await qrcodeLib.toDataURL(qr, {
           margin: 2,
           scale: 6,
@@ -380,6 +384,7 @@ function bindSocketEvents(client, saveCreds) {
       if (sock !== client) return;
       isInitializing = false;
       currentQrCodeDataUrl = null;
+      currentQrRawString = null;
       initializationError = null;
       const user = client.user || {};
       connectedNumber = extractPhoneFromJid(user.id) || extractPhoneFromJid(user.jid);
@@ -400,6 +405,7 @@ function bindSocketEvents(client, saveCreds) {
 
       sock = null;
       currentQrCodeDataUrl = null;
+      currentQrRawString = null;
       connectedNumber = null;
       connectedPushname = null;
       isInitializing = false;
@@ -551,6 +557,7 @@ async function disconnectWhatsAppClient({ preserveSession = false } = {}) {
   }
 
   currentQrCodeDataUrl = null;
+  currentQrRawString = null;
   connectedNumber = null;
   connectedPushname = null;
   isInitializing = false;
@@ -914,7 +921,10 @@ function getStatus() {
     isConnected: clientStatus === "CONNECTED",
     isReady: clientStatus === "CONNECTED",
     qrCodeDataUrl: currentQrCodeDataUrl,
-    hasActiveQr: Boolean(currentQrCodeDataUrl),
+    // Raw QR string so native mobile clients can render it locally with zero
+    // encoding-latency (eliminates "Couldn't link device" caused by expired QR).
+    qrRawString: currentQrRawString,
+    hasActiveQr: Boolean(currentQrRawString || currentQrCodeDataUrl),
     connectedNumber,
     connectedPushname,
     lastStatusChange,
