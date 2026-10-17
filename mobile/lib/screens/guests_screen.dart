@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../services/hotel_store.dart';
+import '../services/export_file_service.dart';
 import '../models/guest.dart';
 import '../models/stay.dart';
 import '../theme/app_theme.dart';
@@ -59,7 +59,8 @@ class _GuestsScreenState extends State<GuestsScreen> {
   // ── DETAILED GUEST PROFILE MODAL (ALL ID SCAN DETAILS) ──
   void _showGuestProfile(BuildContext context, Guest guest, HotelStore store) {
     final stay = _findStayForGuest(store, guest.id);
-    final isCoGuest = stay != null && stay.coGuests.any((cg) => cg.id == guest.id);
+    final isCoGuest =
+        stay != null && stay.coGuests.any((cg) => cg.id == guest.id);
 
     // Calculate age if DOB available
     String ageText = '';
@@ -68,7 +69,8 @@ class _GuestsScreenState extends State<GuestsScreen> {
         final dob = DateTime.parse(guest.dateOfBirth!);
         final now = DateTime.now();
         int age = now.year - dob.year;
-        if (now.month < dob.month || (now.month == dob.month && now.day < dob.day)) {
+        if (now.month < dob.month ||
+            (now.month == dob.month && now.day < dob.day)) {
           age--;
         }
         if (age > 0) ageText = ' ($age yrs)';
@@ -116,8 +118,14 @@ class _GuestsScreenState extends State<GuestsScreen> {
                           radius: 28,
                           backgroundColor: AppTheme.brandPrimary,
                           child: Text(
-                            guest.fullName.isNotEmpty ? guest.fullName.substring(0, 1).toUpperCase() : 'G',
-                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22),
+                            guest.fullName.isNotEmpty
+                                ? guest.fullName.substring(0, 1).toUpperCase()
+                                : 'G',
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 22,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -127,23 +135,39 @@ class _GuestsScreenState extends State<GuestsScreen> {
                             children: [
                               Text(
                                 guest.fullName,
-                                style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                guest.phone.isNotEmpty ? guest.phone : 'No phone recorded',
-                                style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                                guest.phone.isNotEmpty
+                                    ? guest.phone
+                                    : 'No phone recorded',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppTheme.slateMuted,
+                                ),
                               ),
-                              if (guest.email != null && guest.email!.isNotEmpty)
+                              if (guest.email != null &&
+                                  guest.email!.isNotEmpty)
                                 Text(
                                   guest.email!,
-                                  style: GoogleFonts.inter(fontSize: 11, color: AppTheme.brandPrimary),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppTheme.brandPrimary,
+                                  ),
                                 ),
                             ],
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFDCFCE7),
                             borderRadius: BorderRadius.circular(20),
@@ -151,11 +175,19 @@ class _GuestsScreenState extends State<GuestsScreen> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.verified_rounded, color: Color(0xFF16A34A), size: 14),
+                              const Icon(
+                                Icons.verified_rounded,
+                                color: Color(0xFF16A34A),
+                                size: 14,
+                              ),
                               const SizedBox(width: 4),
                               Text(
                                 'Verified ID',
-                                style: GoogleFonts.inter(color: const Color(0xFF16A34A), fontSize: 11, fontWeight: FontWeight.bold),
+                                style: GoogleFonts.inter(
+                                  color: const Color(0xFF16A34A),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
@@ -178,7 +210,9 @@ class _GuestsScreenState extends State<GuestsScreen> {
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.25)),
+                        border: Border.all(
+                          color: AppTheme.brandPrimary.withValues(alpha: 0.25),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -188,23 +222,39 @@ class _GuestsScreenState extends State<GuestsScreen> {
                             children: [
                               Row(
                                 children: [
-                                  const Icon(Icons.badge_outlined, color: AppTheme.brandPrimary, size: 16),
+                                  const Icon(
+                                    Icons.badge_outlined,
+                                    color: AppTheme.brandPrimary,
+                                    size: 16,
+                                  ),
                                   const SizedBox(width: 6),
                                   Text(
                                     'GOVERNMENT ID RECORD',
-                                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary, letterSpacing: 0.5),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.brandPrimary,
+                                      letterSpacing: 0.5,
+                                    ),
                                   ),
                                 ],
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppTheme.brandPrimary,
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
                                   guest.idType.toUpperCase(),
-                                  style: GoogleFonts.inter(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ],
@@ -215,35 +265,61 @@ class _GuestsScreenState extends State<GuestsScreen> {
                               Expanded(
                                 child: Text(
                                   guest.displayIdNumber,
-                                  style: GoogleFonts.firaCode(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark, letterSpacing: 2),
+                                  style: GoogleFonts.firaCode(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                    letterSpacing: 2,
+                                  ),
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.copy_rounded, size: 18, color: AppTheme.slateMuted),
+                                icon: const Icon(
+                                  Icons.copy_rounded,
+                                  size: 18,
+                                  color: AppTheme.slateMuted,
+                                ),
                                 tooltip: 'Copy ID Number',
                                 onPressed: () {
-                                  Clipboard.setData(ClipboardData(text: guest.displayIdNumber));
+                                  Clipboard.setData(
+                                    ClipboardData(text: guest.displayIdNumber),
+                                  );
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('ID number copied!'), duration: Duration(seconds: 1)),
+                                    const SnackBar(
+                                      content: Text('ID number copied!'),
+                                      duration: Duration(seconds: 1),
+                                    ),
                                   );
                                 },
                               ),
                             ],
                           ),
-                          if (guest.fatherName != null && guest.fatherName!.isNotEmpty) ...[
+                          if (guest.fatherName != null &&
+                              guest.fatherName!.isNotEmpty) ...[
                             const Divider(height: 16),
                             Row(
                               children: [
-                                const Icon(Icons.person_outline, size: 14, color: AppTheme.slateMuted),
+                                const Icon(
+                                  Icons.person_outline,
+                                  size: 14,
+                                  color: AppTheme.slateMuted,
+                                ),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Father / Care of: ',
-                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.slateDark,
+                                  ),
                                 ),
                                 Expanded(
                                   child: Text(
                                     guest.fatherName!,
-                                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: AppTheme.slateDark,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -258,7 +334,11 @@ class _GuestsScreenState extends State<GuestsScreen> {
                     // ── 2. PERSONAL IDENTITY PARTICULARS ──
                     Text(
                       'Personal Details (Scanned Record)',
-                      style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                      ),
                     ),
                     const SizedBox(height: 8),
 
@@ -274,7 +354,8 @@ class _GuestsScreenState extends State<GuestsScreen> {
                           _buildDetailRow(
                             Icons.cake_outlined,
                             'Date of Birth',
-                            (guest.dateOfBirth != null && guest.dateOfBirth!.isNotEmpty)
+                            (guest.dateOfBirth != null &&
+                                    guest.dateOfBirth!.isNotEmpty)
                                 ? '${guest.dateOfBirth!}$ageText'
                                 : 'Not recorded in scan',
                           ),
@@ -282,17 +363,26 @@ class _GuestsScreenState extends State<GuestsScreen> {
                           _buildDetailRow(
                             Icons.wc_outlined,
                             'Gender',
-                            (guest.gender != null && guest.gender!.isNotEmpty) ? guest.gender! : 'Not specified',
+                            (guest.gender != null && guest.gender!.isNotEmpty)
+                                ? guest.gender!
+                                : 'Not specified',
                           ),
                           const Divider(height: 12),
                           _buildDetailRow(
                             Icons.phone_android_outlined,
                             'Mobile Phone',
-                            guest.phone.isNotEmpty ? guest.phone : 'Not provided',
+                            guest.phone.isNotEmpty
+                                ? guest.phone
+                                : 'Not provided',
                           ),
-                          if (guest.email != null && guest.email!.isNotEmpty) ...[
+                          if (guest.email != null &&
+                              guest.email!.isNotEmpty) ...[
                             const Divider(height: 12),
-                            _buildDetailRow(Icons.email_outlined, 'Email', guest.email!),
+                            _buildDetailRow(
+                              Icons.email_outlined,
+                              'Email',
+                              guest.email!,
+                            ),
                           ],
                         ],
                       ),
@@ -303,7 +393,11 @@ class _GuestsScreenState extends State<GuestsScreen> {
                     // ── 3. RESIDENTIAL ADDRESS (FROM ID BACK) ──
                     Text(
                       'Residential Address (Govt Registered)',
-                      style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                      ),
                     ),
                     const SizedBox(height: 8),
 
@@ -320,34 +414,53 @@ class _GuestsScreenState extends State<GuestsScreen> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.location_on_outlined, size: 16, color: AppTheme.brandPrimary),
+                              const Icon(
+                                Icons.location_on_outlined,
+                                size: 16,
+                                color: AppTheme.brandPrimary,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  (guest.address != null && guest.address!.isNotEmpty)
+                                  (guest.address != null &&
+                                          guest.address!.isNotEmpty)
                                       ? guest.address!
                                       : 'Full address not parsed from ID document',
-                                  style: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.slateDark, height: 1.4),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    color: AppTheme.slateDark,
+                                    height: 1.4,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          if (guest.pincode != null && guest.pincode!.isNotEmpty) ...[
+                          if (guest.pincode != null &&
+                              guest.pincode!.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Padding(
                               padding: const EdgeInsets.only(left: 24),
                               child: Row(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.grey.shade300),
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
                                     ),
                                     child: Text(
                                       'PINCODE: ${guest.pincode!}',
-                                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -363,7 +476,11 @@ class _GuestsScreenState extends State<GuestsScreen> {
                     // ── 4. HOTEL STAY & ROOM HISTORY ──
                     Text(
                       'Stay & Room History',
-                      style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                      ),
                     ),
                     const SizedBox(height: 8),
 
@@ -381,47 +498,61 @@ class _GuestsScreenState extends State<GuestsScreen> {
                             Row(
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: AppTheme.slateDark,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
                                     'Room ${stay.room?.roomNumber ?? "—"}',
-                                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     '${stay.room?.categoryName ?? "Standard"} (Floor ${stay.room?.floor ?? 1})',
-                                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w500),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: AppTheme.slateDark,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: stay.status == StayStatus.active
                                         ? const Color(0xFFDCFCE7)
                                         : stay.status == StayStatus.checkedOut
-                                            ? const Color(0xFFE0E7FF)
-                                            : const Color(0xFFFEF3C7),
+                                        ? const Color(0xFFE0E7FF)
+                                        : const Color(0xFFFEF3C7),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
                                     stay.status == StayStatus.active
                                         ? 'In-House'
                                         : stay.status == StayStatus.checkedOut
-                                            ? 'Checked Out'
-                                            : 'Reserved',
+                                        ? 'Checked Out'
+                                        : 'Reserved',
                                     style: GoogleFonts.inter(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
                                       color: stay.status == StayStatus.active
                                           ? const Color(0xFF16A34A)
                                           : stay.status == StayStatus.checkedOut
-                                              ? const Color(0xFF4338CA)
-                                              : const Color(0xFFD97706),
+                                          ? const Color(0xFF4338CA)
+                                          : const Color(0xFFD97706),
                                     ),
                                   ),
                                 ),
@@ -431,13 +562,17 @@ class _GuestsScreenState extends State<GuestsScreen> {
                             _buildDetailRow(
                               Icons.login_rounded,
                               'Check-In',
-                              DateFormat('d MMM yyyy, hh:mm a').format(stay.checkInAt),
+                              DateFormat(
+                                'd MMM yyyy, hh:mm a',
+                              ).format(stay.checkInAt),
                             ),
                             const Divider(height: 12),
                             _buildDetailRow(
                               Icons.logout_rounded,
                               'Check-Out',
-                              DateFormat('d MMM yyyy, hh:mm a').format(stay.checkOutAt ?? stay.expectedCheckOut),
+                              DateFormat('d MMM yyyy, hh:mm a').format(
+                                stay.checkOutAt ?? stay.expectedCheckOut,
+                              ),
                             ),
                             const Divider(height: 12),
                             _buildDetailRow(
@@ -458,13 +593,18 @@ class _GuestsScreenState extends State<GuestsScreen> {
                               _buildDetailRow(
                                 Icons.groups_outlined,
                                 'Co-Guests',
-                                stay.coGuests.map((cg) => cg.fullName).join(', '),
+                                stay.coGuests
+                                    .map((cg) => cg.fullName)
+                                    .join(', '),
                               ),
                             ],
                           ] else ...[
                             Text(
                               'No active reservation currently linked. Total lifetime stays: ${guest.staysCount}',
-                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppTheme.slateMuted,
+                              ),
                             ),
                           ],
                           const Divider(height: 12),
@@ -481,7 +621,11 @@ class _GuestsScreenState extends State<GuestsScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Front Desk Notes',
-                        style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.slateDark,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Container(
@@ -493,7 +637,10 @@ class _GuestsScreenState extends State<GuestsScreen> {
                         ),
                         child: Text(
                           guest.notes!,
-                          style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E)),
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF92400E),
+                          ),
                         ),
                       ),
                     ],
@@ -509,7 +656,8 @@ class _GuestsScreenState extends State<GuestsScreen> {
                               final stayData = stay != null
                                   ? 'Room ${stay.room?.roomNumber ?? "N/A"} (${DateFormat('d MMM yyyy').format(stay.checkInAt)})'
                                   : 'N/A';
-                              final guestSummary = '''
+                              final guestSummary =
+                                  '''
 EaseInn Guest Record:
 Name: ${guest.fullName}
 Phone: ${guest.phone}
@@ -521,9 +669,15 @@ Care Of: ${guest.fatherName ?? "N/A"}
 Address: ${guest.address ?? "N/A"} - ${guest.pincode ?? ""}
 Stay: $stayData
 ''';
-                              Clipboard.setData(ClipboardData(text: guestSummary));
+                              Clipboard.setData(
+                                ClipboardData(text: guestSummary),
+                              );
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Guest details copied to clipboard!')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Guest details copied to clipboard!',
+                                  ),
+                                ),
                               );
                             },
                             icon: const Icon(Icons.copy_rounded, size: 16),
@@ -532,7 +686,9 @@ Stay: $stayData
                               foregroundColor: AppTheme.slateDark,
                               side: BorderSide(color: Colors.grey.shade300),
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),
@@ -544,7 +700,9 @@ Stay: $stayData
                               backgroundColor: AppTheme.slateDark,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             child: const Text('Close'),
                           ),
@@ -571,13 +729,21 @@ Stay: $stayData
           width: 95,
           child: Text(
             label,
-            style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppTheme.slateMuted),
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.slateMuted,
+            ),
           ),
         ),
         Expanded(
           child: Text(
             value,
-            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: AppTheme.slateDark),
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.slateDark,
+            ),
           ),
         ),
       ],
@@ -587,14 +753,20 @@ Stay: $stayData
   // ── 2. EXPORT GUEST SHEETS WITH ALL DETAILS TAKEN (DATE / ROOM / TIME WISE) ──
   List<Guest> _filterGuestsForExport(HotelStore store) {
     final query = _searchController.text.trim().toLowerCase();
-    final activeGuestIds = store.activeStays.map((s) => s.guestId).toSet();
+    final activeGuestIds = <String>{
+      for (final stay in store.activeStays) ...[
+        stay.guestId,
+        ...stay.coGuests.map((guest) => guest.id),
+      ],
+    };
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
     return store.guests.where((g) {
       // 1. Search Query
       if (query.isNotEmpty) {
-        final matches = g.fullName.toLowerCase().contains(query) ||
+        final matches =
+            g.fullName.toLowerCase().contains(query) ||
             g.phone.contains(query) ||
             g.displayIdNumber.toLowerCase().contains(query) ||
             g.idNumberMasked.toLowerCase().contains(query) ||
@@ -611,14 +783,20 @@ Stay: $stayData
       final stay = _findStayForGuest(store, g.id);
 
       if (_roomFilter != 'all') {
-        if (stay == null || (stay.roomId != _roomFilter && stay.room?.roomNumber != _roomFilter)) {
+        if (stay == null ||
+            (stay.roomId != _roomFilter &&
+                stay.room?.roomNumber != _roomFilter)) {
           return false;
         }
       }
 
       if (_dateFilter != GuestDateFilter.all) {
         if (stay == null) return false;
-        final checkInDate = DateTime(stay.checkInAt.year, stay.checkInAt.month, stay.checkInAt.day);
+        final checkInDate = DateTime(
+          stay.checkInAt.year,
+          stay.checkInAt.month,
+          stay.checkInAt.day,
+        );
 
         switch (_dateFilter) {
           case GuestDateFilter.all:
@@ -627,22 +805,38 @@ Stay: $stayData
             if (checkInDate != today) return false;
             break;
           case GuestDateFilter.thisWeek:
-            final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
+            final startOfWeek = today.subtract(
+              Duration(days: today.weekday - 1),
+            );
             final endOfWeek = startOfWeek.add(const Duration(days: 6));
-            if (checkInDate.isBefore(startOfWeek) || checkInDate.isAfter(endOfWeek)) {
+            if (checkInDate.isBefore(startOfWeek) ||
+                checkInDate.isAfter(endOfWeek)) {
               return false;
             }
             break;
           case GuestDateFilter.thisMonth:
-            if (checkInDate.year != now.year || checkInDate.month != now.month) {
+            if (checkInDate.year != now.year ||
+                checkInDate.month != now.month) {
               return false;
             }
             break;
           case GuestDateFilter.customRange:
             if (_customDateRange != null) {
-              final start = DateTime(_customDateRange!.start.year, _customDateRange!.start.month, _customDateRange!.start.day);
-              final end = DateTime(_customDateRange!.end.year, _customDateRange!.end.month, _customDateRange!.end.day, 23, 59, 59);
-              if (checkInDate.isBefore(start) || stay.checkInAt.isAfter(end)) return false;
+              final start = DateTime(
+                _customDateRange!.start.year,
+                _customDateRange!.start.month,
+                _customDateRange!.start.day,
+              );
+              final end = DateTime(
+                _customDateRange!.end.year,
+                _customDateRange!.end.month,
+                _customDateRange!.end.day,
+                23,
+                59,
+                59,
+              );
+              if (checkInDate.isBefore(start) || stay.checkInAt.isAfter(end))
+                return false;
             }
             break;
         }
@@ -658,6 +852,11 @@ Stay: $stayData
     buffer.write('\uFEFF');
 
     final headers = [
+      'Stay Group ID',
+      'Primary Guest ID',
+      'Guest Role',
+      'Accompanying Guest Count',
+      'Accompanying Guests With Details',
       'Guest ID',
       'Full Name',
       'Phone Number',
@@ -677,7 +876,6 @@ Stay: $stayData
       'Check-Out Date',
       'Check-Out Time',
       'Stay Duration (Nights)',
-      'Accompanying Guests Names',
       'Guest Current Status',
       'Total Lifetime Visits',
       'Special Notes',
@@ -687,26 +885,46 @@ Stay: $stayData
 
     for (final guest in guests) {
       final stay = _findStayForGuest(store, guest.id);
+      final isPrimaryGuest = stay == null || stay.guestId == guest.id;
+      final accompanyingWithDetails =
+          stay?.coGuests.where(_hasRecordedGuestDetails).length ?? 0;
 
-      final checkInDate = stay != null ? DateFormat('yyyy-MM-dd').format(stay.checkInAt) : 'N/A';
-      final checkInTime = stay != null ? DateFormat('hh:mm a').format(stay.checkInAt) : 'N/A';
-      final outDateObj = stay != null ? (stay.checkOutAt ?? stay.expectedCheckOut) : null;
-      final checkOutDate = outDateObj != null ? DateFormat('yyyy-MM-dd').format(outDateObj) : 'N/A';
-      final checkOutTime = outDateObj != null ? DateFormat('hh:mm a').format(outDateObj) : 'N/A';
+      final checkInDate = stay != null
+          ? DateFormat('yyyy-MM-dd').format(stay.checkInAt)
+          : 'N/A';
+      final checkInTime = stay != null
+          ? DateFormat('hh:mm a').format(stay.checkInAt)
+          : 'N/A';
+      final outDateObj = stay != null
+          ? (stay.checkOutAt ?? stay.expectedCheckOut)
+          : null;
+      final checkOutDate = outDateObj != null
+          ? DateFormat('yyyy-MM-dd').format(outDateObj)
+          : 'N/A';
+      final checkOutTime = outDateObj != null
+          ? DateFormat('hh:mm a').format(outDateObj)
+          : 'N/A';
 
       final statusStr = stay != null
           ? (stay.status == StayStatus.active
-              ? 'In-House'
-              : stay.status == StayStatus.checkedOut
-                  ? 'Checked Out'
-                  : 'Reserved')
+                ? 'In-House'
+                : stay.status == StayStatus.checkedOut
+                ? 'Checked Out'
+                : 'Reserved')
           : 'Registered';
 
-      final coGuestsNames = stay != null && stay.coGuests.isNotEmpty
-          ? stay.coGuests.map((cg) => cg.fullName).join('; ')
-          : 'None';
-
       final row = [
+        stay?.id ?? guest.id,
+        stay?.guestId ?? guest.id,
+        stay == null
+            ? 'Registered'
+            : isPrimaryGuest
+            ? 'Primary'
+            : 'Accompanying',
+        stay != null && isPrimaryGuest ? stay.coGuests.length.toString() : '',
+        stay != null && isPrimaryGuest
+            ? accompanyingWithDetails.toString()
+            : '',
         guest.id,
         guest.fullName,
         guest.phone,
@@ -726,7 +944,6 @@ Stay: $stayData
         checkOutDate,
         checkOutTime,
         stay?.actualNights.toString() ?? 'N/A',
-        coGuestsNames,
         statusStr,
         guest.staysCount.toString(),
         guest.notes ?? 'None',
@@ -738,27 +955,83 @@ Stay: $stayData
     return buffer.toString();
   }
 
+  bool _hasRecordedGuestDetails(Guest guest) =>
+      (guest.idNumber?.trim().isNotEmpty ?? false) ||
+      guest.phone.trim().isNotEmpty ||
+      (guest.email?.trim().isNotEmpty ?? false) ||
+      (guest.dateOfBirth?.trim().isNotEmpty ?? false) ||
+      (guest.gender?.trim().isNotEmpty ?? false) ||
+      (guest.address?.trim().isNotEmpty ?? false) ||
+      (guest.pincode?.trim().isNotEmpty ?? false) ||
+      (guest.fatherName?.trim().isNotEmpty ?? false);
+
   String _escapeCsv(dynamic value) {
     if (value == null) return '""';
     final str = value.toString();
-    if (str.contains(',') || str.contains('"') || str.contains('\n') || str.contains('\r')) {
+    if (str.contains(',') ||
+        str.contains('"') ||
+        str.contains('\n') ||
+        str.contains('\r')) {
       return '"${str.replaceAll('"', '""')}"';
     }
     return '"$str"';
   }
 
   Future<void> _exportGuestSheet(BuildContext context, HotelStore store) async {
-    final guestsToExport = _filterGuestsForExport(store);
+    final filteredGuests = _filterGuestsForExport(store);
+    final selectedIds = filteredGuests.map((guest) => guest.id).toSet();
+    final exportGuestsById = {
+      for (final guest in store.guests) guest.id: guest,
+    };
+    for (final stay in store.stays) {
+      final groupIds = {
+        stay.guestId,
+        ...stay.coGuests.map((guest) => guest.id),
+      };
+      if (groupIds.any(selectedIds.contains)) {
+        selectedIds.addAll(groupIds);
+        if (stay.guest != null) exportGuestsById[stay.guestId] = stay.guest!;
+        for (final coGuest in stay.coGuests) {
+          exportGuestsById[coGuest.id] = coGuest;
+        }
+      }
+    }
+    final guestsToExport = exportGuestsById.values
+        .where((guest) => selectedIds.contains(guest.id))
+        .toList();
     if (guestsToExport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No guests match the current filters to export.'), backgroundColor: Colors.redAccent),
+        const SnackBar(
+          content: Text('No guests match the current filters to export.'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
       return;
     }
 
     final csvData = _generateGuestSheetCsv(guestsToExport, store);
     final nowStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-    final fileName = 'EaseInn_Guest_Register_$nowStr.csv';
+    final fileName = 'EaseInn_Guest_Register_$nowStr.xlsx';
+    final selectedPeriod = switch (_dateFilter) {
+      GuestDateFilter.all => 'All Time',
+      GuestDateFilter.today =>
+        'Today (${DateFormat('d MMM yyyy').format(DateTime.now())})',
+      GuestDateFilter.thisWeek => 'This Week',
+      GuestDateFilter.thisMonth =>
+        'This Month (${DateFormat('MMMM yyyy').format(DateTime.now())})',
+      GuestDateFilter.customRange when _customDateRange != null =>
+        '${DateFormat('d MMM yyyy').format(_customDateRange!.start)} – ${DateFormat('d MMM yyyy').format(_customDateRange!.end)}',
+      GuestDateFilter.customRange => 'Custom Date Range',
+    };
+    final workbook = ExportFileService.createWorkbook(
+      csvData: csvData,
+      reportTitle: 'Guest Register',
+      hotelName: store.currentProperty.name,
+      selectedPeriod: selectedPeriod,
+      recordCount: guestsToExport.length,
+      additionalDetails:
+          'Room: ${_roomFilter == 'all' ? 'All Rooms' : _roomFilter}  |  Guest status: $_filter',
+    );
 
     showModalBottomSheet(
       context: context,
@@ -777,7 +1050,10 @@ Stay: $stayData
               child: Container(
                 width: 44,
                 height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -789,7 +1065,11 @@ Stay: $stayData
                     color: AppTheme.brandPrimary.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.description_outlined, color: AppTheme.brandPrimary, size: 24),
+                  child: const Icon(
+                    Icons.description_outlined,
+                    color: AppTheme.brandPrimary,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -798,11 +1078,18 @@ Stay: $stayData
                     children: [
                       Text(
                         'Export ${guestsToExport.length} Guest Records',
-                        style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.slateDark,
+                        ),
                       ),
                       Text(
                         'Includes full ID records, DOB, address, room & check-in details',
-                        style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: AppTheme.slateMuted,
+                        ),
                       ),
                     ],
                   ),
@@ -811,27 +1098,78 @@ Stay: $stayData
             ),
             const SizedBox(height: 20),
 
-            // Share Excel CSV
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF16A34A).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.file_download_outlined, color: Color(0xFF16A34A), size: 22),
-              ),
-              title: Text('Share / Save Excel CSV', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: Text('WhatsApp, Gmail, Drive or open in Excel', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.slateMuted),
+            // Primary Action: Download, Save & Share all at once
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
               onTap: () async {
                 Navigator.of(ctx).pop();
-                await _shareCsv(csvData, fileName);
+                await _shareGuestWorkbook(workbook, fileName);
               },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.brandPrimary,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.brandPrimary.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.download_done_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Download, Save & Share Excel',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Saves copy in Downloads/EaseInn & opens share sheet',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
             ),
 
-            const Divider(height: 16),
+            const SizedBox(height: 12),
 
             // Copy to Clipboard
             ListTile(
@@ -842,17 +1180,39 @@ Stay: $stayData
                   color: AppTheme.brandPrimary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.copy_rounded, color: AppTheme.brandPrimary, size: 22),
+                child: const Icon(
+                  Icons.copy_rounded,
+                  color: AppTheme.brandPrimary,
+                  size: 22,
+                ),
               ),
-              title: Text('Copy Sheet to Clipboard', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: Text('Paste into Google Sheets or Notes', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.slateMuted),
+              title: Text(
+                'Copy Sheet to Clipboard',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              subtitle: Text(
+                'Paste into Google Sheets or Notes',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: AppTheme.slateMuted,
+                ),
+              ),
+              trailing: const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: AppTheme.slateMuted,
+              ),
               onTap: () {
                 Navigator.of(ctx).pop();
                 Clipboard.setData(ClipboardData(text: csvData));
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('${guestsToExport.length} guest records copied as CSV!'),
+                    content: Text(
+                      '${guestsToExport.length} guest records copied as CSV!',
+                    ),
                     backgroundColor: const Color(0xFF16A34A),
                   ),
                 );
@@ -870,11 +1230,31 @@ Stay: $stayData
                   color: Colors.amber.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.remove_red_eye_outlined, color: Colors.amber, size: 22),
+                child: const Icon(
+                  Icons.remove_red_eye_outlined,
+                  color: Colors.amber,
+                  size: 22,
+                ),
               ),
-              title: Text('Preview Guest Register Table', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: Text('Inspect Form C compliance and columns', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.slateMuted),
+              title: Text(
+                'Preview Guest Register Table',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              subtitle: Text(
+                'Inspect Form C compliance and columns',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: AppTheme.slateMuted,
+                ),
+              ),
+              trailing: const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: AppTheme.slateMuted,
+              ),
               onTap: () {
                 Navigator.of(ctx).pop();
                 _showPreviewDialog(csvData);
@@ -888,33 +1268,51 @@ Stay: $stayData
     );
   }
 
-  Future<void> _shareCsv(String csvData, String fileName) async {
+  Future<void> _shareGuestWorkbook(Uint8List workbook, String fileName) async {
     try {
-      final bytes = utf8.encode(csvData);
       if (!kIsWeb) {
-        try {
-          final tempDir = await getTemporaryDirectory();
-          final file = File('${tempDir.path}/$fileName');
-          await file.writeAsBytes(bytes);
-          // ignore: deprecated_member_use
-          await Share.shareXFiles(
-            [XFile(file.path, mimeType: 'text/csv', name: fileName)],
-            subject: 'EaseInn Hotel Guest Register',
-            text: 'Attached is the official guest register sheet from EaseInn PMS.',
-          );
-          return;
-        } catch (_) {}
+        await ExportFileService.saveToDownloads(
+          fileName: fileName,
+          bytes: workbook,
+        );
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(workbook, flush: true);
+        // ignore: deprecated_member_use
+        await Share.shareXFiles(
+          [
+            XFile(
+              file.path,
+              mimeType: ExportFileService.xlsxMimeType,
+              name: fileName,
+            ),
+          ],
+          subject: 'EaseInn Hotel Guest Register',
+          text:
+              'Attached is the formatted guest register from EaseInn PMS. A copy is also saved in Downloads/EaseInn.',
+        );
+      } else {
+        // ignore: deprecated_member_use
+        await Share.shareXFiles(
+          [
+            XFile.fromData(
+              workbook,
+              mimeType: ExportFileService.xlsxMimeType,
+              name: fileName,
+            ),
+          ],
+          subject: 'EaseInn Hotel Guest Register',
+          text: 'EaseInn Hotel Guest Register Export ($fileName)',
+        );
       }
-
-      // ignore: deprecated_member_use
-      await Share.shareXFiles(
-        [XFile.fromData(Uint8List.fromList(bytes), mimeType: 'text/csv', name: fileName)],
-        subject: 'EaseInn Hotel Guest Register',
-        text: 'EaseInn Hotel Guest Register Export ($fileName)',
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not share export: $error'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
-    } catch (e) {
-      // ignore: deprecated_member_use
-      await Share.share(csvData, subject: 'EaseInn Guest Register');
     }
   }
 
@@ -923,7 +1321,10 @@ Stay: $stayData
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Guest Sheet CSV Preview', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'Guest Sheet CSV Preview',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         content: SizedBox(
           width: double.maxFinite,
           height: 380,
@@ -932,7 +1333,10 @@ Stay: $stayData
             child: SingleChildScrollView(
               child: SelectableText(
                 csvData,
-                style: GoogleFonts.firaCode(fontSize: 11, color: AppTheme.slateDark),
+                style: GoogleFonts.firaCode(
+                  fontSize: 11,
+                  color: AppTheme.slateDark,
+                ),
               ),
             ),
           ),
@@ -995,7 +1399,10 @@ Stay: $stayData
                         ),
                         Text(
                           'Government ID records, OCR data & stay histories',
-                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppTheme.slateMuted,
+                          ),
                         ),
                       ],
                     ),
@@ -1009,8 +1416,13 @@ Stay: $stayData
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.brandPrimary,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         elevation: 0,
                       ),
                     ),
@@ -1026,8 +1438,15 @@ Stay: $stayData
                 style: const TextStyle(fontSize: 13, color: AppTheme.slateDark),
                 decoration: InputDecoration(
                   hintText: 'Search by name, phone, Aadhaar, address...',
-                  hintStyle: const TextStyle(fontSize: 12, color: AppTheme.slateMuted),
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppTheme.slateMuted),
+                  hintStyle: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.slateMuted,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search_rounded,
+                    size: 20,
+                    color: AppTheme.slateMuted,
+                  ),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.clear, size: 18),
@@ -1037,11 +1456,20 @@ Stay: $stayData
                           },
                         )
                       : null,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   filled: true,
                   fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppTheme.slateBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppTheme.slateBorder),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -1053,7 +1481,10 @@ Stay: $stayData
                   children: [
                     _buildChip('all', 'All Guests (${store.guests.length})'),
                     const SizedBox(width: 8),
-                    _buildChip('in_house', 'In-House (${activeGuestIds.length})'),
+                    _buildChip(
+                      'in_house',
+                      'In-House (${activeGuestIds.length})',
+                    ),
                     const SizedBox(width: 8),
                     _buildChip('past', 'Past Guests'),
                     const SizedBox(width: 8),
@@ -1071,19 +1502,38 @@ Stay: $stayData
               if (filtered.isEmpty)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 40),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppTheme.slateBorder)),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppTheme.slateBorder),
+                  ),
                   child: Center(
                     child: Column(
                       children: [
-                        const Icon(Icons.people_outline_rounded, size: 40, color: AppTheme.slateMuted),
+                        const Icon(
+                          Icons.people_outline_rounded,
+                          size: 40,
+                          color: AppTheme.slateMuted,
+                        ),
                         const SizedBox(height: 8),
                         Text(
-                          store.guests.isEmpty ? 'No Guests Registered Yet' : 'No matching guests found',
-                          style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                          store.guests.isEmpty
+                              ? 'No Guests Registered Yet'
+                              : 'No matching guests found',
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.slateDark,
+                          ),
                         ),
                         Text(
-                          store.guests.isEmpty ? 'Complete a check-in to auto-save guest profiles.' : 'Try adjusting your search query or room filter.',
-                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                          store.guests.isEmpty
+                              ? 'Complete a check-in to auto-save guest profiles.'
+                              : 'Try adjusting your search query or room filter.',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppTheme.slateMuted,
+                          ),
                         ),
                       ],
                     ),
@@ -1114,10 +1564,20 @@ Stay: $stayData
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: AppTheme.brandPrimary.withValues(alpha: 0.12),
+                              backgroundColor: AppTheme.brandPrimary.withValues(
+                                alpha: 0.12,
+                              ),
                               child: Text(
-                                guest.fullName.isNotEmpty ? guest.fullName.substring(0, 1).toUpperCase() : 'G',
-                                style: const TextStyle(color: AppTheme.brandPrimary, fontWeight: FontWeight.bold, fontSize: 14),
+                                guest.fullName.isNotEmpty
+                                    ? guest.fullName
+                                          .substring(0, 1)
+                                          .toUpperCase()
+                                    : 'G',
+                                style: const TextStyle(
+                                  color: AppTheme.brandPrimary,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1130,7 +1590,11 @@ Stay: $stayData
                                       Flexible(
                                         child: Text(
                                           guest.fullName,
-                                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.slateDark,
+                                          ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -1138,19 +1602,47 @@ Stay: $stayData
                                       if (isInHouse) ...[
                                         const SizedBox(width: 6),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                          decoration: BoxDecoration(color: AppTheme.statusOccupiedBg, borderRadius: BorderRadius.circular(6)),
-                                          child: const Text('In-House', style: TextStyle(color: AppTheme.statusOccupied, fontSize: 8, fontWeight: FontWeight.bold)),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 1.5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.statusOccupiedBg,
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'In-House',
+                                            style: TextStyle(
+                                              color: AppTheme.statusOccupied,
+                                              fontSize: 8,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
                                       ],
-                                      if (stay != null && stay.room != null) ...[
+                                      if (stay != null &&
+                                          stay.room != null) ...[
                                         const SizedBox(width: 6),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(5)),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 5,
+                                            vertical: 1.5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade100,
+                                            borderRadius: BorderRadius.circular(
+                                              5,
+                                            ),
+                                          ),
                                           child: Text(
                                             'Rm ${stay.room!.roomNumber}',
-                                            style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                            style: GoogleFonts.inter(
+                                              fontSize: 8.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppTheme.slateDark,
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -1159,21 +1651,32 @@ Stay: $stayData
                                   const SizedBox(height: 2),
                                   Text(
                                     '${guest.idType.toUpperCase()}: ${guest.displayIdNumber} • ${guest.phone}',
-                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: AppTheme.slateMuted,
+                                    ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  if (guest.address != null && guest.address!.isNotEmpty)
+                                  if (guest.address != null &&
+                                      guest.address!.isNotEmpty)
                                     Text(
                                       guest.address!,
-                                      style: GoogleFonts.inter(fontSize: 9.5, color: Colors.grey.shade400),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9.5,
+                                        color: Colors.grey.shade400,
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                 ],
                               ),
                             ),
-                            const Icon(Icons.chevron_right_rounded, color: AppTheme.slateMuted, size: 20),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppTheme.slateMuted,
+                              size: 20,
+                            ),
                           ],
                         ),
                       ),
@@ -1198,7 +1701,9 @@ Stay: $stayData
         decoration: BoxDecoration(
           color: isSel ? AppTheme.brandPrimary : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isSel ? AppTheme.brandPrimary : AppTheme.slateBorder),
+          border: Border.all(
+            color: isSel ? AppTheme.brandPrimary : AppTheme.slateBorder,
+          ),
         ),
         child: Text(
           label,
@@ -1222,22 +1727,30 @@ Stay: $stayData
         onSelected: (val) => setState(() => _roomFilter = val),
         itemBuilder: (ctx) => [
           const PopupMenuItem(value: 'all', child: Text('All Rooms')),
-          ...store.rooms.map((r) => PopupMenuItem(
-                value: r.roomNumber,
-                child: Text('Room ${r.roomNumber} (${r.categoryName})'),
-              )),
+          ...store.rooms.map(
+            (r) => PopupMenuItem(
+              value: r.roomNumber,
+              child: Text('Room ${r.roomNumber} (${r.categoryName})'),
+            ),
+          ),
         ],
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: isFiltered ? AppTheme.brandPrimary : Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isFiltered ? AppTheme.brandPrimary : AppTheme.slateBorder),
+            border: Border.all(
+              color: isFiltered ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.meeting_room_outlined, size: 13, color: isFiltered ? Colors.white : AppTheme.slateDark),
+              Icon(
+                Icons.meeting_room_outlined,
+                size: 13,
+                color: isFiltered ? Colors.white : AppTheme.slateDark,
+              ),
               const SizedBox(width: 4),
               Text(
                 label,
@@ -1248,7 +1761,11 @@ Stay: $stayData
                 ),
               ),
               const SizedBox(width: 2),
-              Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: isFiltered ? Colors.white : AppTheme.slateMuted),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 14,
+                color: isFiltered ? Colors.white : AppTheme.slateMuted,
+              ),
             ],
           ),
         ),
@@ -1262,8 +1779,10 @@ Stay: $stayData
     if (_dateFilter == GuestDateFilter.today) label = 'Today';
     if (_dateFilter == GuestDateFilter.thisWeek) label = 'This Week';
     if (_dateFilter == GuestDateFilter.thisMonth) label = 'This Month';
-    if (_dateFilter == GuestDateFilter.customRange && _customDateRange != null) {
-      label = '${DateFormat('d MMM').format(_customDateRange!.start)} - ${DateFormat('d MMM').format(_customDateRange!.end)}';
+    if (_dateFilter == GuestDateFilter.customRange &&
+        _customDateRange != null) {
+      label =
+          '${DateFormat('d MMM').format(_customDateRange!.start)} - ${DateFormat('d MMM').format(_customDateRange!.end)}';
     }
 
     return PressableScale(
@@ -1275,8 +1794,12 @@ Stay: $stayData
               context: context,
               firstDate: DateTime(2024),
               lastDate: DateTime(2030),
-              initialDateRange: _customDateRange ??
-                  DateTimeRange(start: DateTime.now().subtract(const Duration(days: 7)), end: DateTime.now()),
+              initialDateRange:
+                  _customDateRange ??
+                  DateTimeRange(
+                    start: DateTime.now().subtract(const Duration(days: 7)),
+                    end: DateTime.now(),
+                  ),
             );
             if (range != null) {
               setState(() {
@@ -1291,21 +1814,36 @@ Stay: $stayData
         itemBuilder: (ctx) => const [
           PopupMenuItem(value: GuestDateFilter.all, child: Text('All Time')),
           PopupMenuItem(value: GuestDateFilter.today, child: Text('Today')),
-          PopupMenuItem(value: GuestDateFilter.thisWeek, child: Text('This Week')),
-          PopupMenuItem(value: GuestDateFilter.thisMonth, child: Text('This Month')),
-          PopupMenuItem(value: GuestDateFilter.customRange, child: Text('Custom Date Range...')),
+          PopupMenuItem(
+            value: GuestDateFilter.thisWeek,
+            child: Text('This Week'),
+          ),
+          PopupMenuItem(
+            value: GuestDateFilter.thisMonth,
+            child: Text('This Month'),
+          ),
+          PopupMenuItem(
+            value: GuestDateFilter.customRange,
+            child: Text('Custom Date Range...'),
+          ),
         ],
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: isFiltered ? AppTheme.brandPrimary : Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isFiltered ? AppTheme.brandPrimary : AppTheme.slateBorder),
+            border: Border.all(
+              color: isFiltered ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.calendar_today_outlined, size: 13, color: isFiltered ? Colors.white : AppTheme.slateDark),
+              Icon(
+                Icons.calendar_today_outlined,
+                size: 13,
+                color: isFiltered ? Colors.white : AppTheme.slateDark,
+              ),
               const SizedBox(width: 4),
               Text(
                 label,
@@ -1316,7 +1854,11 @@ Stay: $stayData
                 ),
               ),
               const SizedBox(width: 2),
-              Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: isFiltered ? Colors.white : AppTheme.slateMuted),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 14,
+                color: isFiltered ? Colors.white : AppTheme.slateMuted,
+              ),
             ],
           ),
         ),

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../services/hotel_store.dart';
+import '../services/export_file_service.dart';
 import '../models/stay.dart';
 import '../models/guest.dart';
 import '../models/bill.dart';
@@ -48,7 +48,8 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
   DateTime? _selectedMonth; // When customMonth is chosen
 
   String _selectedRoomFilter = 'all'; // 'all' or roomId
-  String _selectedStatusFilter = 'all'; // 'all', 'active', 'checkedOut', 'reserved'
+  String _selectedStatusFilter =
+      'all'; // 'all', 'active', 'checkedOut', 'reserved'
   String _searchQuery = '';
 
   final TextEditingController _searchController = TextEditingController();
@@ -76,20 +77,24 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
     return store.stays.where((stay) {
       // 1. Room filter
       if (_selectedRoomFilter != 'all') {
-        if (stay.roomId != _selectedRoomFilter && stay.room?.roomNumber != _selectedRoomFilter) {
+        if (stay.roomId != _selectedRoomFilter &&
+            stay.room?.roomNumber != _selectedRoomFilter) {
           return false;
         }
       }
 
       // 2. Status filter
       if (_selectedStatusFilter != 'all') {
-        if (_selectedStatusFilter == 'active' && stay.status != StayStatus.active) {
+        if (_selectedStatusFilter == 'active' &&
+            stay.status != StayStatus.active) {
           return false;
         }
-        if (_selectedStatusFilter == 'checkedOut' && stay.status != StayStatus.checkedOut) {
+        if (_selectedStatusFilter == 'checkedOut' &&
+            stay.status != StayStatus.checkedOut) {
           return false;
         }
-        if (_selectedStatusFilter == 'reserved' && stay.status != StayStatus.reserved) {
+        if (_selectedStatusFilter == 'reserved' &&
+            stay.status != StayStatus.reserved) {
           return false;
         }
       }
@@ -111,7 +116,8 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         case DateFilterPreset.thisWeek:
           final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
           final endOfWeek = startOfWeek.add(const Duration(days: 6));
-          if (checkInDate.isBefore(startOfWeek) || checkInDate.isAfter(endOfWeek)) {
+          if (checkInDate.isBefore(startOfWeek) ||
+              checkInDate.isAfter(endOfWeek)) {
             return false;
           }
           break;
@@ -122,24 +128,37 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
           break;
         case DateFilterPreset.lastMonth:
           final lastMonthDate = DateTime(now.year, now.month - 1, 1);
-          if (checkIn.year != lastMonthDate.year || checkIn.month != lastMonthDate.month) {
+          if (checkIn.year != lastMonthDate.year ||
+              checkIn.month != lastMonthDate.month) {
             return false;
           }
           break;
         case DateFilterPreset.customMonth:
           if (_selectedMonth != null) {
-            if (checkIn.year != _selectedMonth!.year || checkIn.month != _selectedMonth!.month) {
+            if (checkIn.year != _selectedMonth!.year ||
+                checkIn.month != _selectedMonth!.month) {
               return false;
             }
           }
           break;
         case DateFilterPreset.customRange:
           if (_customStartDate != null) {
-            final start = DateTime(_customStartDate!.year, _customStartDate!.month, _customStartDate!.day);
+            final start = DateTime(
+              _customStartDate!.year,
+              _customStartDate!.month,
+              _customStartDate!.day,
+            );
             if (checkInDate.isBefore(start)) return false;
           }
           if (_customEndDate != null) {
-            final end = DateTime(_customEndDate!.year, _customEndDate!.month, _customEndDate!.day, 23, 59, 59);
+            final end = DateTime(
+              _customEndDate!.year,
+              _customEndDate!.month,
+              _customEndDate!.day,
+              23,
+              59,
+              59,
+            );
             if (checkIn.isAfter(end)) return false;
           }
           break;
@@ -148,18 +167,22 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
       // 4. Search query (matches primary guest name, co-guest name, phone, room number, or booking id)
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
-        final primaryMatch = (stay.guest?.fullName.toLowerCase().contains(q) ?? false) ||
+        final primaryMatch =
+            (stay.guest?.fullName.toLowerCase().contains(q) ?? false) ||
             (stay.guest?.phone.toLowerCase().contains(q) ?? false) ||
             (stay.guest?.displayIdNumber.toLowerCase().contains(q) ?? false) ||
             (stay.guest?.idNumberMasked.toLowerCase().contains(q) ?? false);
 
-        final coGuestMatch = stay.coGuests.any((cg) =>
-            cg.fullName.toLowerCase().contains(q) ||
-            cg.phone.toLowerCase().contains(q) ||
-            cg.displayIdNumber.toLowerCase().contains(q) ||
-            cg.idNumberMasked.toLowerCase().contains(q));
+        final coGuestMatch = stay.coGuests.any(
+          (cg) =>
+              cg.fullName.toLowerCase().contains(q) ||
+              cg.phone.toLowerCase().contains(q) ||
+              cg.displayIdNumber.toLowerCase().contains(q) ||
+              cg.idNumberMasked.toLowerCase().contains(q),
+        );
 
-        final roomMatch = (stay.room?.roomNumber.toLowerCase().contains(q) ?? false) ||
+        final roomMatch =
+            (stay.room?.roomNumber.toLowerCase().contains(q) ?? false) ||
             (stay.room?.categoryName.toLowerCase().contains(q) ?? false);
 
         final idMatch = stay.id.toLowerCase().contains(q);
@@ -240,34 +263,45 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
       final statusStr = stay.status == StayStatus.active
           ? 'Active / In-House'
           : stay.status == StayStatus.checkedOut
-              ? 'Checked Out'
-              : 'Reserved';
+          ? 'Checked Out'
+          : 'Reserved';
 
       // Accompanying guests summary
       final coGuests = stay.coGuests;
-      final coGuestsSummary = coGuests.map((cg) {
-        final phone = cg.phone.isNotEmpty ? ' [${cg.phone}]' : '';
-        final id = cg.displayIdNumber.isNotEmpty ? ' (${cg.idType.toUpperCase()}: ${cg.displayIdNumber})' : '';
-        return '${cg.fullName}$phone$id';
-      }).join('; ');
+      final coGuestsSummary = coGuests
+          .map((cg) {
+            final phone = cg.phone.isNotEmpty ? ' [${cg.phone}]' : '';
+            final id = cg.displayIdNumber.isNotEmpty
+                ? ' (${cg.idType.toUpperCase()}: ${cg.displayIdNumber})'
+                : '';
+            return '${cg.fullName}$phone$id';
+          })
+          .join('; ');
 
       // Specific co-guest slots
       final cg1Name = coGuests.isNotEmpty ? coGuests[0].fullName : '';
       final cg1Phone = coGuests.isNotEmpty ? coGuests[0].phone : '';
-      final cg1Id = coGuests.isNotEmpty ? '${coGuests[0].idType.toUpperCase()}: ${coGuests[0].displayIdNumber}' : '';
+      final cg1Id = coGuests.isNotEmpty
+          ? '${coGuests[0].idType.toUpperCase()}: ${coGuests[0].displayIdNumber}'
+          : '';
 
       final cg2Name = coGuests.length > 1 ? coGuests[1].fullName : '';
       final cg2Phone = coGuests.length > 1 ? coGuests[1].phone : '';
-      final cg2Id = coGuests.length > 1 ? '${coGuests[1].idType.toUpperCase()}: ${coGuests[1].displayIdNumber}' : '';
+      final cg2Id = coGuests.length > 1
+          ? '${coGuests[1].idType.toUpperCase()}: ${coGuests[1].displayIdNumber}'
+          : '';
 
       final cg3Name = coGuests.length > 2 ? coGuests[2].fullName : '';
       final cg3Phone = coGuests.length > 2 ? coGuests[2].phone : '';
-      final cg3Id = coGuests.length > 2 ? '${coGuests[2].idType.toUpperCase()}: ${coGuests[2].displayIdNumber}' : '';
+      final cg3Id = coGuests.length > 2
+          ? '${coGuests[2].idType.toUpperCase()}: ${coGuests[2].displayIdNumber}'
+          : '';
 
       final subtotal = bill?.subtotal ?? (stay.nightlyRate * stay.actualNights);
       final amountPaid = bill?.amountPaid ?? 0.0;
       final outstanding = bill?.outstanding ?? (subtotal - amountPaid);
-      final billStatus = bill?.status ?? (outstanding <= 0 ? 'paid' : 'pending');
+      final billStatus =
+          bill?.status ?? (outstanding <= 0 ? 'paid' : 'pending');
 
       final row = [
         stay.id,
@@ -281,7 +315,8 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         checkOutDate,
         checkOutTime,
         stay.actualNights.toString(),
-        (stay.numGuests > 0 ? stay.numGuests : (stay.numAdults + stay.numKids)).toString(),
+        (stay.numGuests > 0 ? stay.numGuests : (stay.numAdults + stay.numKids))
+            .toString(),
         stay.numAdults.toString(),
         stay.numKids.toString(),
         stay.guest?.fullName ?? 'N/A',
@@ -317,13 +352,42 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
   String _escapeCsv(dynamic value) {
     if (value == null) return '""';
     final str = value.toString();
-    if (str.contains(',') || str.contains('"') || str.contains('\n') || str.contains('\r')) {
+    if (str.contains(',') ||
+        str.contains('"') ||
+        str.contains('\n') ||
+        str.contains('\r')) {
       return '"${str.replaceAll('"', '""')}"';
     }
     return '"$str"';
   }
 
   // ── SHARING & EXPORT ACTIONS ──
+  String _selectedPeriodLabel() {
+    switch (_selectedPreset) {
+      case DateFilterPreset.all:
+        return 'All Time';
+      case DateFilterPreset.today:
+        return 'Today (${DateFormat('d MMM yyyy').format(DateTime.now())})';
+      case DateFilterPreset.yesterday:
+        return 'Yesterday (${DateFormat('d MMM yyyy').format(DateTime.now().subtract(const Duration(days: 1)))})';
+      case DateFilterPreset.thisWeek:
+        return 'This Week';
+      case DateFilterPreset.thisMonth:
+        return 'This Month (${DateFormat('MMMM yyyy').format(DateTime.now())})';
+      case DateFilterPreset.lastMonth:
+        return 'Last Month';
+      case DateFilterPreset.customMonth:
+        return _selectedMonth == null
+            ? 'Custom Month'
+            : DateFormat('MMMM yyyy').format(_selectedMonth!);
+      case DateFilterPreset.customRange:
+        if (_customStartDate == null || _customEndDate == null) {
+          return 'Custom Range';
+        }
+        return '${DateFormat('d MMM yyyy').format(_customStartDate!)} – ${DateFormat('d MMM yyyy').format(_customEndDate!)}';
+    }
+  }
+
   Future<void> _exportData(List<Stay> filteredStays, HotelStore store) async {
     if (filteredStays.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -337,7 +401,16 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
 
     final csvData = _generateCsv(filteredStays, store);
     final nowStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-    final fileName = 'EaseInn_Bookings_Register_$nowStr.csv';
+    final fileName = 'EaseInn_Bookings_Register_$nowStr.xlsx';
+    final workbook = ExportFileService.createWorkbook(
+      csvData: csvData,
+      reportTitle: 'Booking Register',
+      hotelName: store.currentProperty.name,
+      selectedPeriod: _selectedPeriodLabel(),
+      recordCount: filteredStays.length,
+      additionalDetails:
+          'Room: ${_selectedRoomFilter == 'all' ? 'All Rooms' : _selectedRoomFilter}  |  Status: ${_selectedStatusFilter == 'all' ? 'All Statuses' : _selectedStatusFilter}',
+    );
 
     showModalBottomSheet(
       context: context,
@@ -371,7 +444,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                     color: AppTheme.brandPrimary.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.table_chart_rounded, color: AppTheme.brandPrimary, size: 24),
+                  child: const Icon(
+                    Icons.table_chart_rounded,
+                    color: AppTheme.brandPrimary,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -387,8 +464,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         ),
                       ),
                       Text(
-                        'Formatted Excel/CSV spreadsheet ready for audits',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                        'Formatted Excel workbook with your selected filters',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppTheme.slateMuted,
+                        ),
                       ),
                     ],
                   ),
@@ -397,42 +477,110 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Option 1: Share / Save CSV File
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF16A34A).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.file_download_outlined, color: Color(0xFF16A34A), size: 22),
-              ),
-              title: Text('Share / Save Excel CSV File', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: Text('Send to WhatsApp, Email, Drive or open in Excel', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.slateMuted),
+            // Primary Action: Download, Save & Share all at once
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
               onTap: () async {
                 Navigator.of(ctx).pop();
-                await _shareCsvFile(csvData, fileName);
+                await _shareWorkbook(workbook, fileName);
               },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppTheme.brandPrimary,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.brandPrimary.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.download_done_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Download, Save & Share Excel',
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Saves copy in Downloads/EaseInn & opens share sheet',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
             ),
 
-            const Divider(height: 16),
+            const SizedBox(height: 12),
 
-            // Option 2: Copy to Clipboard
+            // Option: Copy to Clipboard
             ListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               leading: Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: AppTheme.brandPrimary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.slateBorder.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.copy_rounded, color: AppTheme.brandPrimary, size: 22),
+                child: const Icon(
+                  Icons.copy_rounded,
+                  color: AppTheme.slateDark,
+                  size: 20,
+                ),
               ),
-              title: Text('Copy CSV to Clipboard', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: Text('Paste directly into Google Sheets, Excel or Notes', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.slateMuted),
+              title: Text(
+                'Copy CSV to Clipboard',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              subtitle: Text(
+                'Paste directly into Sheets or Notes',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: AppTheme.slateMuted,
+                ),
+              ),
+              trailing: const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 13,
+                color: AppTheme.slateMuted,
+              ),
               onTap: () {
                 Navigator.of(ctx).pop();
                 Clipboard.setData(ClipboardData(text: csvData));
@@ -440,9 +588,17 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                   SnackBar(
                     content: Row(
                       children: [
-                        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                         const SizedBox(width: 8),
-                        Expanded(child: Text('${filteredStays.length} booking records copied to clipboard!')),
+                        Expanded(
+                          child: Text(
+                            '${filteredStays.length} booking records copied to clipboard!',
+                          ),
+                        ),
                       ],
                     ),
                     backgroundColor: const Color(0xFF16A34A),
@@ -452,73 +608,103 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
               },
             ),
 
-            const Divider(height: 16),
+            const Divider(height: 8),
 
-            // Option 3: Quick Print / Folio Preview
+            // Option: View Raw CSV Preview
             ListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               leading: Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.slateBorder.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.remove_red_eye_outlined, color: Colors.amber, size: 22),
+                child: const Icon(
+                  Icons.remove_red_eye_outlined,
+                  color: AppTheme.slateDark,
+                  size: 20,
+                ),
               ),
-              title: Text('View Raw CSV Preview', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: Text('Inspect header columns and multi-guest formatting', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.slateMuted),
+              title: Text(
+                'View Raw CSV Preview',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              subtitle: Text(
+                'Inspect raw table data and columns',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: AppTheme.slateMuted,
+                ),
+              ),
+              trailing: const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 13,
+                color: AppTheme.slateMuted,
+              ),
               onTap: () {
                 Navigator.of(ctx).pop();
                 _showRawCsvDialog(csvData);
               },
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _shareCsvFile(String csvData, String fileName) async {
+
+
+  Future<void> _shareWorkbook(Uint8List workbook, String fileName) async {
     try {
-      final bytes = utf8.encode(csvData);
-
       if (!kIsWeb) {
-        // Mobile platform: Write to temp directory for reliable system share sheet
-        try {
-          final tempDir = await getTemporaryDirectory();
-          final file = File('${tempDir.path}/$fileName');
-          await file.writeAsBytes(bytes);
-
-          // ignore: deprecated_member_use
-          await Share.shareXFiles(
-            [XFile(file.path, mimeType: 'text/csv', name: fileName)],
-            subject: 'EaseInn Hotel Booking Register',
-            text: 'Attached is the official guest bookings register from EaseInn PMS.',
-          );
-          return;
-        } catch (e) {
-          debugPrint('[BookingExport] Temp file share failed: $e, falling back to data XFile');
-        }
+        await ExportFileService.saveToDownloads(
+          fileName: fileName,
+          bytes: workbook,
+        );
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(workbook, flush: true);
+        // ignore: deprecated_member_use
+        await Share.shareXFiles(
+          [
+            XFile(
+              file.path,
+              mimeType: ExportFileService.xlsxMimeType,
+              name: fileName,
+            ),
+          ],
+          subject: 'EaseInn Hotel Booking Register',
+          text:
+              'Attached is the formatted booking register saved in Downloads/EaseInn.',
+        );
+        return;
       }
 
-      // Web or fallback
       // ignore: deprecated_member_use
       await Share.shareXFiles(
-        [XFile.fromData(Uint8List.fromList(bytes), mimeType: 'text/csv', name: fileName)],
+        [
+          XFile.fromData(
+            workbook,
+            mimeType: ExportFileService.xlsxMimeType,
+            name: fileName,
+          ),
+        ],
         subject: 'EaseInn Hotel Booking Register',
-        text: 'EaseInn Hotel Booking Register Export ($fileName)',
+        text: 'EaseInn Hotel Booking Register ($fileName)',
       );
     } catch (e) {
       debugPrint('[BookingExport] Share error: $e');
       if (mounted) {
-        // Final fallback: Share text directly
-        // ignore: deprecated_member_use
-        await Share.share(
-          csvData,
-          subject: 'EaseInn Bookings Register ($fileName)',
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not save/share export: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
@@ -529,7 +715,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('CSV Data Preview', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'CSV Data Preview',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         content: SizedBox(
           width: double.maxFinite,
           height: 380,
@@ -538,7 +727,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
             child: SingleChildScrollView(
               child: SelectableText(
                 csvData,
-                style: GoogleFonts.firaCode(fontSize: 11, color: AppTheme.slateDark),
+                style: GoogleFonts.firaCode(
+                  fontSize: 11,
+                  color: AppTheme.slateDark,
+                ),
               ),
             ),
           ),
@@ -629,7 +821,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
               children: [
                 Text(
                   'Select Month to Export',
-                  style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -644,26 +839,42 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 itemCount: months.length,
                 itemBuilder: (ctx, i) {
                   final m = months[i];
-                  final isSelected = _selectedPreset == DateFilterPreset.customMonth &&
+                  final isSelected =
+                      _selectedPreset == DateFilterPreset.customMonth &&
                       _selectedMonth?.year == m.year &&
                       _selectedMonth?.month == m.month;
 
                   return ListTile(
                     dense: true,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    tileColor: isSelected ? AppTheme.brandPrimary.withValues(alpha: 0.1) : null,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    tileColor: isSelected
+                        ? AppTheme.brandPrimary.withValues(alpha: 0.1)
+                        : null,
                     leading: Icon(
                       Icons.calendar_month_rounded,
-                      color: isSelected ? AppTheme.brandPrimary : AppTheme.slateMuted,
+                      color: isSelected
+                          ? AppTheme.brandPrimary
+                          : AppTheme.slateMuted,
                     ),
                     title: Text(
                       DateFormat('MMMM yyyy').format(m),
                       style: GoogleFonts.inter(
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                        color: isSelected ? AppTheme.brandPrimary : AppTheme.slateDark,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.w500,
+                        color: isSelected
+                            ? AppTheme.brandPrimary
+                            : AppTheme.slateDark,
                       ),
                     ),
-                    trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: AppTheme.brandPrimary) : null,
+                    trailing: isSelected
+                        ? const Icon(
+                            Icons.check_circle_rounded,
+                            color: AppTheme.brandPrimary,
+                          )
+                        : null,
                     onTap: () {
                       setState(() {
                         _selectedPreset = DateFilterPreset.customMonth;
@@ -692,7 +903,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
     double totalCollected = 0.0;
 
     for (final s in filteredStays) {
-      totalGuestsCount += (s.numGuests > 0 ? s.numGuests : (s.numAdults + s.numKids));
+      totalGuestsCount += (s.numGuests > 0
+          ? s.numGuests
+          : (s.numAdults + s.numKids));
       try {
         final b = store.bills.firstWhere((x) => x.stayId == s.id);
         totalBilled += b.subtotal;
@@ -703,7 +916,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
       }
     }
 
-    final currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    final currencyFormat = NumberFormat.currency(
+      locale: 'en_IN',
+      symbol: '₹',
+      decimalDigits: 0,
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -711,7 +928,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         backgroundColor: Colors.white,
         elevation: 0.5,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppTheme.slateDark, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppTheme.slateDark,
+            size: 20,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Column(
@@ -727,7 +948,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
             ),
             Text(
               store.currentProperty.name,
-              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppTheme.slateMuted,
+              ),
             ),
           ],
         ),
@@ -737,12 +961,17 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
             child: ElevatedButton.icon(
               onPressed: () => _exportData(filteredStays, store),
               icon: const Icon(Icons.file_upload_outlined, size: 16),
-              label: const Text('Export CSV'),
+              label: const Text('Export Excel'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.brandPrimary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 elevation: 0,
               ),
             ),
@@ -764,11 +993,22 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                   onChanged: (val) => setState(() => _searchQuery = val),
                   decoration: InputDecoration(
                     hintText: 'Search guest, phone, ID, room...',
-                    hintStyle: GoogleFonts.inter(fontSize: 12.5, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppTheme.brandPrimary),
+                    hintStyle: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      color: AppTheme.slateMuted,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search_rounded,
+                      size: 20,
+                      color: AppTheme.brandPrimary,
+                    ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear, size: 18, color: AppTheme.slateMuted),
+                            icon: const Icon(
+                              Icons.clear,
+                              size: 18,
+                              color: AppTheme.slateMuted,
+                            ),
                             onPressed: () {
                               _searchController.clear();
                               setState(() => _searchQuery = '');
@@ -777,7 +1017,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         : null,
                     filled: true,
                     fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 10,
+                      horizontal: 12,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: AppTheme.slateBorder),
@@ -788,7 +1031,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppTheme.brandPrimary),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                      ),
                     ),
                   ),
                 ),
@@ -807,9 +1052,15 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                       const SizedBox(width: 6),
                       _buildPresetChip('This Week', DateFilterPreset.thisWeek),
                       const SizedBox(width: 6),
-                      _buildPresetChip('This Month', DateFilterPreset.thisMonth),
+                      _buildPresetChip(
+                        'This Month',
+                        DateFilterPreset.thisMonth,
+                      ),
                       const SizedBox(width: 6),
-                      _buildPresetChip('Last Month', DateFilterPreset.lastMonth),
+                      _buildPresetChip(
+                        'Last Month',
+                        DateFilterPreset.lastMonth,
+                      ),
                       const SizedBox(width: 6),
                       _buildMonthSelectorChip(),
                       const SizedBox(width: 6),
@@ -835,24 +1086,45 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.meeting_room_outlined, size: 15, color: AppTheme.brandPrimary),
+                            const Icon(
+                              Icons.meeting_room_outlined,
+                              size: 15,
+                              color: AppTheme.brandPrimary,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<String>(
                                   value: _selectedRoomFilter,
                                   isExpanded: true,
-                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: AppTheme.slateMuted),
-                                  style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    size: 18,
+                                    color: AppTheme.slateMuted,
+                                  ),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: AppTheme.slateDark,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                   items: [
-                                    const DropdownMenuItem(value: 'all', child: Text('All Rooms')),
-                                    ...store.rooms.map((r) => DropdownMenuItem(
-                                          value: r.id,
-                                          child: Text('Room ${r.roomNumber} (${r.categoryName})', overflow: TextOverflow.ellipsis),
-                                        )),
+                                    const DropdownMenuItem(
+                                      value: 'all',
+                                      child: Text('All Rooms'),
+                                    ),
+                                    ...store.rooms.map(
+                                      (r) => DropdownMenuItem(
+                                        value: r.id,
+                                        child: Text(
+                                          'Room ${r.roomNumber} (${r.categoryName})',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                   onChanged: (val) {
-                                    if (val != null) setState(() => _selectedRoomFilter = val);
+                                    if (val != null)
+                                      setState(() => _selectedRoomFilter = val);
                                   },
                                 ),
                               ),
@@ -875,23 +1147,50 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.tune_rounded, size: 15, color: AppTheme.brandPrimary),
+                            const Icon(
+                              Icons.tune_rounded,
+                              size: 15,
+                              color: AppTheme.brandPrimary,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<String>(
                                   value: _selectedStatusFilter,
                                   isExpanded: true,
-                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: AppTheme.slateMuted),
-                                  style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    size: 18,
+                                    color: AppTheme.slateMuted,
+                                  ),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: AppTheme.slateDark,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                   items: const [
-                                    DropdownMenuItem(value: 'all', child: Text('All Statuses')),
-                                    DropdownMenuItem(value: 'active', child: Text('In-House')),
-                                    DropdownMenuItem(value: 'checkedOut', child: Text('Checked Out')),
-                                    DropdownMenuItem(value: 'reserved', child: Text('Reserved')),
+                                    DropdownMenuItem(
+                                      value: 'all',
+                                      child: Text('All Statuses'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'active',
+                                      child: Text('In-House'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'checkedOut',
+                                      child: Text('Checked Out'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'reserved',
+                                      child: Text('Reserved'),
+                                    ),
                                   ],
                                   onChanged: (val) {
-                                    if (val != null) setState(() => _selectedStatusFilter = val);
+                                    if (val != null)
+                                      setState(
+                                        () => _selectedStatusFilter = val,
+                                      );
                                   },
                                 ),
                               ),
@@ -994,7 +1293,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         Clipboard.setData(ClipboardData(text: csv));
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('${filteredStays.length} bookings copied as CSV table!'),
+                            content: Text(
+                              '${filteredStays.length} bookings copied as CSV table!',
+                            ),
                             backgroundColor: const Color(0xFF16A34A),
                           ),
                         );
@@ -1005,7 +1306,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         foregroundColor: AppTheme.slateDark,
                         side: BorderSide(color: Colors.grey.shade300),
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
@@ -1020,7 +1323,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         backgroundColor: AppTheme.brandPrimary,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         elevation: 0,
                       ),
                     ),
@@ -1070,9 +1375,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
             Text(
               label,
               style: GoogleFonts.inter(
-                 fontSize: 11,
-                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                 color: isSelected ? Colors.white : AppTheme.slateDark,
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? Colors.white : AppTheme.slateDark,
               ),
             ),
           ],
@@ -1113,7 +1418,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.calendar_month_rounded, size: 12, color: isSelected ? Colors.white : AppTheme.slateDark),
+            Icon(
+              Icons.calendar_month_rounded,
+              size: 12,
+              color: isSelected ? Colors.white : AppTheme.slateDark,
+            ),
             const SizedBox(width: 4),
             Text(
               label,
@@ -1131,7 +1440,8 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
 
   Widget _buildCustomRangeChip() {
     final isSelected = _selectedPreset == DateFilterPreset.customRange;
-    final label = isSelected && _customStartDate != null && _customEndDate != null
+    final label =
+        isSelected && _customStartDate != null && _customEndDate != null
         ? '${DateFormat('d MMM').format(_customStartDate!)} - ${DateFormat('d MMM').format(_customEndDate!)}'
         : 'Custom Range';
 
@@ -1161,7 +1471,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.date_range_rounded, size: 12, color: isSelected ? Colors.white : AppTheme.slateDark),
+            Icon(
+              Icons.date_range_rounded,
+              size: 12,
+              color: isSelected ? Colors.white : AppTheme.slateDark,
+            ),
             const SizedBox(width: 4),
             Text(
               label,
@@ -1177,7 +1491,12 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
     );
   }
 
-  Widget _buildMetricItem(String label, String value, IconData icon, Color color) {
+  Widget _buildMetricItem(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1187,20 +1506,35 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
           children: [
             Icon(icon, size: 11.5, color: color),
             const SizedBox(width: 3.5),
-            Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.slateMuted)),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.slateMuted,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 3),
         Text(
           value,
-          style: GoogleFonts.outfit(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+          style: GoogleFonts.outfit(
+            fontSize: 13.5,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.slateDark,
+          ),
         ),
       ],
     );
   }
 
   // ── ELEVATED LUXURY BOOKING CARD ──
-  Widget _buildBookingCard(Stay stay, HotelStore store, NumberFormat currencyFormat) {
+  Widget _buildBookingCard(
+    Stay stay,
+    HotelStore store,
+    NumberFormat currencyFormat,
+  ) {
     Bill? bill;
     try {
       bill = store.bills.firstWhere((b) => b.stayId == stay.id);
@@ -1208,7 +1542,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
       bill = null;
     }
 
-    final totalGuests = stay.numGuests > 0 ? stay.numGuests : (stay.numAdults + stay.numKids);
+    final totalGuests = stay.numGuests > 0
+        ? stay.numGuests
+        : (stay.numAdults + stay.numKids);
 
     // Status styling
     Color statusBg;
@@ -1240,7 +1576,8 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _showBookingDetailsDrawer(context, stay, store, currencyFormat),
+        onTap: () =>
+            _showBookingDetailsDrawer(context, stay, store, currencyFormat),
         borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1265,7 +1602,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF5F3FF),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.2)),
+                  border: Border.all(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1315,16 +1654,26 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         if (totalGuests > 1) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFFEFF6FF),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFBFDBFE), width: 0.5),
+                              border: Border.all(
+                                color: const Color(0xFFBFDBFE),
+                                width: 0.5,
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.people_alt_rounded, size: 10, color: Color(0xFF2563EB)),
+                                const Icon(
+                                  Icons.people_alt_rounded,
+                                  size: 10,
+                                  color: Color(0xFF2563EB),
+                                ),
                                 const SizedBox(width: 3),
                                 Text(
                                   '$totalGuests',
@@ -1362,7 +1711,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2.5,
+                    ),
                     decoration: BoxDecoration(
                       color: statusBg,
                       borderRadius: BorderRadius.circular(20),
@@ -1374,7 +1726,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         Container(
                           width: 5,
                           height: 5,
-                          decoration: BoxDecoration(color: statusFg, shape: BoxShape.circle),
+                          decoration: BoxDecoration(
+                            color: statusFg,
+                            shape: BoxShape.circle,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -1400,7 +1755,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                   if (outstanding > 0)
                     Container(
                       margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFEF2F2),
                         borderRadius: BorderRadius.circular(4),
@@ -1417,7 +1775,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                   else
                     Container(
                       margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFECFDF5),
                         borderRadius: BorderRadius.circular(4),
@@ -1434,7 +1795,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 ],
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_right_rounded, size: 18, color: AppTheme.slateMuted),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: AppTheme.slateMuted,
+              ),
             ],
           ),
         ),
@@ -1443,7 +1808,12 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
   }
 
   // ── COMPLETE BOOKING DETAIL DRAWER ──
-  void _showBookingDetailsDrawer(BuildContext context, Stay stay, HotelStore store, NumberFormat currencyFormat) {
+  void _showBookingDetailsDrawer(
+    BuildContext context,
+    Stay stay,
+    HotelStore store,
+    NumberFormat currencyFormat,
+  ) {
     Bill? bill;
     try {
       bill = store.bills.firstWhere((b) => b.stayId == stay.id);
@@ -1454,7 +1824,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
     final subtotal = bill?.subtotal ?? (stay.nightlyRate * stay.actualNights);
     final amountPaid = bill?.amountPaid ?? 0.0;
     final outstanding = bill?.outstanding ?? (subtotal - amountPaid);
-    final totalGuests = stay.numGuests > 0 ? stay.numGuests : (stay.numAdults + stay.numKids);
+    final totalGuests = stay.numGuests > 0
+        ? stay.numGuests
+        : (stay.numAdults + stay.numKids);
 
     // Status styling
     Color statusBg;
@@ -1508,7 +1880,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: AppTheme.slateDark,
                         borderRadius: BorderRadius.circular(8),
@@ -1533,7 +1908,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3.5,
+                      ),
                       decoration: BoxDecoration(
                         color: statusBg,
                         borderRadius: BorderRadius.circular(6),
@@ -1589,25 +1967,56 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('CHECK-IN', style: GoogleFonts.inter(fontSize: 9.5, color: AppTheme.slateMuted, fontWeight: FontWeight.bold)),
+                                    Text(
+                                      'CHECK-IN',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9.5,
+                                        color: AppTheme.slateMuted,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      DateFormat('d MMM yyyy, hh:mm a').format(stay.checkInAt),
-                                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                      DateFormat(
+                                        'd MMM yyyy, hh:mm a',
+                                      ).format(stay.checkInAt),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                              const Icon(Icons.arrow_forward_rounded, size: 16, color: AppTheme.slateMuted),
+                              const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 16,
+                                color: AppTheme.slateMuted,
+                              ),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    Text('CHECK-OUT', style: GoogleFonts.inter(fontSize: 9.5, color: AppTheme.slateMuted, fontWeight: FontWeight.bold)),
+                                    Text(
+                                      'CHECK-OUT',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9.5,
+                                        color: AppTheme.slateMuted,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      DateFormat('d MMM yyyy, hh:mm a').format(stay.checkOutAt ?? stay.expectedCheckOut),
-                                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                      DateFormat('d MMM yyyy, hh:mm a').format(
+                                        stay.checkOutAt ??
+                                            stay.expectedCheckOut,
+                                      ),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1618,9 +2027,21 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              _buildDrawerInfoItem('Duration', '${stay.actualNights} Nights', Icons.night_shelter_rounded),
-                              _buildDrawerInfoItem('Total Guests', '$totalGuests Guests', Icons.people_alt_rounded),
-                              _buildDrawerInfoItem('Nightly Rate', currencyFormat.format(stay.nightlyRate), Icons.sell_rounded),
+                              _buildDrawerInfoItem(
+                                'Duration',
+                                '${stay.actualNights} Nights',
+                                Icons.night_shelter_rounded,
+                              ),
+                              _buildDrawerInfoItem(
+                                'Total Guests',
+                                '$totalGuests Guests',
+                                Icons.people_alt_rounded,
+                              ),
+                              _buildDrawerInfoItem(
+                                'Nightly Rate',
+                                currencyFormat.format(stay.nightlyRate),
+                                Icons.sell_rounded,
+                              ),
                             ],
                           ),
                         ],
@@ -1658,7 +2079,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                     InkWell(
                       onTap: () {
                         if (stay.guest != null) {
-                          _showGuestProfileDialog(context, stay.guest!, isPrimary: true);
+                          _showGuestProfileDialog(
+                            context,
+                            stay.guest!,
+                            isPrimary: true,
+                          );
                         }
                       },
                       borderRadius: BorderRadius.circular(14),
@@ -1675,8 +2100,14 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                               radius: 20,
                               backgroundColor: AppTheme.brandPrimary,
                               child: Text(
-                                stay.guest?.fullName.isNotEmpty == true ? stay.guest!.fullName[0].toUpperCase() : 'G',
-                                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                stay.guest?.fullName.isNotEmpty == true
+                                    ? stay.guest!.fullName[0].toUpperCase()
+                                    : 'G',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1688,25 +2119,51 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                     children: [
                                       Text(
                                         stay.guest?.fullName ?? 'Primary Guest',
-                                        style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: AppTheme.slateDark,
+                                        ),
                                       ),
                                       const SizedBox(width: 6),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                        decoration: BoxDecoration(color: const Color(0xFFEDE9FE), borderRadius: BorderRadius.circular(4)),
-                                        child: Text('Primary', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFF7C3AED))),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 5,
+                                          vertical: 1.5,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEDE9FE),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Primary',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: const Color(0xFF7C3AED),
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
                                     '${stay.guest?.phone ?? "No phone"} • ${stay.guest?.idType.toUpperCase() ?? "ID"}: ${stay.guest?.displayIdNumber ?? "—"}',
-                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: AppTheme.slateMuted,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
-                            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.slateMuted),
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 14,
+                              color: AppTheme.slateMuted,
+                            ),
                           ],
                         ),
                       ),
@@ -1719,7 +2176,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 6),
                           child: InkWell(
-                            onTap: () => _showGuestProfileDialog(context, cg, isPrimary: false),
+                            onTap: () => _showGuestProfileDialog(
+                              context,
+                              cg,
+                              isPrimary: false,
+                            ),
                             borderRadius: BorderRadius.circular(12),
                             child: Container(
                               padding: const EdgeInsets.all(10),
@@ -1734,27 +2195,45 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                     radius: 16,
                                     backgroundColor: Colors.indigo.shade100,
                                     child: Text(
-                                      cg.fullName.isNotEmpty ? cg.fullName[0].toUpperCase() : 'C',
-                                      style: GoogleFonts.outfit(color: Colors.indigo.shade800, fontWeight: FontWeight.bold, fontSize: 12),
+                                      cg.fullName.isNotEmpty
+                                          ? cg.fullName[0].toUpperCase()
+                                          : 'C',
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.indigo.shade800,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           cg.fullName,
-                                          style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12, color: AppTheme.slateDark),
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                            color: AppTheme.slateDark,
+                                          ),
                                         ),
                                         Text(
                                           '${cg.phone.isNotEmpty ? cg.phone : "No phone"} • ${cg.idType.toUpperCase()}: ${cg.displayIdNumber}',
-                                          style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted),
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10,
+                                            color: AppTheme.slateMuted,
+                                          ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppTheme.slateMuted),
+                                  const Icon(
+                                    Icons.arrow_forward_ios_rounded,
+                                    size: 12,
+                                    color: AppTheme.slateMuted,
+                                  ),
                                 ],
                               ),
                             ),
@@ -1788,37 +2267,91 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Room Charges (${stay.actualNights} nights × ${currencyFormat.format(stay.nightlyRate)})', style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.slateDark)),
-                              Text(currencyFormat.format(subtotal), style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.slateDark)),
+                              Text(
+                                'Room Charges (${stay.actualNights} nights × ${currencyFormat.format(stay.nightlyRate)})',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
+                              Text(
+                                currencyFormat.format(subtotal),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
                             ],
                           ),
                           const Divider(height: 18, thickness: 0.7),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Total Billed Tariff', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
-                              Text(currencyFormat.format(subtotal), style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Amount Paid', style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF16A34A), fontWeight: FontWeight.w600)),
-                              Text(currencyFormat.format(amountPaid), style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF16A34A))),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Outstanding Balance', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: outstanding > 0 ? Colors.redAccent : const Color(0xFF16A34A))),
                               Text(
-                                outstanding <= 0 ? 'PAID' : currencyFormat.format(outstanding),
+                                'Total Billed Tariff',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
+                              Text(
+                                currencyFormat.format(subtotal),
                                 style: GoogleFonts.outfit(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
-                                  color: outstanding <= 0 ? const Color(0xFF16A34A) : Colors.redAccent,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Amount Paid',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: const Color(0xFF16A34A),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                currencyFormat.format(amountPaid),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF16A34A),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Outstanding Balance',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: outstanding > 0
+                                      ? Colors.redAccent
+                                      : const Color(0xFF16A34A),
+                                ),
+                              ),
+                              Text(
+                                outstanding <= 0
+                                    ? 'PAID'
+                                    : currencyFormat.format(outstanding),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: outstanding <= 0
+                                      ? const Color(0xFF16A34A)
+                                      : Colors.redAccent,
                                 ),
                               ),
                             ],
@@ -1847,12 +2380,14 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                             _exportData([stay], store);
                           },
                           icon: const Icon(Icons.share_outlined, size: 16),
-                          label: const Text('Export CSV'),
+                          label: const Text('Export Excel'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppTheme.slateDark,
                             side: const BorderSide(color: AppTheme.slateBorder),
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                         ),
                       ),
@@ -1863,7 +2398,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                             onPressed: () {
                               Navigator.pop(bottomSheetContext);
                               Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => BookingCheckOutScreen(stay: stay)),
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      BookingCheckOutScreen(stay: stay),
+                                ),
                               );
                             },
                             icon: const Icon(Icons.output_rounded, size: 16),
@@ -1872,7 +2410,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                               backgroundColor: AppTheme.brandPrimary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                               elevation: 0,
                             ),
                           ),
@@ -1890,7 +2430,11 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
   }
 
   // ── GUEST PROFILE DIALOG/SHEET (ACCESSED ONLY WHEN CLICKED) ──
-  void _showGuestProfileDialog(BuildContext context, Guest guest, {required bool isPrimary}) {
+  void _showGuestProfileDialog(
+    BuildContext context,
+    Guest guest, {
+    required bool isPrimary,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1912,7 +2456,10 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 child: Container(
                   width: 40,
                   height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
               const SizedBox(height: 14),
@@ -1920,10 +2467,18 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 children: [
                   CircleAvatar(
                     radius: 24,
-                    backgroundColor: isPrimary ? AppTheme.brandPrimary : Colors.indigo,
+                    backgroundColor: isPrimary
+                        ? AppTheme.brandPrimary
+                        : Colors.indigo,
                     child: Text(
-                      guest.fullName.isNotEmpty ? guest.fullName[0].toUpperCase() : 'G',
-                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      guest.fullName.isNotEmpty
+                          ? guest.fullName[0].toUpperCase()
+                          : 'G',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1933,11 +2488,21 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                       children: [
                         Text(
                           guest.fullName,
-                          style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                          style: GoogleFonts.outfit(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.slateDark,
+                          ),
                         ),
                         Text(
                           isPrimary ? 'Primary Guest' : 'Accompanying Guest',
-                          style: GoogleFonts.inter(fontSize: 11, color: isPrimary ? AppTheme.brandPrimary : Colors.indigo, fontWeight: FontWeight.w600),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: isPrimary
+                                ? AppTheme.brandPrimary
+                                : Colors.indigo,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
@@ -1952,21 +2517,59 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
               const Divider(height: 1),
               const SizedBox(height: 16),
 
-              _buildProfileDetailRow('Phone Number', guest.phone.isNotEmpty ? guest.phone : 'Not provided', Icons.phone_rounded),
+              _buildProfileDetailRow(
+                'Phone Number',
+                guest.phone.isNotEmpty ? guest.phone : 'Not provided',
+                Icons.phone_rounded,
+              ),
               if (guest.email != null && guest.email!.isNotEmpty)
-                _buildProfileDetailRow('Email Address', guest.email!, Icons.email_rounded),
-              _buildProfileDetailRow('ID Document Type', guest.idType.toUpperCase(), Icons.badge_rounded),
-              _buildProfileDetailRow('ID Number', guest.displayIdNumber.isNotEmpty ? guest.displayIdNumber : 'Not provided', Icons.credit_card_rounded),
+                _buildProfileDetailRow(
+                  'Email Address',
+                  guest.email!,
+                  Icons.email_rounded,
+                ),
+              _buildProfileDetailRow(
+                'ID Document Type',
+                guest.idType.toUpperCase(),
+                Icons.badge_rounded,
+              ),
+              _buildProfileDetailRow(
+                'ID Number',
+                guest.displayIdNumber.isNotEmpty
+                    ? guest.displayIdNumber
+                    : 'Not provided',
+                Icons.credit_card_rounded,
+              ),
               if (guest.dateOfBirth != null && guest.dateOfBirth!.isNotEmpty)
-                _buildProfileDetailRow('Date of Birth', guest.dateOfBirth!, Icons.cake_rounded),
+                _buildProfileDetailRow(
+                  'Date of Birth',
+                  guest.dateOfBirth!,
+                  Icons.cake_rounded,
+                ),
               if (guest.gender != null && guest.gender!.isNotEmpty)
-                _buildProfileDetailRow('Gender', guest.gender!.toUpperCase(), Icons.person_outline_rounded),
+                _buildProfileDetailRow(
+                  'Gender',
+                  guest.gender!.toUpperCase(),
+                  Icons.person_outline_rounded,
+                ),
               if (guest.address != null && guest.address!.isNotEmpty)
-                _buildProfileDetailRow('Residential Address', '${guest.address!}${guest.pincode != null ? " - ${guest.pincode}" : ""}', Icons.location_on_rounded),
+                _buildProfileDetailRow(
+                  'Residential Address',
+                  '${guest.address!}${guest.pincode != null ? " - ${guest.pincode}" : ""}',
+                  Icons.location_on_rounded,
+                ),
               if (guest.fatherName != null && guest.fatherName!.isNotEmpty)
-                _buildProfileDetailRow('Father / Guardian', guest.fatherName!, Icons.family_restroom_rounded),
+                _buildProfileDetailRow(
+                  'Father / Guardian',
+                  guest.fatherName!,
+                  Icons.family_restroom_rounded,
+                ),
               if (guest.notes != null && guest.notes!.isNotEmpty)
-                _buildProfileDetailRow('Notes & Preferences', guest.notes!, Icons.notes_rounded),
+                _buildProfileDetailRow(
+                  'Notes & Preferences',
+                  guest.notes!,
+                  Icons.notes_rounded,
+                ),
             ],
           ),
         ),
@@ -1993,9 +2596,23 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted, fontWeight: FontWeight.w500)),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    color: AppTheme.slateMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 const SizedBox(height: 1),
-                Text(value, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppTheme.slateDark)),
+                Text(
+                  value,
+                  style: GoogleFonts.inter(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
               ],
             ),
           ),
@@ -2013,11 +2630,24 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
           children: [
             Icon(icon, size: 12, color: AppTheme.brandPrimary),
             const SizedBox(width: 3),
-            Text(label, style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted)),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                color: AppTheme.slateMuted,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 2),
-        Text(value, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
+        Text(
+          value,
+          style: GoogleFonts.outfit(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.slateDark,
+          ),
+        ),
       ],
     );
   }
@@ -2035,18 +2665,29 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 color: Colors.grey.shade100,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.search_off_rounded, size: 36, color: AppTheme.slateMuted),
+              child: const Icon(
+                Icons.search_off_rounded,
+                size: 36,
+                color: AppTheme.slateMuted,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
               'No Bookings Found',
-              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+              style: GoogleFonts.outfit(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.slateDark,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
               'No reservations match your current date, room, or search filters. Try selecting "All Time" or reset filters.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppTheme.slateMuted,
+              ),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -2062,7 +2703,9 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.slateDark,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: const Text('Reset All Filters'),
             ),

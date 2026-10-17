@@ -19,6 +19,8 @@ class WhatsAppScreen extends StatefulWidget {
 
 class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProviderStateMixin {
   Timer? _statusPoller;
+  Timer? _deliveryPoller;
+  bool _isRefreshingLogs = false;
 
   WhatsAppStatusData _status = WhatsAppStatusData.initial();
   Map<String, WhatsAppTemplateData> _templates = {};
@@ -38,6 +40,8 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   // Test message dispatcher state
   final _testPhoneController = TextEditingController();
   final _testCustomMsgController = TextEditingController();
+  final _liveDispatchMsgController = TextEditingController();
+  bool _hasManualLiveEdit = false;
   String _testTemplateId = 'checkin_welcome';
   String? _dispatcherFeedbackMessage;
   bool _dispatcherFeedbackIsError = false;
@@ -59,16 +63,31 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     _statusPoller = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) _fetchStatus(silent: true);
     });
+    _deliveryPoller = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || _isRefreshingLogs) return;
+      final hasRecentPending = _logs.any((log) {
+        final accepted = log.status == 'ACCEPTED' || log.status == 'SENT';
+        final confirmed = log.delivered ||
+            log.deliveryStatus == 'DELIVERED' ||
+            log.deliveryStatus == 'READ';
+        final timestamp = DateTime.tryParse(log.timestamp);
+        final age = timestamp == null ? const Duration(days: 1) : DateTime.now().difference(timestamp);
+        return accepted && !confirmed && age >= Duration.zero && age < const Duration(minutes: 2);
+      });
+      if (hasRecentPending) _fetchLogs();
+    });
   }
 
   @override
   void dispose() {
     _statusPoller?.cancel();
+    _deliveryPoller?.cancel();
     for (final c in _templateControllers.values) {
       c.dispose();
     }
     _testPhoneController.dispose();
     _testCustomMsgController.dispose();
+    _liveDispatchMsgController.dispose();
     super.dispose();
   }
 
@@ -114,9 +133,18 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   }
 
   Future<void> _fetchLogs() async {
-    final logs = await WhatsAppService.getLogs();
-    if (mounted) {
-      setState(() => _logs = logs);
+    if (_isRefreshingLogs) return;
+    _isRefreshingLogs = true;
+    try {
+      final logs = await WhatsAppService.getLogs();
+      logs.sort((a, b) {
+        final dateA = DateTime.tryParse(a.timestamp) ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final dateB = DateTime.tryParse(b.timestamp) ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return dateB.compareTo(dateA);
+      });
+      if (mounted) setState(() => _logs = logs);
+    } finally {
+      _isRefreshingLogs = false;
     }
   }
 
@@ -293,17 +321,23 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
       'checkOutDate': DateFormat('dd MMM yyyy').format(DateTime.now().add(const Duration(days: 1))),
     };
 
+    final messageToSend = _testTemplateId == 'custom'
+        ? _testCustomMsgController.text.trim()
+        : _liveDispatchMsgController.text.trim();
+
     final res = await WhatsAppService.sendTestMessage(
       recipientPhone: phone,
-      templateId: _testTemplateId == 'custom' ? null : _testTemplateId,
-      customMessage: _testTemplateId == 'custom' ? _testCustomMsgController.text.trim() : null,
+      templateId: null, // send as customized message so single-send edits are delivered exactly as edited
+      customMessage: messageToSend,
       context: sampleContext,
     );
 
     if (mounted) {
       setState(() => _isSendingTest = false);
       if (res['success'] == true && res['accepted'] == true && res['suppressed'] != true) {
-        _dispatcherFeedbackMessage = 'WhatsApp accepted the message for $phone. Recipient delivery is not confirmed.';
+        _dispatcherFeedbackMessage = res['selfSend'] == true
+            ? 'WhatsApp accepted this message to the connected number. Delivery is not independently confirmed; test another WhatsApp number to verify recipient delivery.'
+            : 'WhatsApp accepted the message for $phone. Recipient delivery is not confirmed.';
         _dispatcherFeedbackIsError = false;
       } else if (res['suppressed'] == true) {
         _dispatcherFeedbackMessage = res['message'] ?? 'Duplicate skipped — this number already received that template recently.';
@@ -869,6 +903,12 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
 
   // ── FULL PAGE DRAWER 2: SEND LIVE MESSAGE & DELIVERY AUDIT LOGS ──
   void _openLiveDispatcherDrawer() {
+    if (!_hasManualLiveEdit || _liveDispatchMsgController.text.trim().isEmpty) {
+      if (_testTemplateId != 'custom') {
+        _liveDispatchMsgController.text = _renderInterpolatedPreview(_templates[_testTemplateId]?.template ?? '');
+        _hasManualLiveEdit = false;
+      }
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1007,7 +1047,7 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                   ],
                                   style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 1.1),
                                   decoration: InputDecoration(
-                                    hintText: '9850550645',
+                                    hintText: '99XXX XXXXX',
                                     hintStyle: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.slateMuted, letterSpacing: 1),
                                     prefixIcon: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1067,7 +1107,13 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                   ],
                                   onChanged: (val) {
                                     if (val != null) {
-                                      setState(() => _testTemplateId = val);
+                                      setState(() {
+                                        _testTemplateId = val;
+                                        if (val != 'custom') {
+                                          _liveDispatchMsgController.text = _renderInterpolatedPreview(_templates[val]?.template ?? '');
+                                          _hasManualLiveEdit = false;
+                                        }
+                                      });
                                       setModalState(() {});
                                     }
                                   },
@@ -1096,20 +1142,23 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 ] else ...[
                                   const SizedBox(height: 16),
                                   Text(
-                                    'Message Content Preview:',
-                                    style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                    'Message Content',
+                                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
                                   ),
                                   const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: AppTheme.slateBorder),
-                                    ),
-                                    child: Text(
-                                      _renderInterpolatedPreview(_templates[_testTemplateId]?.template ?? ''),
-                                      style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateDark, height: 1.35),
+                                  TextField(
+                                    controller: _liveDispatchMsgController,
+                                    maxLines: 5,
+                                    style: GoogleFonts.inter(fontSize: 13, color: AppTheme.slateDark, height: 1.35),
+                                    onChanged: (_) {
+                                      _hasManualLiveEdit = true;
+                                    },
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: const Color(0xFFF8FAFC),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
                                     ),
                                   ),
                                 ],
@@ -1257,7 +1306,13 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                                   ),
                                                   const SizedBox(height: 4),
                                                   Text(
-                                                    isDelivered ? 'Delivered to recipient' : isAccepted ? 'Accepted by WhatsApp · awaiting delivery' : log.errorMessage ?? 'Not sent',
+                                                    isDelivered
+                                                        ? 'Delivered to recipient'
+                                                        : isAccepted && DateTime.now().difference(DateTime.tryParse(log.timestamp) ?? DateTime.now()) >= const Duration(minutes: 1)
+                                                            ? 'No delivery receipt after 1 min · delivery unconfirmed'
+                                                            : isAccepted
+                                                                ? 'Accepted by WhatsApp · awaiting delivery receipt'
+                                                                : log.errorMessage ?? 'Not sent',
                                                     style: GoogleFonts.inter(fontSize: 10.5, color: isDelivered ? const Color(0xFF15803D) : isAccepted ? const Color(0xFFB45309) : const Color(0xFFB91C1C), fontWeight: FontWeight.w600),
                                                   ),
                                                 ],
@@ -1396,6 +1451,36 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   Widget _buildConnectionHeroCard() {
     final isReady = _status.isReady;
     final hasQr = _status.hasActiveQr && _status.qrCodeDataUrl != null;
+
+    if (_status.errorCode == 'AUTH_REQUIRED' ||
+        _status.errorCode == 'SESSION_EXPIRED') {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFED7AA)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.account_circle_outlined,
+                color: Color(0xFFC2410C), size: 21),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'WhatsApp needs an online EaseInn sign-in. Your app can still work offline, but connect to the internet and sign in online to use WhatsApp. This does not unlink your WhatsApp session.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: const Color(0xFF9A3412),
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (isReady) {
       return Container(

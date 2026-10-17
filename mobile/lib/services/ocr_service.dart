@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'backend_config.dart';
 import 'package:flutter/foundation.dart';
 
 class OcrResult {
@@ -61,15 +62,7 @@ class OcrResult {
 }
 
 class OcrService {
-  // Use localhost on desktop/web, 10.0.2.2 on Android emulator
-  static String get baseUrl {
-    // if (kIsWeb) return 'http://localhost:3001';
-    // try {
-    //   if (Platform.isAndroid) return 'http://10.0.2.2:3001';
-    // } catch (_) {}
-    // return 'http://localhost:3001';
-    return 'https://easeinn.onrender.com';
-  }
+  static String get baseUrl => BackendConfig.baseUrl;
 
   static MediaType _resolveMediaType(String filename) {
     final ext = filename.split('.').last.toLowerCase();

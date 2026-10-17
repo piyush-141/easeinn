@@ -20,6 +20,7 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
   String _paymentMethod = 'upi';
   final TextEditingController _remarkController = TextEditingController();
   bool _remarkAdded = false;
+  bool _sendWhatsAppMessage = true;
 
   @override
   void dispose() {
@@ -387,6 +388,46 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
               ),
               const SizedBox(height: 16),
             ],
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _sendWhatsAppMessage ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _sendWhatsAppMessage ? const Color(0xFFBBF7D0) : AppTheme.slateBorder,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.chat_rounded,
+                      size: 16,
+                      color: _sendWhatsAppMessage ? const Color(0xFF16A34A) : AppTheme.slateMuted,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Send WhatsApp Thank-You & Bill',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.slateDark,
+                        ),
+                      ),
+                    ),
+                    Switch.adaptive(
+                      value: _sendWhatsAppMessage,
+                      activeTrackColor: const Color(0xFF16A34A),
+                      activeThumbColor: Colors.white,
+                      onChanged: (val) {
+                        setState(() => _sendWhatsAppMessage = val);
+                        (ctx as Element).markNeedsBuild();
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.brandPrimary,
@@ -401,6 +442,7 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                   stayId: stay.id,
                   paymentAmount: balanceDue,
                   paymentMethod: _paymentMethod,
+                  sendWhatsApp: _sendWhatsAppMessage,
                 );
                 _showSuccessDialog(stay, finalBill);
               },

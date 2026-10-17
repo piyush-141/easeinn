@@ -12,15 +12,19 @@ function requestHeaders(json = false): Record<string, string> {
 }
 
 function resolveBackendUrl(): string {
-  const fromEnv = import.meta.env.VITE_WHATSAPP_API_URL || import.meta.env.VITE_OCR_API_URL || import.meta.env.VITE_OCR_SERVER_URL;
-  if (fromEnv && String(fromEnv).trim()) {
-    return String(fromEnv).replace(/\/$/, '');
+  const whatsappUrl = import.meta.env.VITE_WHATSAPP_API_URL || import.meta.env.VITE_OCR_API_URL;
+  if (whatsappUrl && String(whatsappUrl).trim()) {
+    return String(whatsappUrl).replace(/\/$/, '');
   }
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1') {
       return 'http://localhost:3001';
     }
+  }
+  const sharedBackendUrl = import.meta.env.VITE_OCR_SERVER_URL;
+  if (sharedBackendUrl && String(sharedBackendUrl).trim()) {
+    return String(sharedBackendUrl).replace(/\/$/, '');
   }
   return 'https://easeinn.onrender.com';
 }

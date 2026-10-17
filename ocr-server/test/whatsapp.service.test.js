@@ -36,7 +36,9 @@ module.exports = {
         const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
         state.sends += 1; fs.writeFileSync(stateFile, JSON.stringify(state));
         await new Promise(resolve => setTimeout(resolve, 60));
-        setTimeout(() => ev.emit('messages.update', [{ key: { id: 'message-' + state.sends }, update: { status: 4 } }]), 25);
+        // Receipt arrives immediately before sendMessage resolves to exercise
+        // the race between WhatsApp's event and writing the accepted log.
+        ev.emit('messages.update', [{ key: { id: 'message-' + state.sends }, update: { status: 4 } }]);
         return { key: { id: 'message-' + state.sends, fromMe: true, remoteJid: jid }, message: body };
       },
       async logout() { this.ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 401 } } } }); },
@@ -73,9 +75,16 @@ const service = require('./src/services/whatsapp.service');
   assert.equal(require('node:fs').readFileSync(process.env.FAKE_WA_STATE, 'utf8').match(/sends/g).length, 1);
   const sent = a.accepted ? a : b;
   assert.equal(sent.delivered, false);
-  await new Promise(r => setTimeout(r, 80));
   const logs = service.getLogs(10);
   assert.equal(logs.some(x => x.status === 'ACCEPTED' && x.messageId === sent.messageId && x.deliveryStatus === 'READ'), true);
+  const selfSend = await service.sendWhatsAppNotification({
+    recipientPhone: '919999999999',
+    customMessage: 'self test',
+    bypassDuplicateCheck: true,
+  });
+  assert.equal(selfSend.accepted, true);
+  assert.equal(selfSend.selfSend, true);
+  assert.equal(service.getLogs(10).some(x => x.messageId === selfSend.messageId && x.deliveryStatus === 'READ'), true);
   console.log(JSON.stringify({ ok: true, status: service.getStatus().status, accepted: sent.accepted, delivered: sent.delivered, receiptTracked: true, deduplicated: true }));
   await service.disconnectWhatsAppClient({ preserveSession: true });
 })().catch(e => { console.error(e); process.exit(1); });
@@ -92,7 +101,7 @@ const service = require('./src/services/whatsapp.service');
   const exitCode = await new Promise((resolve) => first.on("close", resolve));
   assert.equal(exitCode, 0, stderr);
   assert.match(stdout, /"deduplicated":true/);
-  assert.equal(JSON.parse(fs.readFileSync(fakeState, "utf8")).sends, 1);
+  assert.equal(JSON.parse(fs.readFileSync(fakeState, "utf8")).sends, 2);
 
   const child = spawn(process.execPath, ["-e", `const s=require('./src/services/whatsapp.service'); (async()=>{ await s.initializeWhatsAppClient(); await new Promise(r=>setTimeout(r,35)); const status=s.getStatus(); console.log(JSON.stringify(status)); await s.disconnectWhatsAppClient({preserveSession:true}); })().catch(e=>{console.error(e);process.exit(1)});`], {
     cwd: path.resolve(__dirname, ".."),

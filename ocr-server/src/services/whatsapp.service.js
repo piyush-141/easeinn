@@ -44,6 +44,10 @@ let initializePromise = null;
 let sendQueue = Promise.resolve();
 let generation = 0;
 let pendingSends = new Map();
+// WhatsApp can emit a very fast delivery/read receipt before sendMessage()
+// resolves and the accepted log entry is written. Keep those receipts briefly
+// so the eventual log entry cannot get stuck in PENDING.
+const earlyDeliveryReceipts = new Map();
 const configuredSendTimeout = Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 90000);
 const SEND_TIMEOUT_MS = Number.isFinite(configuredSendTimeout) && configuredSendTimeout >= 10000 && configuredSendTimeout <= 180000
   ? configuredSendTimeout
@@ -51,9 +55,24 @@ const SEND_TIMEOUT_MS = Number.isFinite(configuredSendTimeout) && configuredSend
 
 [DATA_DIR, AUTH_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 });
+
+function secureAuthFiles() {
+  if (process.platform === "win32") return;
+  try {
+    fs.chmodSync(AUTH_DIR, 0o700);
+    for (const name of fs.readdirSync(AUTH_DIR)) {
+      const file = path.join(AUTH_DIR, name);
+      if (fs.statSync(file).isFile()) fs.chmodSync(file, 0o600);
+    }
+  } catch (err) {
+    console.warn("[WhatsApp] Could not restrict session file permissions:", err.message);
+  }
+}
+
+secureAuthFiles();
 
 function setStatus(next, extra = {}) {
   clientStatus = next;
@@ -132,7 +151,12 @@ function getLogs(limit = 50) {
     if (fs.existsSync(LOGS_FILE)) {
       const data = fs.readFileSync(LOGS_FILE, "utf-8");
       const logs = JSON.parse(data);
-      return Array.isArray(logs) ? logs.slice(-Math.max(1, Math.min(Number(limit) || 50, 200))) : [];
+      if (Array.isArray(logs)) {
+        // Return latest first (descending timestamp)
+        const sorted = [...logs].reverse();
+        return sorted.slice(0, Math.max(1, Math.min(Number(limit) || 50, 200)));
+      }
+      return [];
     }
   } catch (err) {
     console.error("[WhatsApp] Error reading logs file:", err.message);
@@ -165,7 +189,10 @@ function updateLogDelivery(messageId, deliveryStatus) {
   try {
     const logs = getLogs(1000);
     const index = logs.findIndex((entry) => entry.messageId === messageId);
-    if (index < 0) return;
+    if (index < 0) return false;
+    const previousStatus = logs[index].deliveryStatus;
+    const rank = { PENDING: 0, DELIVERED: 1, READ: 2 };
+    if ((rank[previousStatus] || 0) > (rank[deliveryStatus] || 0)) return true;
     logs[index] = {
       ...logs[index],
       deliveryStatus,
@@ -175,8 +202,27 @@ function updateLogDelivery(messageId, deliveryStatus) {
     const tempFile = `${LOGS_FILE}.${process.pid}.tmp`;
     fs.writeFileSync(tempFile, JSON.stringify(logs.slice(-100), null, 2), { mode: 0o600 });
     fs.renameSync(tempFile, LOGS_FILE);
+    return true;
   } catch (err) {
     console.error("[WhatsApp] Could not update delivery receipt:", err.message);
+    return false;
+  }
+}
+
+function recordDeliveryReceipt(messageId, deliveryStatus) {
+  console.log(`[WhatsApp] Recipient receipt ${deliveryStatus} for message ${messageId}`);
+  if (updateLogDelivery(messageId, deliveryStatus)) return;
+  const now = Date.now();
+  for (const [id, receipt] of earlyDeliveryReceipts) {
+    if (now - receipt.timestamp > 5 * 60 * 1000) earlyDeliveryReceipts.delete(id);
+  }
+  const existing = earlyDeliveryReceipts.get(messageId);
+  const rank = { DELIVERED: 1, READ: 2 };
+  if (!existing || (rank[deliveryStatus] || 0) > (rank[existing.status] || 0)) {
+    earlyDeliveryReceipts.set(messageId, { status: deliveryStatus, timestamp: now });
+  }
+  while (earlyDeliveryReceipts.size > 500) {
+    earlyDeliveryReceipts.delete(earlyDeliveryReceipts.keys().next().value);
   }
 }
 
@@ -237,8 +283,8 @@ function bindSocketEvents(client, saveCreds) {
       const status = item.update?.status;
       const messageId = item.key?.id;
       if (!messageId) continue;
-      if (status === 3) updateLogDelivery(messageId, "DELIVERED");
-      else if (status >= 4) updateLogDelivery(messageId, "READ");
+      if (status === 3) recordDeliveryReceipt(messageId, "DELIVERED");
+      else if (status >= 4) recordDeliveryReceipt(messageId, "READ");
     }
   });
 
@@ -252,7 +298,7 @@ function bindSocketEvents(client, saveCreds) {
         : receipt.receiptTimestamp
           ? "DELIVERED"
           : null;
-      if (deliveryStatus) updateLogDelivery(messageId, deliveryStatus);
+      if (deliveryStatus) recordDeliveryReceipt(messageId, deliveryStatus);
     }
   });
 
@@ -362,6 +408,7 @@ async function initializeWhatsAppClientInternal() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    secureAuthFiles();
     if (currentGeneration !== generation) return;
     if (!state.creds.registered && hasAuthFiles()) {
       fs.rmSync(AUTH_DIR, { recursive: true, force: true });
@@ -405,7 +452,10 @@ async function initializeWhatsAppClientInternal() {
     }
 
     sock = client;
-    bindSocketEvents(client, saveCreds);
+    bindSocketEvents(client, async () => {
+      await saveCreds();
+      secureAuthFiles();
+    });
     console.log(
       `[WhatsApp] Socket started. Existing session files: ${hasAuthFiles() ? "yes" : "no"}`
     );
@@ -532,6 +582,7 @@ async function sendWhatsAppNotificationNow({
     });
     return { success: false, delivered: false, error: errorMsg, code: "INVALID_PHONE" };
   }
+  const selfSend = connectedNumber === norm.cleanPhone;
 
   const templates = getTemplates();
   let messageBody = customMessage;
@@ -641,8 +692,21 @@ async function sendWhatsAppNotificationNow({
         delivered: false,
         deliveryStatus: "PENDING",
         accepted: true,
+        selfSend,
         context,
       });
+      const deliveryWatch = setTimeout(() => {
+        const latest = getLogs(100).find((entry) => entry.messageId === acceptedMessageId);
+        if (latest?.deliveryStatus === "PENDING") {
+          console.warn(`[WhatsApp] No recipient delivery receipt after 60 seconds for message ${acceptedMessageId}. Delivery remains unconfirmed; not retrying automatically.`);
+        }
+      }, 60_000);
+      deliveryWatch.unref?.();
+      const earlyReceipt = earlyDeliveryReceipts.get(acceptedMessageId);
+      if (earlyReceipt && Date.now() - earlyReceipt.timestamp <= 5 * 60 * 1000) {
+        updateLogDelivery(acceptedMessageId, earlyReceipt.status);
+        earlyDeliveryReceipts.delete(acceptedMessageId);
+      }
     };
     sendPromise.then((lateResult) => {
       recordAccepted(lateResult);
@@ -663,9 +727,12 @@ async function sendWhatsAppNotificationNow({
       accepted: true,
       delivered: false,
       deliveryStatus: "PENDING",
-      message: "WhatsApp accepted the message for sending. Recipient delivery has not been confirmed yet.",
+      message: selfSend
+        ? "WhatsApp accepted this message to the connected account. Delivery has not been independently confirmed."
+        : "WhatsApp accepted the message for sending. Recipient delivery has not been confirmed yet.",
       messageId,
       recipient: norm.cleanPhone,
+      selfSend,
     };
   } catch (sendErr) {
     const errMsg = sendErr.message || String(sendErr);

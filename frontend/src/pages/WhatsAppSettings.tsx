@@ -130,17 +130,31 @@ export const WhatsAppSettings: React.FC = () => {
     }
   };
 
-  const fetchLogs = async () => {
-    setIsLoadingLogs(true);
+  const fetchLogs = async (silent = false) => {
+    if (!silent) setIsLoadingLogs(true);
     try {
       const data = await getWhatsAppLogs(30);
       setLogs(data);
     } catch (err: any) {
       console.warn('[WhatsApp] Could not fetch logs:', err.message);
     } finally {
-      setIsLoadingLogs(false);
+      if (!silent) setIsLoadingLogs(false);
     }
   };
+
+  // Receipts arrive asynchronously after WhatsApp accepts a send. Refresh only
+  // while recent messages are pending, so the displayed state follows receipts.
+  useEffect(() => {
+    const hasRecentPending = logs.some((log) => {
+      const accepted = log.status === 'ACCEPTED' || log.status === 'SENT';
+      const confirmed = log.delivered || log.deliveryStatus === 'DELIVERED' || log.deliveryStatus === 'READ';
+      const ageMs = Date.now() - new Date(log.timestamp).getTime();
+      return accepted && !confirmed && ageMs >= 0 && ageMs < 120_000;
+    });
+    if (!hasRecentPending) return;
+    const interval = window.setInterval(() => fetchLogs(true), 3000);
+    return () => window.clearInterval(interval);
+  }, [logs]);
 
   const handleConnect = async () => {
     setIsConnecting(true);
@@ -310,7 +324,9 @@ export const WhatsAppSettings: React.FC = () => {
       if (res.success && res.accepted === true && !res.suppressed) {
         setTestResult({
           success: true,
-          message: `WhatsApp accepted the message for +${res.recipient}. Recipient delivery is still pending confirmation.`,
+          message: res.selfSend
+            ? 'WhatsApp accepted this message to the connected number. Delivery is not independently confirmed; test another WhatsApp number to verify recipient delivery.'
+            : `WhatsApp accepted the message for +${res.recipient}. Recipient delivery is still pending confirmation.`,
         });
         fetchLogs();
       } else {
@@ -782,7 +798,7 @@ export const WhatsAppSettings: React.FC = () => {
           </div>
 
           <button
-            onClick={fetchLogs}
+            onClick={() => fetchLogs()}
             disabled={isLoadingLogs}
             className="text-xs font-semibold text-brand-600 hover:text-brand-700 flex items-center gap-1 transition"
           >
@@ -797,9 +813,8 @@ export const WhatsAppSettings: React.FC = () => {
               No messages dispatched yet. Trigger a check-in, checkout, or send a test message above.
             </div>
           ) : (
-            logs
-              .slice()
-              .reverse()
+            [...logs]
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
               .map((log) => (
                 <div key={log.id} className="p-4 flex items-start justify-between gap-4 hover:bg-slate-50/70 transition">
                   <div className="space-y-1">
@@ -836,7 +851,11 @@ export const WhatsAppSettings: React.FC = () => {
                     {log.status === 'ACCEPTED' || log.status === 'SENT' ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        {log.delivered || log.deliveryStatus === 'DELIVERED' || log.deliveryStatus === 'READ' ? 'Delivered' : 'Accepted · awaiting delivery'}
+                        {log.delivered || log.deliveryStatus === 'DELIVERED' || log.deliveryStatus === 'READ'
+                          ? 'Delivered'
+                          : Date.now() - new Date(log.timestamp).getTime() >= 60_000
+                            ? 'No receipt after 1 min · delivery unconfirmed'
+                            : 'Accepted · awaiting delivery receipt'}
                       </span>
                     ) : log.status === 'SKIPPED_DUPLICATE' ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">

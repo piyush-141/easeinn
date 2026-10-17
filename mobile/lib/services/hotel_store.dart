@@ -721,6 +721,7 @@ class HotelStore extends ChangeNotifier {
     required String paymentMethod,
     String? paymentRef,
     List<Map<String, dynamic>>? coGuests,
+    bool sendWhatsApp = true,
   }) {
     final roomIndex = _rooms.indexWhere((r) => r.id == roomId);
     if (roomIndex == -1) throw Exception('Room not found');
@@ -867,7 +868,7 @@ class HotelStore extends ChangeNotifier {
     notifyListeners();
 
     // Trigger automated WhatsApp check-in notification (non-blocking)
-    if (phone.trim().isNotEmpty) {
+    if (sendWhatsApp && phone.trim().isNotEmpty) {
       final df = DateFormat('dd MMM yyyy');
       WhatsAppService.triggerCheckIn(
         guestName: fullName,
@@ -945,6 +946,7 @@ class HotelStore extends ChangeNotifier {
     String? paymentRef,
     List<Map<String, dynamic>>? coGuests,
     String? specialRequests,
+    bool sendWhatsApp = true,
   }) {
     final roomIndex = _rooms.indexWhere((r) => r.id == roomId);
     if (roomIndex == -1) throw Exception('Room not found');
@@ -1084,7 +1086,7 @@ class HotelStore extends ChangeNotifier {
     notifyListeners();
 
     // Trigger automated WhatsApp booking confirmation notification (non-blocking)
-    if (phone.trim().isNotEmpty) {
+    if (sendWhatsApp && phone.trim().isNotEmpty) {
       final df = DateFormat('dd MMM yyyy');
       WhatsAppService.triggerReservation(
         guestName: fullName,
@@ -1153,6 +1155,7 @@ class HotelStore extends ChangeNotifier {
     required String stayId,
     required double paymentAmount,
     required String paymentMethod,
+    bool sendWhatsApp = true,
   }) {
     final stayIndex = _stays.indexWhere((s) => s.id == stayId);
     if (stayIndex == -1) throw Exception('Active stay not found');
@@ -1207,7 +1210,7 @@ class HotelStore extends ChangeNotifier {
 
     // Trigger automated WhatsApp checkout thank-you notification (non-blocking)
     final guestPhone = targetStay.guest?.phone;
-    if (guestPhone != null && guestPhone.trim().isNotEmpty) {
+    if (sendWhatsApp && guestPhone != null && guestPhone.trim().isNotEmpty) {
       final df = DateFormat('dd MMM yyyy');
       final roomNum = targetStay.room?.roomNumber ?? (roomIndex != -1 ? _rooms[roomIndex].roomNumber : '');
       WhatsAppService.triggerCheckOut(

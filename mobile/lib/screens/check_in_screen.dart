@@ -14,6 +14,29 @@ import '../widgets/chatgpt_camera_sheet.dart';
 import '../widgets/pressable_scale.dart';
 import 'home_shell.dart';
 
+// Formats digits into DD/MM/YYYY with automatic slash insertion
+class DateInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final buffer = StringBuffer();
+    for (int i = 0; i < digits.length && i < 8; i++) {
+      if (i == 2 || i == 4) {
+        buffer.write('/');
+      }
+      buffer.write(digits[i]);
+    }
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
 enum BookingMode { checkIn, reservation }
 
 class CheckInScreen extends StatefulWidget {
@@ -56,7 +79,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
   int get _totalGuests => _numAdults + _numKids;
 
   // Step 2: Document & OCR
-  String _idType = 'aadhaar'; // 'aadhaar', 'pan', 'passport', 'voter_id', 'driving_license'
+  String _idType =
+      'aadhaar'; // 'aadhaar', 'pan', 'passport', 'voter_id', 'driving_license'
   bool _hasFrontUploaded = false;
   bool _hasBackUploaded = false;
   Uint8List? _frontBytes;
@@ -83,6 +107,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
     }
     return input.startsWith('+') ? input : '+91 $clean';
   }
+
   final _idNumberController = TextEditingController();
   final _dobController = TextEditingController();
   final _genderController = TextEditingController(text: 'Male');
@@ -90,10 +115,82 @@ class _CheckInScreenState extends State<CheckInScreen> {
   final _pincodeController = TextEditingController();
   final _fatherNameController = TextEditingController();
 
+  // Field Verification Helpers
+  bool _isNameValid(String name) => name.trim().length >= 2;
+
+  bool _isIdValid(String id, String type) {
+    final clean = id.replaceAll(RegExp(r'\s+|-'), '').trim();
+    if (clean.isEmpty) return false;
+    final lower = type.toLowerCase();
+    if (lower.contains('aadhaar')) {
+      return RegExp(r'^\d{12}$').hasMatch(clean);
+    } else if (lower.contains('pan')) {
+      return RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]$', caseSensitive: false).hasMatch(clean);
+    } else {
+      return clean.length >= 5;
+    }
+  }
+
+  bool _isDobValid(String dob) {
+    final trimmed = dob.trim();
+    final match = RegExp(r'^(\d{2})/(\d{2})/(\d{4})$').firstMatch(trimmed);
+    if (match == null) return false;
+    final day = int.tryParse(match.group(1)!) ?? 0;
+    final month = int.tryParse(match.group(2)!) ?? 0;
+    final year = int.tryParse(match.group(3)!) ?? 0;
+    if (month < 1 || month > 12) return false;
+    if (day < 1 || day > 31) return false;
+    final currentYear = DateTime.now().year;
+    if (year < 1900 || year > currentYear) return false;
+    return true;
+  }
+
+  bool _isAddressValid(String address) => address.trim().length >= 4;
+
+  bool _isPincodeValid(String pin) {
+    final clean = pin.replaceAll(RegExp(r'\D'), '');
+    return clean.length == 6;
+  }
+
+  bool _isPhoneValid(String phone) {
+    final clean = phone.replaceAll(RegExp(r'\D'), '');
+    return clean.length == 10;
+  }
+
+  bool _isEmailValid(String email) {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return true; // Optional field
+    return RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,}$').hasMatch(trimmed);
+  }
+
+  Widget? _buildVerificationSuffix({required bool isValid, required bool isNotEmpty}) {
+    if (!isNotEmpty) return null;
+    if (isValid) {
+      return const Padding(
+        padding: EdgeInsets.only(right: 8),
+        child: Icon(
+          Icons.check_circle_rounded,
+          size: 16,
+          color: Color(0xFF16A34A),
+        ),
+      );
+    } else {
+      return const Padding(
+        padding: EdgeInsets.only(right: 8),
+        child: Icon(
+          Icons.error_outline_rounded,
+          size: 15,
+          color: Color(0xFFEF4444),
+        ),
+      );
+    }
+  }
+
   // Step 3: Payment
   final _advanceController = TextEditingController();
   String _paymentMethod = 'upi'; // 'upi', 'cash', 'card'
   final _paymentRefController = TextEditingController();
+  bool _sendWhatsAppMessage = true;
 
   @override
   void initState() {
@@ -102,7 +199,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
     _selectedRoomId = widget.preselectedRoomId;
     final now = DateTime.now();
     _checkInDate = DateTime(now.year, now.month, now.day);
-    _expectedCheckOut = _checkInDate.add(const Duration(days: 1)); // Default: just tonight (today and tomorrow)
+    _expectedCheckOut = _checkInDate.add(
+      const Duration(days: 1),
+    ); // Default: just tonight (today and tomorrow)
     _calendarMonth = DateTime(_checkInDate.year, _checkInDate.month, 1);
   }
 
@@ -128,7 +227,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
         _bookingMode = widget.initialMode;
       });
     }
-    if (widget.preselectedRoomId != null && widget.preselectedRoomId != oldWidget.preselectedRoomId) {
+    if (widget.preselectedRoomId != null &&
+        widget.preselectedRoomId != oldWidget.preselectedRoomId) {
       setState(() {
         _selectedRoomId = widget.preselectedRoomId;
         _currentStep = 1;
@@ -175,7 +275,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
     final g = _extraGuests[index];
     ChatGptCameraSheet.show(
       context,
-      title: 'Scan Guest ${index + 2} ${g.idType.toUpperCase()}${isBack ? ' (Back)' : ''}',
+      title:
+          'Scan Guest ${index + 2} ${g.idType.toUpperCase()}${isBack ? ' (Back)' : ''}',
       onCaptured: (bytes, filename) {
         setState(() {
           if (isBack) {
@@ -250,7 +351,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Guest ${index + 2} scan cancelled. You can enter details manually or retry.'),
+        content: Text(
+          'Guest ${index + 2} scan cancelled. You can enter details manually or retry.',
+        ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
       ),
@@ -276,7 +379,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
       frontBytes: g.frontBytes,
       frontFilename: g.frontFilename ?? 'document_front.jpg',
       backBytes: g.hasBackUploaded ? g.backBytes : null,
-      backFilename: g.hasBackUploaded ? (g.backFilename ?? 'document_back.jpg') : null,
+      backFilename: g.hasBackUploaded
+          ? (g.backFilename ?? 'document_back.jpg')
+          : null,
     );
 
     if (!mounted) return;
@@ -290,10 +395,15 @@ class _CheckInScreenState extends State<CheckInScreen> {
       g.scanDone = true;
       if (result.success) {
         g.scanSuccess = true;
-        void fill(TextEditingController ctrl, String? val, {bool alwaysUpdate = false}) {
+        void fill(
+          TextEditingController ctrl,
+          String? val, {
+          bool alwaysUpdate = false,
+        }) {
           if (val == null || val.isEmpty) return;
           if (alwaysUpdate || ctrl.text.isEmpty) ctrl.text = val;
         }
+
         fill(g.nameCtrl, result.fullName);
         fill(g.idNumberCtrl, result.idNumber);
         fill(g.dobCtrl, result.dateOfBirth);
@@ -301,7 +411,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
         fill(g.pincodeCtrl, result.pincode);
         fill(g.fatherNameCtrl, result.fatherName);
         if (result.gender != null && result.gender!.isNotEmpty) {
-          final resolved = result.gender!.toLowerCase().startsWith('f') ? 'Female' : 'Male';
+          final resolved = result.gender!.toLowerCase().startsWith('f')
+              ? 'Female'
+              : 'Male';
           if (g.genderCtrl.text.isEmpty) g.genderCtrl.text = resolved;
         }
       } else {
@@ -398,7 +510,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Scanning cancelled. You can enter details manually or retry.'),
+        content: Text(
+          'Scanning cancelled. You can enter details manually or retry.',
+        ),
         duration: Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
       ),
@@ -426,7 +540,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
       frontBytes: _frontBytes,
       frontFilename: _frontFilename ?? 'document_front.jpg',
       backBytes: _hasBackUploaded ? _backBytes : null,
-      backFilename: _hasBackUploaded ? (_backFilename ?? 'document_back.jpg') : null,
+      backFilename: _hasBackUploaded
+          ? (_backFilename ?? 'document_back.jpg')
+          : null,
     );
 
     if (!mounted) return;
@@ -445,7 +561,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
         // Helper: overwrite only if new value is non-empty.
         // In mergeOnly mode we only fill blanks, except address/pincode
         // which are always updated when back is provided (they come from back).
-        void fill(TextEditingController ctrl, String? val, {bool alwaysUpdate = false}) {
+        void fill(
+          TextEditingController ctrl,
+          String? val, {
+          bool alwaysUpdate = false,
+        }) {
           if (val == null || val.isEmpty) return;
           if (alwaysUpdate || ctrl.text.isEmpty) ctrl.text = val;
         }
@@ -459,11 +579,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
           if (_genderController.text.isEmpty) _genderController.text = resolved;
         }
         // Address & pincode — always update from back scan
-        fill(_addressController, result.address, alwaysUpdate: _hasBackUploaded);
-        fill(_pincodeController, result.pincode, alwaysUpdate: _hasBackUploaded);
+        fill(
+          _addressController,
+          result.address,
+          alwaysUpdate: _hasBackUploaded,
+        );
+        fill(
+          _pincodeController,
+          result.pincode,
+          alwaysUpdate: _hasBackUploaded,
+        );
         fill(_fatherNameController, result.fatherName);
       } else {
-        if (!mergeOnly) _scanSuccess = false; // keep success if it was already set
+        if (!mergeOnly)
+          _scanSuccess = false; // keep success if it was already set
       }
     });
   }
@@ -523,13 +652,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 color: const Color(0xFFF0FDF4),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF16A34A), size: 22),
+              child: const Icon(
+                Icons.qr_code_2_rounded,
+                color: Color(0xFF16A34A),
+                size: 22,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Branch Bank & UPI ID',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18),
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
               ),
             ),
           ],
@@ -540,32 +676,67 @@ class _CheckInScreenState extends State<CheckInScreen> {
           children: [
             Text(
               'Enter the UPI VPA / Bank ID for ${prop.name}. Guest QR payments will directly route to this account.',
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppTheme.slateMuted,
+              ),
             ),
             const SizedBox(height: 14),
-            Text('UPI VPA / Bank ID *', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
+            Text(
+              'UPI VPA / Bank ID *',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.slateDark,
+              ),
+            ),
             const SizedBox(height: 4),
             TextField(
               controller: upiCtrl,
               style: const TextStyle(fontSize: 13, color: AppTheme.slateDark),
               decoration: InputDecoration(
                 hintText: 'e.g. piyushpal427@okaxis',
-                hintStyle: const TextStyle(fontSize: 12, color: AppTheme.slateMuted),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                hintStyle: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.slateMuted,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppTheme.slateBorder),
+                ),
               ),
             ),
             const SizedBox(height: 10),
-            Text('Payee Account Name *', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
+            Text(
+              'Payee Account Name *',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.slateDark,
+              ),
+            ),
             const SizedBox(height: 4),
             TextField(
               controller: payeeCtrl,
               style: const TextStyle(fontSize: 13, color: AppTheme.slateDark),
               decoration: InputDecoration(
                 hintText: 'e.g. Piyush Pal',
-                hintStyle: const TextStyle(fontSize: 12, color: AppTheme.slateMuted),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                hintStyle: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.slateMuted,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppTheme.slateBorder),
+                ),
               ),
             ),
           ],
@@ -573,7 +744,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.slateMuted)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppTheme.slateMuted),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -581,16 +755,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
               store.updatePropertyUpi(
                 propertyId: prop.id,
                 upiId: upiCtrl.text.trim(),
-                payeeName: payeeCtrl.text.trim().isEmpty ? prop.name : payeeCtrl.text.trim(),
+                payeeName: payeeCtrl.text.trim().isEmpty
+                    ? prop.name
+                    : payeeCtrl.text.trim(),
               );
               Navigator.of(dialogCtx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Updated UPI ID to ${upiCtrl.text.trim()}')),
+                SnackBar(
+                  content: Text('Updated UPI ID to ${upiCtrl.text.trim()}'),
+                ),
               );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF16A34A),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: const Text('Save Bank Details'),
           ),
@@ -599,10 +779,21 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
   }
 
-  void _handlePaymentAndCheckIn(HotelStore store, Room selectedRoom, double totalEstimatedAmount) {
-    final advance = double.tryParse(_advanceController.text) ?? selectedRoom.baseRate;
+  void _handlePaymentAndCheckIn(
+    HotelStore store,
+    Room selectedRoom,
+    double totalEstimatedAmount,
+  ) {
+    final advance =
+        double.tryParse(_advanceController.text) ?? selectedRoom.baseRate;
     if (_paymentMethod == 'upi') {
-      _showUpiQrPaymentDialog(context, store, selectedRoom, totalEstimatedAmount, advance);
+      _showUpiQrPaymentDialog(
+        context,
+        store,
+        selectedRoom,
+        totalEstimatedAmount,
+        advance,
+      );
     } else {
       _finalizeCheckIn(store, selectedRoom, totalEstimatedAmount, advance);
     }
@@ -624,7 +815,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
         : (currentProp.name.isNotEmpty ? currentProp.name : 'Piyush Pal');
     final formattedAmt = advance.toStringAsFixed(2);
     // Standard UPI URI format: upi://pay?pa=piyushpal427@okaxis&pn=Piyush%20Pal&am=2200.00&cu=INR
-    final upiUri = 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(payeeName)}&am=$formattedAmt&cu=INR';
+    final upiUri =
+        'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(payeeName)}&am=$formattedAmt&cu=INR';
 
     showDialog(
       context: context,
@@ -642,7 +834,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF0FDF4),
                     borderRadius: BorderRadius.circular(20),
@@ -651,7 +846,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.qr_code_scanner_rounded, size: 14, color: Color(0xFF16A34A)),
+                      const Icon(
+                        Icons.qr_code_scanner_rounded,
+                        size: 14,
+                        color: Color(0xFF16A34A),
+                      ),
                       const SizedBox(width: 5),
                       Text(
                         'UPI Fast Pay',
@@ -738,16 +937,28 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.account_balance_outlined, size: 12, color: Color(0xFF64748B)),
+                      const Icon(
+                        Icons.account_balance_outlined,
+                        size: 12,
+                        color: Color(0xFF64748B),
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         'VPA: ',
-                        style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: const Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       Flexible(
                         child: Text(
                           upiId,
-                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF1E293B),
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -756,7 +967,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   const SizedBox(height: 2),
                   Text(
                     'Payee: $payeeName',
-                    style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF64748B)),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: const Color(0xFF64748B),
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -765,7 +979,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
             const SizedBox(height: 10),
             Text(
               'Scan with GPay, PhonePe, Paytm, BHIM, or any UPI app',
-              style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF94A3B8)),
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                color: const Color(0xFF94A3B8),
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -779,7 +996,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   onPressed: () => Navigator.of(qrDialogCtx).pop(),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
                   ),
                   child: Text(
@@ -798,15 +1017,26 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     Navigator.of(qrDialogCtx).pop();
-                    _finalizeCheckIn(store, selectedRoom, totalEstimatedAmount, advance);
+                    _finalizeCheckIn(
+                      store,
+                      selectedRoom,
+                      totalEstimatedAmount,
+                      advance,
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF16A34A),
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     elevation: 0,
                   ),
-                  icon: const Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
+                  icon: const Icon(
+                    Icons.check_circle_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                   label: Text(
                     'Payment Received (OK)',
                     style: GoogleFonts.inter(
@@ -824,21 +1054,34 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
   }
 
-  void _finalizeCheckIn(HotelStore store, Room selectedRoom, double totalEstimatedAmount, double advance) {
-    final coGuestsData = _extraGuests.map((g) => {
-      'fullName': g.nameCtrl.text.trim(),
-      'phone': _formatPhoneForStorage(g.phoneCtrl.text.trim()),
-      'email': g.emailCtrl.text.trim().isNotEmpty ? g.emailCtrl.text.trim() : null,
-      'idType': g.idType,
-      'idNumber': g.idNumberCtrl.text.trim(),
-      'dateOfBirth': g.dobCtrl.text.trim(),
-      'gender': g.genderCtrl.text.trim(),
-      'address': g.addressCtrl.text.trim(),
-      'pincode': g.pincodeCtrl.text.trim(),
-      'fatherName': g.fatherNameCtrl.text.trim(),
-    }).toList();
+  void _finalizeCheckIn(
+    HotelStore store,
+    Room selectedRoom,
+    double totalEstimatedAmount,
+    double advance,
+  ) {
+    final coGuestsData = _extraGuests
+        .map(
+          (g) => {
+            'fullName': g.nameCtrl.text.trim(),
+            'phone': _formatPhoneForStorage(g.phoneCtrl.text.trim()),
+            'email': g.emailCtrl.text.trim().isNotEmpty
+                ? g.emailCtrl.text.trim()
+                : null,
+            'idType': g.idType,
+            'idNumber': g.idNumberCtrl.text.trim(),
+            'dateOfBirth': g.dobCtrl.text.trim(),
+            'gender': g.genderCtrl.text.trim(),
+            'address': g.addressCtrl.text.trim(),
+            'pincode': g.pincodeCtrl.text.trim(),
+            'fatherName': g.fatherNameCtrl.text.trim(),
+          },
+        )
+        .toList();
 
-    final primaryEmail = _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null;
+    final primaryEmail = _emailController.text.trim().isNotEmpty
+        ? _emailController.text.trim()
+        : null;
     final primaryPhone = _formatPhoneForStorage(_phoneController.text.trim());
 
     final result = _bookingMode == BookingMode.reservation
@@ -864,6 +1107,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
             paymentMethod: _paymentMethod,
             paymentRef: _paymentRefController.text.trim(),
             coGuests: coGuestsData,
+            sendWhatsApp: _sendWhatsAppMessage,
           )
         : store.checkInGuest(
             roomId: selectedRoom.id,
@@ -886,6 +1130,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
             paymentMethod: _paymentMethod,
             paymentRef: _paymentRefController.text.trim(),
             coGuests: coGuestsData,
+            sendWhatsApp: _sendWhatsAppMessage,
           );
 
     final isReservation = _bookingMode == BookingMode.reservation;
@@ -905,12 +1150,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: isReservation ? AppTheme.statusReservedBg : AppTheme.statusVacantBg,
+                color: isReservation
+                    ? AppTheme.statusReservedBg
+                    : AppTheme.statusVacantBg,
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                isReservation ? Icons.event_available_rounded : Icons.check_circle_rounded,
-                color: isReservation ? AppTheme.statusReserved : AppTheme.statusVacant,
+                isReservation
+                    ? Icons.event_available_rounded
+                    : Icons.check_circle_rounded,
+                color: isReservation
+                    ? AppTheme.statusReserved
+                    : AppTheme.statusVacant,
                 size: 34,
               ),
             ),
@@ -929,7 +1180,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   ? 'Room ${result['roomNumber']} reserved for ${DateFormat('d MMM').format(result['checkInAt'] as DateTime)} – ${DateFormat('d MMM yyyy').format(result['expectedCheckOut'] as DateTime)}'
                   : 'Room ${result['roomNumber']} is now marked Occupied',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppTheme.slateMuted,
+              ),
             ),
             const SizedBox(height: 16),
             Container(
@@ -942,24 +1196,41 @@ class _CheckInScreenState extends State<CheckInScreen> {
               child: Column(
                 children: [
                   _buildSummaryRow('Guest', result['guestName']),
-                  _buildSummaryRow('Guests', '$_totalGuests guest(s) ($_numAdults Adult${_numAdults > 1 ? "s" : ""}${_numKids > 0 ? ", $_numKids Kid${_numKids > 1 ? "s" : ""}" : ""})'),
+                  _buildSummaryRow(
+                    'Guests',
+                    '$_totalGuests guest(s) ($_numAdults Adult${_numAdults > 1 ? "s" : ""}${_numKids > 0 ? ", $_numKids Kid${_numKids > 1 ? "s" : ""}" : ""})',
+                  ),
                   if ((result['coGuestsCount'] as int? ?? 0) > 0)
-                    _buildSummaryRow('Additional Guests', '${result['coGuestsCount']} co-guest(s) registered'),
+                    _buildSummaryRow(
+                      'Additional Guests',
+                      '${result['coGuestsCount']} co-guest(s) registered',
+                    ),
                   _buildSummaryRow(
                     isReservation ? 'Reserved Check-In' : 'Check-In',
-                    DateFormat('d MMM yyyy, hh:mm a').format(result['checkInAt'] as DateTime? ?? DateTime.now()),
+                    DateFormat('d MMM yyyy, hh:mm a').format(
+                      result['checkInAt'] as DateTime? ?? DateTime.now(),
+                    ),
                   ),
                   _buildSummaryRow(
                     isReservation ? 'Reserved Check-Out' : 'Expected Check-Out',
-                    DateFormat('d MMM yyyy, hh:mm a').format(result['expectedCheckOut'] as DateTime? ?? _expectedCheckOut),
+                    DateFormat('d MMM yyyy, hh:mm a').format(
+                      result['expectedCheckOut'] as DateTime? ??
+                          _expectedCheckOut,
+                    ),
                   ),
-                  _buildSummaryRow(isReservation ? 'Voucher #' : 'Invoice #', result['billNumber']),
+                  _buildSummaryRow(
+                    isReservation ? 'Voucher #' : 'Invoice #',
+                    result['billNumber'],
+                  ),
                   _buildSummaryRow(
                     isReservation ? 'Advance Deposit' : 'Advance Paid',
                     '₹${(result['advancePaid'] as double).toInt()} (${_paymentMethod.toUpperCase()})',
                   ),
                   if (isReservation)
-                    _buildSummaryRow('Status', 'Scheduled (Check-in on arrival)'),
+                    _buildSummaryRow(
+                      'Status',
+                      'Scheduled (Check-in on arrival)',
+                    ),
                 ],
               ),
             ),
@@ -974,7 +1245,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   Navigator.of(context).pop();
                 } else {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const HomeShell(initialIndex: 0)),
+                    MaterialPageRoute(
+                      builder: (_) => const HomeShell(initialIndex: 0),
+                    ),
                     (r) => false,
                   );
                 }
@@ -982,9 +1255,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.slateDark,
                 minimumSize: const Size(double.infinity, 44),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              child: const Text('Done • Return to Home', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Done • Return to Home',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -998,8 +1276,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.slateMuted)),
-          Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.slateDark,
+            ),
+          ),
         ],
       ),
     );
@@ -1023,7 +1311,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
       selectedRoom = availableRooms.first;
     }
 
-    final nights = _expectedCheckOut.difference(_checkInDate).inDays.clamp(1, 365);
+    final nights = _expectedCheckOut
+        .difference(_checkInDate)
+        .inDays
+        .clamp(1, 365);
     final nightlyRate = selectedRoom?.baseRate ?? 2200.0;
     final totalEstimatedAmount = nights * nightlyRate;
 
@@ -1039,7 +1330,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
               backgroundColor: Colors.white,
               elevation: 0,
               leading: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.slateDark),
+                icon: const Icon(
+                  Icons.arrow_back_rounded,
+                  color: AppTheme.slateDark,
+                ),
                 onPressed: () {
                   if (widget.onBack != null) {
                     widget.onBack!();
@@ -1049,7 +1343,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 },
               ),
               title: Text(
-                _bookingMode == BookingMode.checkIn ? 'Check-In Wizard' : 'Reservation Wizard',
+                _bookingMode == BookingMode.checkIn
+                    ? 'Check-In Wizard'
+                    : 'Reservation Wizard',
                 style: GoogleFonts.outfit(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -1083,7 +1379,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     onTap: widget.onBack,
                     borderRadius: BorderRadius.circular(10),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -1100,7 +1399,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.slateDark),
+                          const Icon(
+                            Icons.arrow_back_rounded,
+                            size: 14,
+                            color: AppTheme.slateDark,
+                          ),
                           const SizedBox(width: 5),
                           Text(
                             'Back to Rooms',
@@ -1123,10 +1426,15 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 children: [
                   Row(
                     children: [
-                      if (widget.onBack == null && Navigator.of(context).canPop()) ...[
+                      if (widget.onBack == null &&
+                          Navigator.of(context).canPop()) ...[
                         IconButton(
                           onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.slateDark, size: 20),
+                          icon: const Icon(
+                            Icons.arrow_back_rounded,
+                            color: AppTheme.slateDark,
+                            size: 20,
+                          ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                           tooltip: 'Back',
@@ -1137,7 +1445,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _bookingMode == BookingMode.checkIn ? 'Check-In Wizard' : 'Reservation Wizard',
+                            _bookingMode == BookingMode.checkIn
+                                ? 'Check-In Wizard'
+                                : 'Reservation Wizard',
                             style: GoogleFonts.outfit(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -1145,7 +1455,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             ),
                           ),
                           Text(
-                            'Step $_currentStep of 3 • ${_currentStep == 1 ? "Room & Dates" : _currentStep == 2 ? "Guest ID Verification" : (_bookingMode == BookingMode.checkIn ? "Payment & Finalize" : "Deposit & Confirm")}',
+                            'Step $_currentStep of 3 • ${_currentStep == 1
+                                ? "Room & Dates"
+                                : _currentStep == 2
+                                ? "Guest ID Verification"
+                                : (_bookingMode == BookingMode.checkIn ? "Payment & Finalize" : "Deposit & Confirm")}',
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               color: AppTheme.slateMuted,
@@ -1168,7 +1482,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           shape: BoxShape.circle,
                           color: isCurrent
                               ? AppTheme.brandPrimary
-                              : (isDone ? AppTheme.statusVacant : AppTheme.slateBorder),
+                              : (isDone
+                                    ? AppTheme.statusVacant
+                                    : AppTheme.slateBorder),
                         ),
                         child: Center(
                           child: Text(
@@ -1206,8 +1522,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               final now = DateTime.now();
                               setState(() {
                                 _bookingMode = BookingMode.checkIn;
-                                _checkInDate = DateTime(now.year, now.month, now.day);
-                                _expectedCheckOut = _checkInDate.add(const Duration(days: 1));
+                                _checkInDate = DateTime(
+                                  now.year,
+                                  now.month,
+                                  now.day,
+                                );
+                                _expectedCheckOut = _checkInDate.add(
+                                  const Duration(days: 1),
+                                );
                                 _activeSection = _AirbnbStep1Section.where;
                               });
                             }
@@ -1216,12 +1538,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             duration: const Duration(milliseconds: 200),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             decoration: BoxDecoration(
-                              color: _bookingMode == BookingMode.checkIn ? Colors.white : Colors.transparent,
+                              color: _bookingMode == BookingMode.checkIn
+                                  ? Colors.white
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: _bookingMode == BookingMode.checkIn
                                   ? [
                                       BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.05),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.05,
+                                        ),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
@@ -1234,15 +1560,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 Icon(
                                   Icons.how_to_reg_rounded,
                                   size: 16,
-                                  color: _bookingMode == BookingMode.checkIn ? AppTheme.brandPrimary : AppTheme.slateMuted,
+                                  color: _bookingMode == BookingMode.checkIn
+                                      ? AppTheme.brandPrimary
+                                      : AppTheme.slateMuted,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Immediate Check-In',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
-                                    fontWeight: _bookingMode == BookingMode.checkIn ? FontWeight.bold : FontWeight.w600,
-                                    color: _bookingMode == BookingMode.checkIn ? AppTheme.slateDark : AppTheme.slateMuted,
+                                    fontWeight:
+                                        _bookingMode == BookingMode.checkIn
+                                        ? FontWeight.bold
+                                        : FontWeight.w600,
+                                    color: _bookingMode == BookingMode.checkIn
+                                        ? AppTheme.slateDark
+                                        : AppTheme.slateMuted,
                                   ),
                                 ),
                               ],
@@ -1259,10 +1592,17 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               setState(() {
                                 _bookingMode = BookingMode.reservation;
                                 if (_checkInDate.isBefore(now)) {
-                                  _checkInDate = DateTime(now.year, now.month, now.day + 1);
-                                  _expectedCheckOut = _checkInDate.add(const Duration(days: 2));
+                                  _checkInDate = DateTime(
+                                    now.year,
+                                    now.month,
+                                    now.day + 1,
+                                  );
+                                  _expectedCheckOut = _checkInDate.add(
+                                    const Duration(days: 2),
+                                  );
                                 }
-                                _activeSection = _AirbnbStep1Section.when; // Manager should select future dates first
+                                _activeSection = _AirbnbStep1Section
+                                    .when; // Manager should select future dates first
                               });
                             }
                           },
@@ -1270,12 +1610,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             duration: const Duration(milliseconds: 200),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             decoration: BoxDecoration(
-                              color: _bookingMode == BookingMode.reservation ? Colors.white : Colors.transparent,
+                              color: _bookingMode == BookingMode.reservation
+                                  ? Colors.white
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: _bookingMode == BookingMode.reservation
                                   ? [
                                       BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.05),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.05,
+                                        ),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
@@ -1288,15 +1632,23 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 Icon(
                                   Icons.event_available_rounded,
                                   size: 16,
-                                  color: _bookingMode == BookingMode.reservation ? AppTheme.brandPrimary : AppTheme.slateMuted,
+                                  color: _bookingMode == BookingMode.reservation
+                                      ? AppTheme.brandPrimary
+                                      : AppTheme.slateMuted,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Future Reservation',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
-                                    fontWeight: _bookingMode == BookingMode.reservation ? FontWeight.bold : FontWeight.w600,
-                                    color: _bookingMode == BookingMode.reservation ? AppTheme.slateDark : AppTheme.slateMuted,
+                                    fontWeight:
+                                        _bookingMode == BookingMode.reservation
+                                        ? FontWeight.bold
+                                        : FontWeight.w600,
+                                    color:
+                                        _bookingMode == BookingMode.reservation
+                                        ? AppTheme.slateDark
+                                        : AppTheme.slateMuted,
                                   ),
                                 ),
                               ],
@@ -1310,16 +1662,25 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 const SizedBox(height: 10),
                 // Context helper banner
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
-                    color: _bookingMode == BookingMode.checkIn ? AppTheme.brandLight.withValues(alpha: 0.5) : const Color(0xFFF8FAFC),
+                    color: _bookingMode == BookingMode.checkIn
+                        ? AppTheme.brandLight.withValues(alpha: 0.5)
+                        : const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.slateBorder.withValues(alpha: 0.8)),
+                    border: Border.all(
+                      color: AppTheme.slateBorder.withValues(alpha: 0.8),
+                    ),
                   ),
                   child: Row(
                     children: [
                       Icon(
-                        _bookingMode == BookingMode.checkIn ? Icons.flash_on_rounded : Icons.date_range_rounded,
+                        _bookingMode == BookingMode.checkIn
+                            ? Icons.flash_on_rounded
+                            : Icons.date_range_rounded,
                         size: 14,
                         color: AppTheme.brandPrimary,
                       ),
@@ -1373,11 +1734,19 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.badge_outlined, color: AppTheme.brandPrimary, size: 20),
+                              const Icon(
+                                Icons.badge_outlined,
+                                color: AppTheme.brandPrimary,
+                                size: 20,
+                              ),
                               const SizedBox(width: 8),
                               Text(
                                 '2. Guest ID Verification',
-                                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
                               ),
                             ],
                           ),
@@ -1385,20 +1754,35 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             onTap: _addExtraGuest,
                             borderRadius: BorderRadius.circular(8),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppTheme.brandLight,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.4)),
+                                border: Border.all(
+                                  color: AppTheme.brandPrimary.withValues(
+                                    alpha: 0.4,
+                                  ),
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.add_rounded, size: 14, color: AppTheme.brandPrimary),
+                                  const Icon(
+                                    Icons.add_rounded,
+                                    size: 14,
+                                    color: AppTheme.brandPrimary,
+                                  ),
                                   const SizedBox(width: 4),
                                   Text(
-                                    '+ Add Guest',
-                                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary),
+                                    'Add Guest',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.brandPrimary,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1418,21 +1802,39 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.group_add_rounded, size: 15, color: AppTheme.slateMuted),
+                              const Icon(
+                                Icons.group_add_rounded,
+                                size: 15,
+                                color: AppTheme.slateMuted,
+                              ),
                               const SizedBox(width: 6),
                               Text(
                                 'Additional Guests',
-                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.slateDark),
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.slateDark,
+                                ),
                               ),
                               if (_extraGuests.isNotEmpty) ...[
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: AppTheme.brandPrimary,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: Text('${_extraGuests.length}', style: GoogleFonts.inter(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold)),
+                                  child: Text(
+                                    '${_extraGuests.length}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ],
@@ -1441,18 +1843,36 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             onTap: _addExtraGuest,
                             borderRadius: BorderRadius.circular(8),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppTheme.brandLight,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.4)),
+                                border: Border.all(
+                                  color: AppTheme.brandPrimary.withValues(
+                                    alpha: 0.4,
+                                  ),
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.add_rounded, size: 14, color: AppTheme.brandPrimary),
+                                  const Icon(
+                                    Icons.add_rounded,
+                                    size: 14,
+                                    color: AppTheme.brandPrimary,
+                                  ),
                                   const SizedBox(width: 3),
-                                  Text('Add Guest', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.brandPrimary)),
+                                  Text(
+                                    'Add Guest',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.brandPrimary,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -1465,11 +1885,17 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           child: Text(
                             'Tap "Add Guest" to register additional co-guests.',
-                            style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted),
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: AppTheme.slateMuted,
+                            ),
                           ),
                         )
                       else
-                        ...List.generate(_extraGuests.length, (i) => _buildExtraGuestCard(i)),
+                        ...List.generate(
+                          _extraGuests.length,
+                          (i) => _buildExtraGuestCard(i),
+                        ),
                     ],
                   ),
                 ),
@@ -1493,14 +1919,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       Row(
                         children: [
                           Icon(
-                            _bookingMode == BookingMode.reservation ? Icons.event_available_rounded : Icons.credit_card_rounded,
+                            _bookingMode == BookingMode.reservation
+                                ? Icons.event_available_rounded
+                                : Icons.credit_card_rounded,
                             color: AppTheme.brandPrimary,
                             size: 20,
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            _bookingMode == BookingMode.reservation ? '3. Advance Deposit & Reservation' : '3. Advance Payment & Folio',
-                            style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                            _bookingMode == BookingMode.reservation
+                                ? '3. Advance Deposit & Reservation'
+                                : '3. Advance Payment & Folio',
+                            style: GoogleFonts.outfit(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.slateDark,
+                            ),
                           ),
                         ],
                       ),
@@ -1510,31 +1944,68 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(colors: [AppTheme.slateDark, Color(0xFF1E1B4B)]),
+                          gradient: const LinearGradient(
+                            colors: [AppTheme.slateDark, Color(0xFF1E1B4B)],
+                          ),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Column(
                           children: [
-                            _buildDarkSummaryRow('Assigned Room', 'Room ${selectedRoom?.roomNumber} (${selectedRoom?.categoryName})'),
+                            _buildDarkSummaryRow(
+                              'Assigned Room',
+                              'Room ${selectedRoom?.roomNumber} (${selectedRoom?.categoryName})',
+                            ),
                             _buildDarkSummaryRow('Guest', _nameController.text),
                             _buildDarkSummaryRow(
-                              _bookingMode == BookingMode.reservation ? 'Reserved Check-In' : 'Check-In Time',
+                              _bookingMode == BookingMode.reservation
+                                  ? 'Reserved Check-In'
+                                  : 'Check-In Time',
                               DateFormat('d MMM yyyy, hh:mm a').format(
-                                _bookingMode == BookingMode.reservation ? store.applyDefaultCheckInTime(_checkInDate) : DateTime.now(),
+                                _bookingMode == BookingMode.reservation
+                                    ? store.applyDefaultCheckInTime(
+                                        _checkInDate,
+                                      )
+                                    : DateTime.now(),
                               ),
                             ),
-                            _buildDarkSummaryRow('Expected Check-Out', DateFormat('d MMM yyyy, hh:mm a').format(store.applyDefaultCheckOutTime(_expectedCheckOut))),
-                            _buildDarkSummaryRow('Stay Duration', '$nights Night(s)'),
-                            _buildDarkSummaryRow('Nightly Rate', '₹${nightlyRate.toInt()}'),
+                            _buildDarkSummaryRow(
+                              'Expected Check-Out',
+                              DateFormat('d MMM yyyy, hh:mm a').format(
+                                store.applyDefaultCheckOutTime(
+                                  _expectedCheckOut,
+                                ),
+                              ),
+                            ),
+                            _buildDarkSummaryRow(
+                              'Stay Duration',
+                              '$nights Night(s)',
+                            ),
+                            _buildDarkSummaryRow(
+                              'Nightly Rate',
+                              '₹${nightlyRate.toInt()}',
+                            ),
                             const Divider(color: Colors.white24),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  _bookingMode == BookingMode.reservation ? 'Total Reservation Bill' : 'Total Estimated Stay',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                  _bookingMode == BookingMode.reservation
+                                      ? 'Total Reservation Bill'
+                                      : 'Total Estimated Stay',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
                                 ),
-                                Text('₹${totalEstimatedAmount.toInt()}', style: GoogleFonts.outfit(color: AppTheme.brandAccent, fontWeight: FontWeight.bold, fontSize: 20)),
+                                Text(
+                                  '₹${totalEstimatedAmount.toInt()}',
+                                  style: GoogleFonts.outfit(
+                                    color: AppTheme.brandAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 20,
+                                  ),
+                                ),
                               ],
                             ),
                           ],
@@ -1544,33 +2015,146 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
                       // Advance Amount Paid
                       Text(
-                        _bookingMode == BookingMode.reservation ? 'Booking Deposit / Advance Received (₹)' : 'Advance Amount Collected (₹)',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                        _bookingMode == BookingMode.reservation
+                            ? 'Booking Deposit / Advance Received (₹)'
+                            : 'Advance Amount Collected (₹)',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.slateDark,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       TextField(
                         controller: _advanceController,
                         keyboardType: TextInputType.number,
-                        style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.slateDark,
+                        ),
                         decoration: InputDecoration(
                           prefixText: '₹ ',
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: AppTheme.slateBorder,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 14),
 
                       // Payment Method
-                      Text('Payment Method', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
+                      Text(
+                        'Payment Method',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.slateDark,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          _buildPaymentMethodButton('upi', 'UPI / QR Code', Icons.qr_code_2_rounded),
+                          _buildPaymentMethodButton(
+                            'upi',
+                            'UPI / QR Code',
+                            Icons.qr_code_2_rounded,
+                          ),
                           const SizedBox(width: 8),
-                          _buildPaymentMethodButton('cash', 'Cash', Icons.payments_outlined),
+                          _buildPaymentMethodButton(
+                            'cash',
+                            'Cash',
+                            Icons.payments_outlined,
+                          ),
                           const SizedBox(width: 8),
-                          _buildPaymentMethodButton('card', 'Card', Icons.credit_card_rounded),
+                          _buildPaymentMethodButton(
+                            'card',
+                            'Card',
+                            Icons.credit_card_rounded,
+                          ),
                         ],
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // WhatsApp notification on success toggle
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _sendWhatsAppMessage
+                              ? const Color(0xFFF0FDF4)
+                              : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _sendWhatsAppMessage
+                                ? const Color(0xFFBBF7D0)
+                                : AppTheme.slateBorder,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: _sendWhatsAppMessage
+                                    ? const Color(0xFFDCFCE7)
+                                    : const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.chat_rounded,
+                                size: 18,
+                                color: _sendWhatsAppMessage
+                                    ? const Color(0xFF16A34A)
+                                    : AppTheme.slateMuted,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _bookingMode == BookingMode.reservation
+                                        ? 'Send WhatsApp Reservation Confirmation'
+                                        : 'Send WhatsApp Check-in Welcome',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateDark,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    _sendWhatsAppMessage
+                                        ? 'Automatic confirmation will be sent to guest on success'
+                                        : 'No automated message will be sent for this booking',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: AppTheme.slateMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: _sendWhatsAppMessage,
+                              activeTrackColor: const Color(0xFF16A34A),
+                              activeThumbColor: Colors.white,
+                              onChanged: (val) =>
+                                  setState(() => _sendWhatsAppMessage = val),
+                            ),
+                          ],
+                        ),
                       ),
                       // [Bank info commented out for now - will relocate later]
                       /*
@@ -1664,17 +2248,39 @@ class _CheckInScreenState extends State<CheckInScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 22, height: 22,
-                  decoration: const BoxDecoration(color: AppTheme.brandLight, shape: BoxShape.circle),
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.brandLight,
+                    shape: BoxShape.circle,
+                  ),
                   child: Center(
-                    child: Text('1', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary)),
+                    child: Text(
+                      '1',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
-                Text('Guest 1 (Primary)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.slateDark)),
+                Text(
+                  'Guest 1 (Primary)',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 if (_scanSuccess)
-                  const Icon(Icons.verified_rounded, size: 13, color: Color(0xFF16A34A)),
+                  const Icon(
+                    Icons.verified_rounded,
+                    size: 13,
+                    color: Color(0xFF16A34A),
+                  ),
                 const Spacer(),
                 // Doc type mini-picker
                 ...['aadhaar', 'pan', 'passport'].map((dt) {
@@ -1683,15 +2289,32 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     onTap: () => setState(() => _idType = dt),
                     child: Container(
                       margin: const EdgeInsets.only(left: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
-                        color: isSel ? AppTheme.brandPrimary : AppTheme.background,
+                        color: isSel
+                            ? AppTheme.brandPrimary
+                            : AppTheme.background,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: isSel ? AppTheme.brandPrimary : AppTheme.slateBorder),
+                        border: Border.all(
+                          color: isSel
+                              ? AppTheme.brandPrimary
+                              : AppTheme.slateBorder,
+                        ),
                       ),
                       child: Text(
-                        dt == 'aadhaar' ? 'Aad' : dt == 'pan' ? 'PAN' : 'Pass',
-                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isSel ? Colors.white : AppTheme.slateMuted),
+                        dt == 'aadhaar'
+                            ? 'Aad'
+                            : dt == 'pan'
+                            ? 'PAN'
+                            : 'Pass',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: isSel ? Colors.white : AppTheme.slateMuted,
+                        ),
                       ),
                     ),
                   );
@@ -1720,10 +2343,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                           icon: const Icon(Icons.camera_alt_rounded, size: 15),
-                          label: Text('Scan ID', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+                          label: Text(
+                            'Scan ID',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1734,10 +2365,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             foregroundColor: AppTheme.slateDark,
                             side: const BorderSide(color: AppTheme.slateBorder),
                             padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
-                          icon: const Icon(Icons.upload_file_rounded, size: 15, color: AppTheme.slateMuted),
-                          label: Text('Upload', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+                          icon: const Icon(
+                            Icons.upload_file_rounded,
+                            size: 15,
+                            color: AppTheme.slateMuted,
+                          ),
+                          label: Text(
+                            'Upload',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -1745,23 +2388,35 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 else ...[
                   // Compact status row (exact match to screenshot)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       color: _scanSuccess
                           ? const Color(0xFFF0FDF4)
-                          : (_isScanning ? AppTheme.brandLight : const Color(0xFFFFFBEB)),
+                          : (_isScanning
+                                ? AppTheme.brandLight
+                                : const Color(0xFFFFFBEB)),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: _scanSuccess
                             ? const Color(0xFFBBF7D0)
-                            : (_isScanning ? AppTheme.brandPrimary.withValues(alpha: 0.3) : const Color(0xFFFDE68A)),
+                            : (_isScanning
+                                  ? AppTheme.brandPrimary.withValues(alpha: 0.3)
+                                  : const Color(0xFFFDE68A)),
                       ),
                     ),
                     child: Row(
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
-                          child: Image.memory(_frontBytes!, width: 32, height: 32, fit: BoxFit.cover),
+                          child: Image.memory(
+                            _frontBytes!,
+                            width: 32,
+                            height: 32,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1769,14 +2424,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             _isScanning
                                 ? 'Scanning ID...'
                                 : _scanSuccess
-                                    ? 'ID verified ✓'
-                                    : (_scanDone ? 'Scan cancelled / incomplete' : 'Ready to scan'),
+                                ? 'ID verified ✓'
+                                : (_scanDone
+                                      ? 'Scan cancelled / incomplete'
+                                      : 'Ready to scan'),
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                               color: _scanSuccess
                                   ? const Color(0xFF15803D)
-                                  : (_isScanning ? AppTheme.brandPrimary : const Color(0xFF92400E)),
+                                  : (_isScanning
+                                        ? AppTheme.brandPrimary
+                                        : const Color(0xFF92400E)),
                             ),
                           ),
                         ),
@@ -1786,7 +2445,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             borderRadius: BorderRadius.circular(12),
                             child: const Padding(
                               padding: EdgeInsets.all(4),
-                              child: Icon(Icons.close_rounded, size: 16, color: Color(0xFFF87171)),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 16,
+                                color: Color(0xFFF87171),
+                              ),
                             ),
                           )
                         else
@@ -1799,16 +2462,27 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   borderRadius: BorderRadius.circular(6),
                                   child: Container(
                                     margin: const EdgeInsets.only(right: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: AppTheme.brandLight,
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.3)),
+                                      border: Border.all(
+                                        color: AppTheme.brandPrimary.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                      ),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.refresh_rounded, size: 12, color: AppTheme.brandPrimary),
+                                        const Icon(
+                                          Icons.refresh_rounded,
+                                          size: 12,
+                                          color: AppTheme.brandPrimary,
+                                        ),
                                         const SizedBox(width: 3),
                                         Text(
                                           'Retry',
@@ -1836,7 +2510,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 }),
                                 child: const Padding(
                                   padding: EdgeInsets.all(3),
-                                  child: Icon(Icons.close_rounded, size: 16, color: AppTheme.slateMuted),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                    color: AppTheme.slateMuted,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1850,26 +2528,54 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   if (!_hasBackUploaded)
                     Row(
                       children: [
-                        const Icon(Icons.flip_rounded, size: 12, color: AppTheme.slateMuted),
+                        const Icon(
+                          Icons.flip_rounded,
+                          size: 12,
+                          color: AppTheme.slateMuted,
+                        ),
                         const SizedBox(width: 4),
-                        Text('Back side', style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted)),
+                        Text(
+                          'Back side',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
                         const SizedBox(width: 6),
                         InkWell(
                           onTap: () => _openCamera(isBack: true),
                           borderRadius: BorderRadius.circular(5),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: AppTheme.brandLight,
                               borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.3)),
+                              border: Border.all(
+                                color: AppTheme.brandPrimary.withValues(
+                                  alpha: 0.3,
+                                ),
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.camera_alt_rounded, size: 11, color: AppTheme.brandPrimary),
+                                const Icon(
+                                  Icons.camera_alt_rounded,
+                                  size: 11,
+                                  color: AppTheme.brandPrimary,
+                                ),
                                 const SizedBox(width: 2),
-                                Text('Camera', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary)),
+                                Text(
+                                  'Camera',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.brandPrimary,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1879,7 +2585,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           onTap: _pickBackFile,
                           borderRadius: BorderRadius.circular(5),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: AppTheme.background,
                               borderRadius: BorderRadius.circular(5),
@@ -1888,9 +2597,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.upload_file_rounded, size: 11, color: AppTheme.slateMuted),
+                                const Icon(
+                                  Icons.upload_file_rounded,
+                                  size: 11,
+                                  color: AppTheme.slateMuted,
+                                ),
                                 const SizedBox(width: 2),
-                                Text('File', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
+                                Text(
+                                  'File',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1900,14 +2620,32 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   else
                     Row(
                       children: [
-                        const Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF16A34A)),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          size: 12,
+                          color: Color(0xFF16A34A),
+                        ),
                         const SizedBox(width: 4),
-                        Text('Back added', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: const Color(0xFF15803D))),
+                        Text(
+                          'Back added',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF15803D),
+                          ),
+                        ),
                         const SizedBox(width: 6),
                         if (!_isScanning)
                           InkWell(
                             onTap: _clearBackFile,
-                            child: Text('Remove', style: GoogleFonts.inter(fontSize: 10, color: Colors.red[600], fontWeight: FontWeight.bold)),
+                            child: Text(
+                              'Remove',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: Colors.red[600],
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -1918,16 +2656,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 // 1. Full Name
                 TextField(
                   controller: _nameController,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.slateDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Full Name',
-                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.person_outline_rounded, size: 15, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    hintStyle: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.person_outline_rounded,
+                      size: 15,
+                      color: AppTheme.slateMuted,
+                    ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isNameValid(_nameController.text),
+                      isNotEmpty: _nameController.text.trim().isNotEmpty,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: _nameController.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isNameValid(_nameController.text)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1935,16 +2709,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 // 2. ID Number
                 TextField(
                   controller: _idNumberController,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.slateDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'ID Number (${_idType.toUpperCase()})',
-                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.badge_outlined, size: 15, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    hintStyle: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.badge_outlined,
+                      size: 15,
+                      color: AppTheme.slateMuted,
+                    ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isIdValid(_idNumberController.text, _idType),
+                      isNotEmpty: _idNumberController.text.trim().isNotEmpty,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: _idNumberController.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isIdValid(_idNumberController.text, _idType)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1956,16 +2766,60 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       flex: 3,
                       child: TextField(
                         controller: _dobController,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(8),
+                          DateInputFormatter(),
+                        ],
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.slateDark,
+                          fontWeight: FontWeight.w600,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'DOB (DD/MM/YYYY)',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.calendar_today_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          hintStyle: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.calendar_today_outlined,
+                            size: 13,
+                            color: AppTheme.slateMuted,
+                          ),
+                          suffixIcon: _buildVerificationSuffix(
+                            isValid: _isDobValid(_dobController.text),
+                            isNotEmpty: _dobController.text.trim().isNotEmpty,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.slateBorder,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: _dobController.text.trim().isEmpty
+                                  ? AppTheme.slateBorder
+                                  : (_isDobValid(_dobController.text)
+                                      ? const Color(0xFF16A34A).withOpacity(0.5)
+                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.brandPrimary,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -1982,19 +2836,43 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
-                            value: ['Male', 'Female', 'Other'].contains(_genderController.text)
+                            value:
+                                [
+                                  'Male',
+                                  'Female',
+                                  'Other',
+                                  'Kids',
+                                ].contains(_genderController.text)
                                 ? _genderController.text
                                 : 'Male',
-                            icon: const Icon(Icons.arrow_drop_down_rounded, size: 18, color: AppTheme.slateMuted),
+                            icon: const Icon(
+                              Icons.arrow_drop_down_rounded,
+                              size: 18,
+                              color: AppTheme.slateMuted,
+                            ),
                             isExpanded: true,
-                            style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.slateDark,
+                              fontWeight: FontWeight.w600,
+                            ),
                             items: const [
-                              DropdownMenuItem(value: 'Male', child: Text('Male')),
-                              DropdownMenuItem(value: 'Female', child: Text('Female')),
-                              DropdownMenuItem(value: 'Other', child: Text('Other')),
+                              DropdownMenuItem(
+                                value: 'Male',
+                                child: Text('Male'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Female',
+                                child: Text('Female'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Other',
+                                child: Text('Other'),
+                              ),
                             ],
                             onChanged: (val) {
-                              if (val != null) setState(() => _genderController.text = val);
+                              if (val != null)
+                                setState(() => _genderController.text = val);
                             },
                           ),
                         ),
@@ -2011,16 +2889,54 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       flex: 3,
                       child: TextField(
                         controller: _addressController,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.slateDark,
+                          fontWeight: FontWeight.w600,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Address (from back of ID)',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.home_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          hintStyle: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.home_outlined,
+                            size: 13,
+                            color: AppTheme.slateMuted,
+                          ),
+                          suffixIcon: _buildVerificationSuffix(
+                            isValid: _isAddressValid(_addressController.text),
+                            isNotEmpty: _addressController.text.trim().isNotEmpty,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.slateBorder,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: _addressController.text.trim().isEmpty
+                                  ? AppTheme.slateBorder
+                                  : (_isAddressValid(_addressController.text)
+                                      ? const Color(0xFF16A34A).withOpacity(0.5)
+                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.brandPrimary,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -2030,16 +2946,58 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       child: TextField(
                         controller: _pincodeController,
                         keyboardType: TextInputType.number,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(6),
+                        ],
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.slateDark,
+                          fontWeight: FontWeight.w600,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Pincode',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.location_on_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          hintStyle: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.location_on_outlined,
+                            size: 13,
+                            color: AppTheme.slateMuted,
+                          ),
+                          suffixIcon: _buildVerificationSuffix(
+                            isValid: _isPincodeValid(_pincodeController.text),
+                            isNotEmpty: _pincodeController.text.trim().isNotEmpty,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.slateBorder,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: _pincodeController.text.trim().isEmpty
+                                  ? AppTheme.slateBorder
+                                  : (_isPincodeValid(_pincodeController.text)
+                                      ? const Color(0xFF16A34A).withOpacity(0.5)
+                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.brandPrimary,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -2060,15 +3018,33 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(10),
                   ],
-                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark, letterSpacing: 0.8),
+                  onChanged: (_) => setState(() {}),
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.slateDark,
+                    letterSpacing: 0.8,
+                  ),
                   decoration: InputDecoration(
-                    hintText: '9850550645',
-                    hintStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted, letterSpacing: 0.8),
+                    hintText: '99XXX XXXXX',
+                    hintStyle: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                      letterSpacing: 0.8,
+                    ),
                     prefixIcon: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 7,
+                      ),
                       margin: const EdgeInsets.only(right: 8),
                       decoration: const BoxDecoration(
-                        border: Border(right: BorderSide(color: AppTheme.slateBorder, width: 1)),
+                        border: Border(
+                          right: BorderSide(
+                            color: AppTheme.slateBorder,
+                            width: 1,
+                          ),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -2086,13 +3062,38 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ],
                       ),
                     ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isPhoneValid(_phoneController.text),
+                      isNotEmpty: _phoneController.text.trim().isNotEmpty,
+                    ),
                     isDense: true,
                     filled: true,
                     fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: _phoneController.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isPhoneValid(_phoneController.text)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                        width: 1.5,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -2101,16 +3102,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.slateDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Email (Optional)',
-                    hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.email_outlined, size: 13, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    hintStyle: const TextStyle(
+                      fontSize: 10,
+                      color: AppTheme.slateMuted,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.email_outlined,
+                      size: 13,
+                      color: AppTheme.slateMuted,
+                    ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isEmailValid(_emailController.text),
+                      isNotEmpty: _emailController.text.trim().isNotEmpty,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                     isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: _emailController.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isEmailValid(_emailController.text)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -2142,17 +3179,39 @@ class _CheckInScreenState extends State<CheckInScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 22, height: 22,
-                  decoration: const BoxDecoration(color: AppTheme.brandLight, shape: BoxShape.circle),
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.brandLight,
+                    shape: BoxShape.circle,
+                  ),
                   child: Center(
-                    child: Text('${i + 2}', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary)),
+                    child: Text(
+                      '${i + 2}',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
-                Text('Guest ${i + 2}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.slateDark)),
+                Text(
+                  'Guest ${i + 2}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 if (g.scanSuccess)
-                  const Icon(Icons.verified_rounded, size: 13, color: Color(0xFF16A34A)),
+                  const Icon(
+                    Icons.verified_rounded,
+                    size: 13,
+                    color: Color(0xFF16A34A),
+                  ),
                 const Spacer(),
                 // Doc type mini-picker
                 ...['aadhaar', 'pan', 'passport'].map((dt) {
@@ -2161,15 +3220,32 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     onTap: () => setState(() => g.idType = dt),
                     child: Container(
                       margin: const EdgeInsets.only(left: 4),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
-                        color: isSel ? AppTheme.brandPrimary : AppTheme.background,
+                        color: isSel
+                            ? AppTheme.brandPrimary
+                            : AppTheme.background,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: isSel ? AppTheme.brandPrimary : AppTheme.slateBorder),
+                        border: Border.all(
+                          color: isSel
+                              ? AppTheme.brandPrimary
+                              : AppTheme.slateBorder,
+                        ),
                       ),
                       child: Text(
-                        dt == 'aadhaar' ? 'Aad' : dt == 'pan' ? 'PAN' : 'Pass',
-                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: isSel ? Colors.white : AppTheme.slateMuted),
+                        dt == 'aadhaar'
+                            ? 'Aad'
+                            : dt == 'pan'
+                            ? 'PAN'
+                            : 'Pass',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: isSel ? Colors.white : AppTheme.slateMuted,
+                        ),
                       ),
                     ),
                   );
@@ -2178,7 +3254,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 InkWell(
                   onTap: () => _removeExtraGuest(i),
                   borderRadius: BorderRadius.circular(6),
-                  child: const Icon(Icons.close_rounded, size: 16, color: AppTheme.slateMuted),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: AppTheme.slateMuted,
+                  ),
                 ),
               ],
             ),
@@ -2204,10 +3284,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                           icon: const Icon(Icons.camera_alt_rounded, size: 15),
-                          label: Text('Scan ID', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+                          label: Text(
+                            'Scan ID',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -2218,34 +3306,58 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             foregroundColor: AppTheme.slateDark,
                             side: const BorderSide(color: AppTheme.slateBorder),
                             padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
-                          icon: const Icon(Icons.upload_file_rounded, size: 15, color: AppTheme.slateMuted),
-                          label: Text('Upload', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+                          icon: const Icon(
+                            Icons.upload_file_rounded,
+                            size: 15,
+                            color: AppTheme.slateMuted,
+                          ),
+                          label: Text(
+                            'Upload',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   )
-                else ...[  
+                else ...[
                   // Compact status row
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       color: g.scanSuccess
                           ? const Color(0xFFF0FDF4)
-                          : (g.isScanning ? AppTheme.brandLight : const Color(0xFFFFFBEB)),
+                          : (g.isScanning
+                                ? AppTheme.brandLight
+                                : const Color(0xFFFFFBEB)),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: g.scanSuccess
                             ? const Color(0xFFBBF7D0)
-                            : (g.isScanning ? AppTheme.brandPrimary.withValues(alpha: 0.3) : const Color(0xFFFDE68A)),
+                            : (g.isScanning
+                                  ? AppTheme.brandPrimary.withValues(alpha: 0.3)
+                                  : const Color(0xFFFDE68A)),
                       ),
                     ),
                     child: Row(
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
-                          child: Image.memory(g.frontBytes!, width: 32, height: 32, fit: BoxFit.cover),
+                          child: Image.memory(
+                            g.frontBytes!,
+                            width: 32,
+                            height: 32,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -2253,14 +3365,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             g.isScanning
                                 ? 'Scanning ID...'
                                 : g.scanSuccess
-                                    ? 'ID verified ✓'
-                                    : (g.scanDone ? 'Scan cancelled / incomplete' : 'Ready to scan'),
+                                ? 'ID verified ✓'
+                                : (g.scanDone
+                                      ? 'Scan cancelled / incomplete'
+                                      : 'Ready to scan'),
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                               color: g.scanSuccess
                                   ? const Color(0xFF15803D)
-                                  : (g.isScanning ? AppTheme.brandPrimary : const Color(0xFF92400E)),
+                                  : (g.isScanning
+                                        ? AppTheme.brandPrimary
+                                        : const Color(0xFF92400E)),
                             ),
                           ),
                         ),
@@ -2270,7 +3386,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             borderRadius: BorderRadius.circular(12),
                             child: const Padding(
                               padding: EdgeInsets.all(4),
-                              child: Icon(Icons.close_rounded, size: 16, color: Color(0xFFF87171)),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 16,
+                                color: Color(0xFFF87171),
+                              ),
                             ),
                           )
                         else
@@ -2283,16 +3403,27 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   borderRadius: BorderRadius.circular(6),
                                   child: Container(
                                     margin: const EdgeInsets.only(right: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: AppTheme.brandLight,
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.3)),
+                                      border: Border.all(
+                                        color: AppTheme.brandPrimary.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                      ),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.refresh_rounded, size: 12, color: AppTheme.brandPrimary),
+                                        const Icon(
+                                          Icons.refresh_rounded,
+                                          size: 12,
+                                          color: AppTheme.brandPrimary,
+                                        ),
                                         const SizedBox(width: 3),
                                         Text(
                                           'Retry',
@@ -2320,7 +3451,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 }),
                                 child: const Padding(
                                   padding: EdgeInsets.all(3),
-                                  child: Icon(Icons.close_rounded, size: 16, color: AppTheme.slateMuted),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 16,
+                                    color: AppTheme.slateMuted,
+                                  ),
                                 ),
                               ),
                             ],
@@ -2334,26 +3469,54 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   if (!g.hasBackUploaded)
                     Row(
                       children: [
-                        const Icon(Icons.flip_rounded, size: 12, color: AppTheme.slateMuted),
+                        const Icon(
+                          Icons.flip_rounded,
+                          size: 12,
+                          color: AppTheme.slateMuted,
+                        ),
                         const SizedBox(width: 4),
-                        Text('Back side', style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted)),
+                        Text(
+                          'Back side',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
                         const SizedBox(width: 6),
                         InkWell(
                           onTap: () => _openCameraForGuest(i, isBack: true),
                           borderRadius: BorderRadius.circular(5),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: AppTheme.brandLight,
                               borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.3)),
+                              border: Border.all(
+                                color: AppTheme.brandPrimary.withValues(
+                                  alpha: 0.3,
+                                ),
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.camera_alt_rounded, size: 11, color: AppTheme.brandPrimary),
+                                const Icon(
+                                  Icons.camera_alt_rounded,
+                                  size: 11,
+                                  color: AppTheme.brandPrimary,
+                                ),
                                 const SizedBox(width: 2),
-                                Text('Camera', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary)),
+                                Text(
+                                  'Camera',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.brandPrimary,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -2363,7 +3526,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           onTap: () => _pickBackFileForGuest(i),
                           borderRadius: BorderRadius.circular(5),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: AppTheme.background,
                               borderRadius: BorderRadius.circular(5),
@@ -2372,9 +3538,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.upload_file_rounded, size: 11, color: AppTheme.slateMuted),
+                                const Icon(
+                                  Icons.upload_file_rounded,
+                                  size: 11,
+                                  color: AppTheme.slateMuted,
+                                ),
                                 const SizedBox(width: 2),
-                                Text('File', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
+                                Text(
+                                  'File',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -2384,9 +3561,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   else
                     Row(
                       children: [
-                        const Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF16A34A)),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          size: 12,
+                          color: Color(0xFF16A34A),
+                        ),
                         const SizedBox(width: 4),
-                        Text('Back added', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: const Color(0xFF15803D))),
+                        Text(
+                          'Back added',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF15803D),
+                          ),
+                        ),
                         const SizedBox(width: 6),
                         if (!g.isScanning)
                           InkWell(
@@ -2395,7 +3583,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               g.backFilename = null;
                               g.hasBackUploaded = false;
                             }),
-                            child: Text('Remove', style: GoogleFonts.inter(fontSize: 10, color: Colors.red[600], fontWeight: FontWeight.bold)),
+                            child: Text(
+                              'Remove',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: Colors.red[600],
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -2406,16 +3601,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 // 1. Full Name
                 TextField(
                   controller: g.nameCtrl,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.slateDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Full Name',
-                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.person_outline_rounded, size: 15, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    hintStyle: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.person_outline_rounded,
+                      size: 15,
+                      color: AppTheme.slateMuted,
+                    ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isNameValid(g.nameCtrl.text),
+                      isNotEmpty: g.nameCtrl.text.trim().isNotEmpty,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: g.nameCtrl.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isNameValid(g.nameCtrl.text)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -2423,16 +3654,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 // 2. ID Number
                 TextField(
                   controller: g.idNumberCtrl,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.slateDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'ID Number (${g.idType.toUpperCase()})',
-                    hintStyle: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.badge_outlined, size: 15, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    hintStyle: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.badge_outlined,
+                      size: 15,
+                      color: AppTheme.slateMuted,
+                    ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isIdValid(g.idNumberCtrl.text, g.idType),
+                      isNotEmpty: g.idNumberCtrl.text.trim().isNotEmpty,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: g.idNumberCtrl.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isIdValid(g.idNumberCtrl.text, g.idType)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -2444,16 +3711,60 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       flex: 3,
                       child: TextField(
                         controller: g.dobCtrl,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(8),
+                          DateInputFormatter(),
+                        ],
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.slateDark,
+                          fontWeight: FontWeight.w600,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'DOB (DD/MM/YYYY)',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.calendar_today_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          hintStyle: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.calendar_today_outlined,
+                            size: 13,
+                            color: AppTheme.slateMuted,
+                          ),
+                          suffixIcon: _buildVerificationSuffix(
+                            isValid: _isDobValid(g.dobCtrl.text),
+                            isNotEmpty: g.dobCtrl.text.trim().isNotEmpty,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.slateBorder,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: g.dobCtrl.text.trim().isEmpty
+                                  ? AppTheme.slateBorder
+                                  : (_isDobValid(g.dobCtrl.text)
+                                      ? const Color(0xFF16A34A).withOpacity(0.5)
+                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.brandPrimary,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -2470,19 +3781,43 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
-                            value: ['Male', 'Female', 'Other'].contains(g.genderCtrl.text)
+                            value:
+                                [
+                                  'Male',
+                                  'Female',
+                                  'Other',
+                                  'Kids',
+                                ].contains(g.genderCtrl.text)
                                 ? g.genderCtrl.text
                                 : 'Male',
-                            icon: const Icon(Icons.arrow_drop_down_rounded, size: 18, color: AppTheme.slateMuted),
+                            icon: const Icon(
+                              Icons.arrow_drop_down_rounded,
+                              size: 18,
+                              color: AppTheme.slateMuted,
+                            ),
                             isExpanded: true,
-                            style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.slateDark,
+                              fontWeight: FontWeight.w600,
+                            ),
                             items: const [
-                              DropdownMenuItem(value: 'Male', child: Text('Male')),
-                              DropdownMenuItem(value: 'Female', child: Text('Female')),
-                              DropdownMenuItem(value: 'Other', child: Text('Other')),
+                              DropdownMenuItem(
+                                value: 'Male',
+                                child: Text('Male'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Female',
+                                child: Text('Female'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Other',
+                                child: Text('Other'),
+                              ),
                             ],
                             onChanged: (val) {
-                              if (val != null) setState(() => g.genderCtrl.text = val);
+                              if (val != null)
+                                setState(() => g.genderCtrl.text = val);
                             },
                           ),
                         ),
@@ -2499,16 +3834,54 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       flex: 3,
                       child: TextField(
                         controller: g.addressCtrl,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.slateDark,
+                          fontWeight: FontWeight.w600,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Address (from back of ID)',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.home_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          hintStyle: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.home_outlined,
+                            size: 13,
+                            color: AppTheme.slateMuted,
+                          ),
+                          suffixIcon: _buildVerificationSuffix(
+                            isValid: _isAddressValid(g.addressCtrl.text),
+                            isNotEmpty: g.addressCtrl.text.trim().isNotEmpty,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.slateBorder,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: g.addressCtrl.text.trim().isEmpty
+                                  ? AppTheme.slateBorder
+                                  : (_isAddressValid(g.addressCtrl.text)
+                                      ? const Color(0xFF16A34A).withOpacity(0.5)
+                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.brandPrimary,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -2518,16 +3891,58 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       child: TextField(
                         controller: g.pincodeCtrl,
                         keyboardType: TextInputType.number,
-                        style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(6),
+                        ],
+                        onChanged: (_) => setState(() {}),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.slateDark,
+                          fontWeight: FontWeight.w600,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Pincode',
-                          hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                          prefixIcon: const Icon(Icons.location_on_outlined, size: 13, color: AppTheme.slateMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          hintStyle: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.location_on_outlined,
+                            size: 13,
+                            color: AppTheme.slateMuted,
+                          ),
+                          suffixIcon: _buildVerificationSuffix(
+                            isValid: _isPincodeValid(g.pincodeCtrl.text),
+                            isNotEmpty: g.pincodeCtrl.text.trim().isNotEmpty,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.slateBorder,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: g.pincodeCtrl.text.trim().isEmpty
+                                  ? AppTheme.slateBorder
+                                  : (_isPincodeValid(g.pincodeCtrl.text)
+                                      ? const Color(0xFF16A34A).withOpacity(0.5)
+                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                              color: AppTheme.brandPrimary,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -2548,15 +3963,33 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(10),
                   ],
-                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark, letterSpacing: 0.8),
+                  onChanged: (_) => setState(() {}),
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.slateDark,
+                    letterSpacing: 0.8,
+                  ),
                   decoration: InputDecoration(
-                    hintText: '9850550645',
-                    hintStyle: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted, letterSpacing: 0.8),
+                    hintText: '99XXX XXXXX',
+                    hintStyle: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                      letterSpacing: 0.8,
+                    ),
                     prefixIcon: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 7,
+                      ),
                       margin: const EdgeInsets.only(right: 8),
                       decoration: const BoxDecoration(
-                        border: Border(right: BorderSide(color: AppTheme.slateBorder, width: 1)),
+                        border: Border(
+                          right: BorderSide(
+                            color: AppTheme.slateBorder,
+                            width: 1,
+                          ),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -2574,13 +4007,38 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ],
                       ),
                     ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isPhoneValid(g.phoneCtrl.text),
+                      isNotEmpty: g.phoneCtrl.text.trim().isNotEmpty,
+                    ),
                     isDense: true,
                     filled: true,
                     fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: g.phoneCtrl.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isPhoneValid(g.phoneCtrl.text)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                        width: 1.5,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -2589,16 +4047,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 TextField(
                   controller: g.emailCtrl,
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.slateDark, fontWeight: FontWeight.w600),
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.slateDark,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Email (Optional)',
-                    hintStyle: const TextStyle(fontSize: 10, color: AppTheme.slateMuted),
-                    prefixIcon: const Icon(Icons.email_outlined, size: 13, color: AppTheme.slateMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    hintStyle: const TextStyle(
+                      fontSize: 10,
+                      color: AppTheme.slateMuted,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.email_outlined,
+                      size: 13,
+                      color: AppTheme.slateMuted,
+                    ),
+                    suffixIcon: _buildVerificationSuffix(
+                      isValid: _isEmailValid(g.emailCtrl.text),
+                      isNotEmpty: g.emailCtrl.text.trim().isNotEmpty,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                     isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.brandPrimary)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: g.emailCtrl.text.trim().isEmpty
+                            ? AppTheme.slateBorder
+                            : (_isEmailValid(g.emailCtrl.text)
+                                ? const Color(0xFF16A34A).withOpacity(0.5)
+                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                        color: AppTheme.brandPrimary,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -2611,8 +4105,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
   }
 
-
-
   Widget _buildPaymentMethodButton(String id, String label, IconData icon) {
     final isSel = _paymentMethod == id;
     return Expanded(
@@ -2624,15 +4116,26 @@ class _CheckInScreenState extends State<CheckInScreen> {
           decoration: BoxDecoration(
             color: isSel ? AppTheme.brandLight : Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isSel ? AppTheme.brandPrimary : AppTheme.slateBorder, width: isSel ? 2 : 1),
+            border: Border.all(
+              color: isSel ? AppTheme.brandPrimary : AppTheme.slateBorder,
+              width: isSel ? 2 : 1,
+            ),
           ),
           child: Column(
             children: [
-              Icon(icon, size: 18, color: isSel ? AppTheme.brandPrimary : AppTheme.slateMuted),
+              Icon(
+                icon,
+                size: 18,
+                color: isSel ? AppTheme.brandPrimary : AppTheme.slateMuted,
+              ),
               const SizedBox(height: 2),
               Text(
                 label,
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isSel ? AppTheme.brandPrimary : AppTheme.slateDark),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: isSel ? AppTheme.brandPrimary : AppTheme.slateDark,
+                ),
               ),
             ],
           ),
@@ -2647,8 +4150,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
@@ -2658,7 +4171,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
   // AIRBNB STEP 1 CHOOSER HELPER METHODS
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _buildAirbnbWhereSection(List<Room> availableRooms, Room? selectedRoom) {
+  Widget _buildAirbnbWhereSection(
+    List<Room> availableRooms,
+    Room? selectedRoom,
+  ) {
     final isExpanded = _activeSection == _AirbnbStep1Section.where;
     final isReservation = _bookingMode == BookingMode.reservation;
 
@@ -2674,7 +4190,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: isExpanded ? AppTheme.brandPrimary.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.025),
+            color: isExpanded
+                ? AppTheme.brandPrimary.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.025),
             blurRadius: isExpanded ? 16 : 8,
             offset: Offset(0, isExpanded ? 4 : 2),
           ),
@@ -2684,12 +4202,17 @@ class _CheckInScreenState extends State<CheckInScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-          onTap: isExpanded ? null : () => setState(() => _activeSection = _AirbnbStep1Section.where),
+          onTap: isExpanded
+              ? null
+              : () =>
+                    setState(() => _activeSection = _AirbnbStep1Section.where),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: AnimatedCrossFade(
               duration: const Duration(milliseconds: 220),
-              crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              crossFadeState: isExpanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
               firstChild: Row(
                 children: [
                   Container(
@@ -2700,7 +4223,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      isReservation ? Icons.event_available_rounded : Icons.hotel_rounded,
+                      isReservation
+                          ? Icons.event_available_rounded
+                          : Icons.hotel_rounded,
                       size: 20,
                       color: AppTheme.brandPrimary,
                     ),
@@ -2711,7 +4236,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isReservation ? 'WHERE • AVAILABLE ROOM' : 'WHERE • VACANT ROOM',
+                          isReservation
+                              ? 'WHERE • AVAILABLE ROOM'
+                              : 'WHERE • VACANT ROOM',
                           style: GoogleFonts.inter(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
@@ -2723,7 +4250,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         Text(
                           selectedRoom != null
                               ? 'Room ${selectedRoom.roomNumber} • ${selectedRoom.categoryName} (Floor ${selectedRoom.floor})'
-                              : (isReservation ? 'Choose an available room for dates' : 'Choose a vacant room'),
+                              : (isReservation
+                                    ? 'Choose an available room for dates'
+                                    : 'Choose a vacant room'),
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -2735,7 +4264,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ],
                     ),
                   ),
-                  const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.slateMuted),
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: AppTheme.slateMuted,
+                  ),
                 ],
               ),
               secondChild: Column(
@@ -2745,7 +4277,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        isReservation ? 'Rooms Available for Dates' : 'Where will the guest stay?',
+                        isReservation
+                            ? 'Rooms Available for Dates'
+                            : 'Where will the guest stay?',
                         style: GoogleFonts.outfit(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -2754,8 +4288,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ),
                       IconButton(
                         visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.slateMuted),
-                        onPressed: () => setState(() => _activeSection = _AirbnbStep1Section.when),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: AppTheme.slateMuted,
+                        ),
+                        onPressed: () => setState(
+                          () => _activeSection = _AirbnbStep1Section.when,
+                        ),
                       ),
                     ],
                   ),
@@ -2764,7 +4304,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     isReservation
                         ? 'Showing inventory free for ${DateFormat('d MMM').format(_checkInDate)} – ${DateFormat('d MMM').format(_expectedCheckOut)}'
                         : 'Tap any vacant room to assign (automatically moves to When)',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppTheme.slateMuted,
+                    ),
                   ),
                   const SizedBox(height: 14),
 
@@ -2773,16 +4316,26 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        _buildFilterPill('All (${availableRooms.length})', _selectedFloorFilter == 0, () {
-                          setState(() => _selectedFloorFilter = 0);
-                        }),
+                        _buildFilterPill(
+                          'All (${availableRooms.length})',
+                          _selectedFloorFilter == 0,
+                          () {
+                            setState(() => _selectedFloorFilter = 0);
+                          },
+                        ),
                         ...context.read<HotelStore>().floors.map((fl) {
-                          final count = availableRooms.where((r) => r.floor == fl).length;
+                          final count = availableRooms
+                              .where((r) => r.floor == fl)
+                              .length;
                           return Padding(
                             padding: const EdgeInsets.only(left: 8),
-                            child: _buildFilterPill('Floor $fl ($count)', _selectedFloorFilter == fl, () {
-                              setState(() => _selectedFloorFilter = fl);
-                            }),
+                            child: _buildFilterPill(
+                              'Floor $fl ($count)',
+                              _selectedFloorFilter == fl,
+                              () {
+                                setState(() => _selectedFloorFilter = fl);
+                              },
+                            ),
                           );
                         }),
                       ],
@@ -2800,14 +4353,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline_rounded, color: Colors.redAccent, size: 20),
+                          const Icon(
+                            Icons.info_outline_rounded,
+                            color: Colors.redAccent,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               isReservation
                                   ? 'No rooms available for ${DateFormat('d MMM').format(_checkInDate)} – ${DateFormat('d MMM').format(_expectedCheckOut)}. Please select different dates in "When".'
                                   : 'No vacant rooms available right now. Please mark a room as cleaned.',
-                              style: GoogleFonts.inter(fontSize: 12, color: Colors.red.shade900, fontWeight: FontWeight.w600),
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: Colors.red.shade900,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -2818,7 +4379,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       builder: (context) {
                         final filtered = _selectedFloorFilter == 0
                             ? availableRooms
-                            : availableRooms.where((r) => r.floor == _selectedFloorFilter).toList();
+                            : availableRooms
+                                  .where((r) => r.floor == _selectedFloorFilter)
+                                  .toList();
 
                         if (filtered.isEmpty) {
                           return Padding(
@@ -2826,7 +4389,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             child: Center(
                               child: Text(
                                 'No available rooms on Floor $_selectedFloorFilter',
-                                style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppTheme.slateMuted,
+                                ),
                               ),
                             ),
                           );
@@ -2838,7 +4404,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             scrollDirection: Axis.horizontal,
                             physics: const BouncingScrollPhysics(),
                             itemCount: filtered.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 10),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 10),
                             itemBuilder: (context, i) {
                               final room = filtered[i];
                               final isSelected = room.id == _selectedRoomId;
@@ -2856,41 +4423,78 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   width: 130,
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: isSelected ? AppTheme.brandLight.withValues(alpha: 0.35) : Colors.white,
+                                    color: isSelected
+                                        ? AppTheme.brandLight.withValues(
+                                            alpha: 0.35,
+                                          )
+                                        : Colors.white,
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
-                                      color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+                                      color: isSelected
+                                          ? AppTheme.brandPrimary
+                                          : AppTheme.slateBorder,
                                       width: isSelected ? 2.0 : 1.0,
                                     ),
                                     boxShadow: isSelected
-                                        ? [BoxShadow(color: AppTheme.brandPrimary.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 3))]
-                                        : [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 1))],
+                                        ? [
+                                            BoxShadow(
+                                              color: AppTheme.brandPrimary
+                                                  .withValues(alpha: 0.12),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 3),
+                                            ),
+                                          ]
+                                        : [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.02,
+                                              ),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 1),
+                                            ),
+                                          ],
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
                                             room.roomNumber,
                                             style: GoogleFonts.outfit(
                                               fontSize: 18,
                                               fontWeight: FontWeight.bold,
-                                              color: isSelected ? AppTheme.brandDark : AppTheme.slateDark,
+                                              color: isSelected
+                                                  ? AppTheme.brandDark
+                                                  : AppTheme.slateDark,
                                             ),
                                           ),
                                           if (isSelected)
                                             Container(
                                               padding: const EdgeInsets.all(3),
-                                              decoration: const BoxDecoration(color: AppTheme.brandPrimary, shape: BoxShape.circle),
-                                              child: const Icon(Icons.check_rounded, size: 10, color: Colors.white),
+                                              decoration: const BoxDecoration(
+                                                color: AppTheme.brandPrimary,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.check_rounded,
+                                                size: 10,
+                                                color: Colors.white,
+                                              ),
                                             )
                                           else
                                             Text(
                                               'Fl ${room.floor}',
-                                              style: GoogleFonts.inter(fontSize: 10, color: AppTheme.slateMuted, fontWeight: FontWeight.w600),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 10,
+                                                color: AppTheme.slateMuted,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
                                         ],
                                       ),
@@ -2899,35 +4503,47 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                         style: GoogleFonts.inter(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w500,
-                                          color: isSelected ? AppTheme.brandPrimary : AppTheme.slateMuted,
+                                          color: isSelected
+                                              ? AppTheme.brandPrimary
+                                              : AppTheme.slateMuted,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
                                             '₹${room.baseRate.toInt()}/n',
                                             style: GoogleFonts.inter(
                                               fontSize: 12,
                                               fontWeight: FontWeight.bold,
-                                              color: isSelected ? AppTheme.brandDark : AppTheme.slateDark,
+                                              color: isSelected
+                                                  ? AppTheme.brandDark
+                                                  : AppTheme.slateDark,
                                             ),
                                           ),
                                           if (isReservation)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 4,
+                                                    vertical: 1,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: const Color(0xFFF0FDF4),
-                                                borderRadius: BorderRadius.circular(4),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
                                               ),
                                               child: Text(
                                                 'Free',
                                                 style: GoogleFonts.inter(
                                                   fontSize: 8.5,
                                                   fontWeight: FontWeight.bold,
-                                                  color: const Color(0xFF16A34A),
+                                                  color: const Color(
+                                                    0xFF16A34A,
+                                                  ),
                                                 ),
                                               ),
                                             ),
@@ -2967,7 +4583,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: isExpanded ? AppTheme.brandPrimary.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.025),
+            color: isExpanded
+                ? AppTheme.brandPrimary.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.025),
             blurRadius: isExpanded ? 16 : 8,
             offset: Offset(0, isExpanded ? 4 : 2),
           ),
@@ -2977,12 +4595,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-          onTap: isExpanded ? null : () => setState(() => _activeSection = _AirbnbStep1Section.when),
+          onTap: isExpanded
+              ? null
+              : () => setState(() => _activeSection = _AirbnbStep1Section.when),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: AnimatedCrossFade(
               duration: const Duration(milliseconds: 220),
-              crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              crossFadeState: isExpanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
               firstChild: Row(
                 children: [
                   Container(
@@ -2993,7 +4615,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      isReservation ? Icons.date_range_rounded : Icons.calendar_today_rounded,
+                      isReservation
+                          ? Icons.date_range_rounded
+                          : Icons.calendar_today_rounded,
                       size: 18,
                       color: AppTheme.brandPrimary,
                     ),
@@ -3004,7 +4628,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isReservation ? 'WHEN • RESERVATION PERIOD' : 'WHEN • DURATION (CHECK-IN TODAY)',
+                          isReservation
+                              ? 'WHEN • RESERVATION PERIOD'
+                              : 'WHEN • DURATION (CHECK-IN TODAY)',
                           style: GoogleFonts.inter(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
@@ -3024,7 +4650,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ],
                     ),
                   ),
-                  const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.slateMuted),
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: AppTheme.slateMuted,
+                  ),
                 ],
               ),
               secondChild: Column(
@@ -3034,7 +4663,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        isReservation ? 'Select Reservation Period' : "When's the stay?",
+                        isReservation
+                            ? 'Select Reservation Period'
+                            : "When's the stay?",
                         style: GoogleFonts.outfit(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -3043,8 +4674,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ),
                       IconButton(
                         visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.slateMuted),
-                        onPressed: () => setState(() => _activeSection = _AirbnbStep1Section.who),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: AppTheme.slateMuted,
+                        ),
+                        onPressed: () => setState(
+                          () => _activeSection = _AirbnbStep1Section.who,
+                        ),
                       ),
                     ],
                   ),
@@ -3053,7 +4690,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     isReservation
                         ? 'Select both start and end dates anytime in the future.'
                         : 'Immediate check-in starts today. Choose departure date or duration below.',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppTheme.slateMuted,
+                    ),
                   ),
                   const SizedBox(height: 14),
 
@@ -3071,22 +4711,31 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           // Arrival Date Box
                           Expanded(
                             child: InkWell(
-                              onTap: () => setState(() => _pickingStartDate = true),
+                              onTap: () =>
+                                  setState(() => _pickingStartDate = true),
                               borderRadius: BorderRadius.circular(12),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: _pickingStartDate ? Colors.white : Colors.transparent,
+                                  color: _pickingStartDate
+                                      ? Colors.white
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: _pickingStartDate ? AppTheme.brandPrimary : Colors.transparent,
+                                    color: _pickingStartDate
+                                        ? AppTheme.brandPrimary
+                                        : Colors.transparent,
                                     width: 1.5,
                                   ),
                                   boxShadow: _pickingStartDate
                                       ? [
                                           BoxShadow(
-                                            color: AppTheme.brandPrimary.withValues(alpha: 0.1),
+                                            color: AppTheme.brandPrimary
+                                                .withValues(alpha: 0.1),
                                             blurRadius: 6,
                                             offset: const Offset(0, 2),
                                           ),
@@ -3098,22 +4747,36 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   children: [
                                     Row(
                                       children: [
-                                        Icon(Icons.flight_land_rounded, size: 13, color: _pickingStartDate ? AppTheme.brandPrimary : AppTheme.slateMuted),
+                                        Icon(
+                                          Icons.flight_land_rounded,
+                                          size: 13,
+                                          color: _pickingStartDate
+                                              ? AppTheme.brandPrimary
+                                              : AppTheme.slateMuted,
+                                        ),
                                         const SizedBox(width: 4),
                                         Text(
                                           'CHECK-IN',
                                           style: GoogleFonts.inter(
                                             fontSize: 9.5,
                                             fontWeight: FontWeight.bold,
-                                            color: _pickingStartDate ? AppTheme.brandPrimary : AppTheme.slateMuted,
+                                            color: _pickingStartDate
+                                                ? AppTheme.brandPrimary
+                                                : AppTheme.slateMuted,
                                           ),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      DateFormat('EEE, d MMM').format(_checkInDate),
-                                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                      DateFormat(
+                                        'EEE, d MMM',
+                                      ).format(_checkInDate),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -3125,28 +4788,44 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           Container(
                             padding: const EdgeInsets.all(6),
                             margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                            child: const Icon(Icons.arrow_forward_rounded, size: 14, color: AppTheme.slateMuted),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 14,
+                              color: AppTheme.slateMuted,
+                            ),
                           ),
                           // Departure Date Box
                           Expanded(
                             child: InkWell(
-                              onTap: () => setState(() => _pickingStartDate = false),
+                              onTap: () =>
+                                  setState(() => _pickingStartDate = false),
                               borderRadius: BorderRadius.circular(12),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: !_pickingStartDate ? Colors.white : Colors.transparent,
+                                  color: !_pickingStartDate
+                                      ? Colors.white
+                                      : Colors.transparent,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: !_pickingStartDate ? AppTheme.brandPrimary : Colors.transparent,
+                                    color: !_pickingStartDate
+                                        ? AppTheme.brandPrimary
+                                        : Colors.transparent,
                                     width: 1.5,
                                   ),
                                   boxShadow: !_pickingStartDate
                                       ? [
                                           BoxShadow(
-                                            color: AppTheme.brandPrimary.withValues(alpha: 0.1),
+                                            color: AppTheme.brandPrimary
+                                                .withValues(alpha: 0.1),
                                             blurRadius: 6,
                                             offset: const Offset(0, 2),
                                           ),
@@ -3158,22 +4837,36 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   children: [
                                     Row(
                                       children: [
-                                        Icon(Icons.flight_takeoff_rounded, size: 13, color: !_pickingStartDate ? AppTheme.brandPrimary : AppTheme.slateMuted),
+                                        Icon(
+                                          Icons.flight_takeoff_rounded,
+                                          size: 13,
+                                          color: !_pickingStartDate
+                                              ? AppTheme.brandPrimary
+                                              : AppTheme.slateMuted,
+                                        ),
                                         const SizedBox(width: 4),
                                         Text(
                                           'CHECK-OUT',
                                           style: GoogleFonts.inter(
                                             fontSize: 9.5,
                                             fontWeight: FontWeight.bold,
-                                            color: !_pickingStartDate ? AppTheme.brandPrimary : AppTheme.slateMuted,
+                                            color: !_pickingStartDate
+                                                ? AppTheme.brandPrimary
+                                                : AppTheme.slateMuted,
                                           ),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      DateFormat('EEE, d MMM').format(_expectedCheckOut),
-                                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                      DateFormat(
+                                        'EEE, d MMM',
+                                      ).format(_expectedCheckOut),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateDark,
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -3197,8 +4890,13 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               // RESERVATION PRESETS
                               _buildPresetChip('This Weekend', false, () {
                                 final now = DateTime.now();
-                                final daysToFri = (DateTime.friday - now.weekday + 7) % 7;
-                                final start = DateTime(now.year, now.month, now.day + (daysToFri == 0 ? 7 : daysToFri));
+                                final daysToFri =
+                                    (DateTime.friday - now.weekday + 7) % 7;
+                                final start = DateTime(
+                                  now.year,
+                                  now.month,
+                                  now.day + (daysToFri == 0 ? 7 : daysToFri),
+                                );
                                 final end = start.add(const Duration(days: 2));
                                 setState(() {
                                   _checkInDate = start;
@@ -3209,8 +4907,13 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               const SizedBox(width: 8),
                               _buildPresetChip('Next Week (4N)', false, () {
                                 final now = DateTime.now();
-                                final daysToMon = (DateTime.monday - now.weekday + 7) % 7;
-                                final start = DateTime(now.year, now.month, now.day + (daysToMon == 0 ? 7 : daysToMon));
+                                final daysToMon =
+                                    (DateTime.monday - now.weekday + 7) % 7;
+                                final start = DateTime(
+                                  now.year,
+                                  now.month,
+                                  now.day + (daysToMon == 0 ? 7 : daysToMon),
+                                );
                                 final end = start.add(const Duration(days: 4));
                                 setState(() {
                                   _checkInDate = start;
@@ -3221,7 +4924,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               const SizedBox(width: 8),
                               _buildPresetChip('In 2 Weeks (3N)', false, () {
                                 final now = DateTime.now();
-                                final start = DateTime(now.year, now.month, now.day + 14);
+                                final start = DateTime(
+                                  now.year,
+                                  now.month,
+                                  now.day + 14,
+                                );
                                 final end = start.add(const Duration(days: 3));
                                 setState(() {
                                   _checkInDate = start;
@@ -3232,10 +4939,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               const SizedBox(width: 8),
                               _buildPresetChip('Next Month (3N)', false, () {
                                 final now = DateTime.now();
-                                final start = DateTime(now.year, now.month + 1, 1);
+                                final start = DateTime(
+                                  now.year,
+                                  now.month + 1,
+                                  1,
+                                );
                                 final end = start.add(const Duration(days: 3));
                                 setState(() {
-                                  _calendarMonth = DateTime(start.year, start.month, 1);
+                                  _calendarMonth = DateTime(
+                                    start.year,
+                                    start.month,
+                                    1,
+                                  );
                                   _checkInDate = start;
                                   _expectedCheckOut = end;
                                   _pickingStartDate = true;
@@ -3247,8 +4962,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               _buildPresetChip('Tonight (1N)', nights == 1, () {
                                 final today = DateTime.now();
                                 setState(() {
-                                  _checkInDate = DateTime(today.year, today.month, today.day);
-                                  _expectedCheckOut = _checkInDate.add(const Duration(days: 1));
+                                  _checkInDate = DateTime(
+                                    today.year,
+                                    today.month,
+                                    today.day,
+                                  );
+                                  _expectedCheckOut = _checkInDate.add(
+                                    const Duration(days: 1),
+                                  );
                                   _activeSection = _AirbnbStep1Section.who;
                                 });
                               }),
@@ -3256,8 +4977,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               _buildPresetChip('2 Nights', nights == 2, () {
                                 final today = DateTime.now();
                                 setState(() {
-                                  _checkInDate = DateTime(today.year, today.month, today.day);
-                                  _expectedCheckOut = _checkInDate.add(const Duration(days: 2));
+                                  _checkInDate = DateTime(
+                                    today.year,
+                                    today.month,
+                                    today.day,
+                                  );
+                                  _expectedCheckOut = _checkInDate.add(
+                                    const Duration(days: 2),
+                                  );
                                   _activeSection = _AirbnbStep1Section.who;
                                 });
                               }),
@@ -3265,8 +4992,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               _buildPresetChip('3 Nights', nights == 3, () {
                                 final today = DateTime.now();
                                 setState(() {
-                                  _checkInDate = DateTime(today.year, today.month, today.day);
-                                  _expectedCheckOut = _checkInDate.add(const Duration(days: 3));
+                                  _checkInDate = DateTime(
+                                    today.year,
+                                    today.month,
+                                    today.day,
+                                  );
+                                  _expectedCheckOut = _checkInDate.add(
+                                    const Duration(days: 3),
+                                  );
                                   _activeSection = _AirbnbStep1Section.who;
                                 });
                               }),
@@ -3274,8 +5007,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               _buildPresetChip('1 Week', nights == 7, () {
                                 final today = DateTime.now();
                                 setState(() {
-                                  _checkInDate = DateTime(today.year, today.month, today.day);
-                                  _expectedCheckOut = _checkInDate.add(const Duration(days: 7));
+                                  _checkInDate = DateTime(
+                                    today.year,
+                                    today.month,
+                                    today.day,
+                                  );
+                                  _expectedCheckOut = _checkInDate.add(
+                                    const Duration(days: 7),
+                                  );
                                   _activeSection = _AirbnbStep1Section.who;
                                 });
                               }),
@@ -3292,11 +5031,21 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
-                      onPressed: () => setState(() => _activeSection = _AirbnbStep1Section.who),
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 14, color: AppTheme.brandPrimary),
+                      onPressed: () => setState(
+                        () => _activeSection = _AirbnbStep1Section.who,
+                      ),
+                      icon: const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 14,
+                        color: AppTheme.brandPrimary,
+                      ),
                       label: Text(
                         'Confirm Dates & Continue to Who',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.brandPrimary,
+                        ),
                       ),
                     ),
                   ),
@@ -3310,8 +5059,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
   }
 
   Widget _buildEmbeddedAirbnbCalendar() {
-    final daysInMonth = DateTime(_calendarMonth.year, _calendarMonth.month + 1, 0).day;
-    final firstWeekday = DateTime(_calendarMonth.year, _calendarMonth.month, 1).weekday % 7; // 0 = Sun
+    final daysInMonth = DateTime(
+      _calendarMonth.year,
+      _calendarMonth.month + 1,
+      0,
+    ).day;
+    final firstWeekday =
+        DateTime(_calendarMonth.year, _calendarMonth.month, 1).weekday %
+        7; // 0 = Sun
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -3330,23 +5085,43 @@ class _CheckInScreenState extends State<CheckInScreen> {
             children: [
               IconButton(
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.chevron_left_rounded, color: AppTheme.slateDark, size: 22),
+                icon: const Icon(
+                  Icons.chevron_left_rounded,
+                  color: AppTheme.slateDark,
+                  size: 22,
+                ),
                 onPressed: () {
                   setState(() {
-                    _calendarMonth = DateTime(_calendarMonth.year, _calendarMonth.month - 1, 1);
+                    _calendarMonth = DateTime(
+                      _calendarMonth.year,
+                      _calendarMonth.month - 1,
+                      1,
+                    );
                   });
                 },
               ),
               Text(
                 DateFormat('MMMM yyyy').format(_calendarMonth),
-                style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                style: GoogleFonts.outfit(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.slateDark,
+                ),
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.chevron_right_rounded, color: AppTheme.slateDark, size: 22),
+                icon: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.slateDark,
+                  size: 22,
+                ),
                 onPressed: () {
                   setState(() {
-                    _calendarMonth = DateTime(_calendarMonth.year, _calendarMonth.month + 1, 1);
+                    _calendarMonth = DateTime(
+                      _calendarMonth.year,
+                      _calendarMonth.month + 1,
+                      1,
+                    );
                   });
                 },
               ),
@@ -3364,7 +5139,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   child: Center(
                     child: Text(
                       d,
-                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.slateMuted),
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.slateMuted,
+                      ),
                     ),
                   ),
                 );
@@ -3386,12 +5165,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
               if (dayNum < 1 || dayNum > daysInMonth) {
                 return const SizedBox.shrink();
               }
-              final date = DateTime(_calendarMonth.year, _calendarMonth.month, dayNum);
+              final date = DateTime(
+                _calendarMonth.year,
+                _calendarMonth.month,
+                dayNum,
+              );
               final isPast = date.isBefore(today);
 
               final isStart = date.isAtSameMomentAs(_checkInDate);
               final isEnd = date.isAtSameMomentAs(_expectedCheckOut);
-              final isMiddle = date.isAfter(_checkInDate) && date.isBefore(_expectedCheckOut);
+              final isMiddle =
+                  date.isAfter(_checkInDate) &&
+                  date.isBefore(_expectedCheckOut);
               final isSelected = isStart || isEnd;
 
               Widget? bridge;
@@ -3399,12 +5184,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 if (isStart) {
                   bridge = Align(
                     alignment: Alignment.centerRight,
-                    child: Container(width: 20, height: 32, color: AppTheme.brandLight),
+                    child: Container(
+                      width: 20,
+                      height: 32,
+                      color: AppTheme.brandLight,
+                    ),
                   );
                 } else if (isEnd) {
                   bridge = Align(
                     alignment: Alignment.centerLeft,
-                    child: Container(width: 20, height: 32, color: AppTheme.brandLight),
+                    child: Container(
+                      width: 20,
+                      height: 32,
+                      color: AppTheme.brandLight,
+                    ),
                   );
                 } else if (isMiddle) {
                   bridge = Container(height: 32, color: AppTheme.brandLight);
@@ -3421,32 +5214,52 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             // Immediate Check-In: check-in is today, date picked is checkout!
                             if (date.isAtSameMomentAs(today)) {
                               _checkInDate = today;
-                              _expectedCheckOut = today.add(const Duration(days: 1));
+                              _expectedCheckOut = today.add(
+                                const Duration(days: 1),
+                              );
                             } else {
                               _checkInDate = today;
                               _expectedCheckOut = date;
                             }
-                            Future.delayed(const Duration(milliseconds: 260), () {
-                              if (mounted) setState(() => _activeSection = _AirbnbStep1Section.who);
-                            });
+                            Future.delayed(
+                              const Duration(milliseconds: 260),
+                              () {
+                                if (mounted)
+                                  setState(
+                                    () => _activeSection =
+                                        _AirbnbStep1Section.who,
+                                  );
+                              },
+                            );
                           } else {
                             // Advance Reservation: can pick any future start and end date!
                             if (_pickingStartDate) {
                               _checkInDate = date;
                               if (!_expectedCheckOut.isAfter(date)) {
-                                _expectedCheckOut = date.add(const Duration(days: 1));
+                                _expectedCheckOut = date.add(
+                                  const Duration(days: 1),
+                                );
                               }
                               _pickingStartDate = false;
                             } else {
                               if (date.isAfter(_checkInDate)) {
                                 _expectedCheckOut = date;
                                 _pickingStartDate = true;
-                                Future.delayed(const Duration(milliseconds: 260), () {
-                                  if (mounted) setState(() => _activeSection = _AirbnbStep1Section.who);
-                                });
+                                Future.delayed(
+                                  const Duration(milliseconds: 260),
+                                  () {
+                                    if (mounted)
+                                      setState(
+                                        () => _activeSection =
+                                            _AirbnbStep1Section.who,
+                                      );
+                                  },
+                                );
                               } else {
                                 _checkInDate = date;
-                                _expectedCheckOut = date.add(const Duration(days: 1));
+                                _expectedCheckOut = date.add(
+                                  const Duration(days: 1),
+                                );
                                 _pickingStartDate = false;
                               }
                             }
@@ -3461,10 +5274,15 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(
-                        color: isSelected ? AppTheme.brandPrimary : Colors.transparent,
+                        color: isSelected
+                            ? AppTheme.brandPrimary
+                            : Colors.transparent,
                         shape: BoxShape.circle,
                         border: (date.isAtSameMomentAs(today) && !isSelected)
-                            ? Border.all(color: AppTheme.brandPrimary, width: 1.5)
+                            ? Border.all(
+                                color: AppTheme.brandPrimary,
+                                width: 1.5,
+                              )
                             : null,
                       ),
                       child: Center(
@@ -3472,13 +5290,19 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           '$dayNum',
                           style: GoogleFonts.inter(
                             fontSize: 12,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.w600,
                             color: isSelected
                                 ? Colors.white
                                 : (isPast
-                                    ? const Color(0xFFCBD5E1)
-                                    : (isMiddle ? AppTheme.brandDark : AppTheme.slateDark)),
-                            decoration: isPast ? TextDecoration.lineThrough : null,
+                                      ? const Color(0xFFCBD5E1)
+                                      : (isMiddle
+                                            ? AppTheme.brandDark
+                                            : AppTheme.slateDark)),
+                            decoration: isPast
+                                ? TextDecoration.lineThrough
+                                : null,
                             decorationColor: const Color(0xFFCBD5E1),
                           ),
                         ),
@@ -3509,7 +5333,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: isExpanded ? AppTheme.brandPrimary.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.025),
+            color: isExpanded
+                ? AppTheme.brandPrimary.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.025),
             blurRadius: isExpanded ? 16 : 8,
             offset: Offset(0, isExpanded ? 4 : 2),
           ),
@@ -3519,12 +5345,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-          onTap: isExpanded ? null : () => setState(() => _activeSection = _AirbnbStep1Section.who),
+          onTap: isExpanded
+              ? null
+              : () => setState(() => _activeSection = _AirbnbStep1Section.who),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: AnimatedCrossFade(
               duration: const Duration(milliseconds: 220),
-              crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              crossFadeState: isExpanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
               firstChild: Row(
                 children: [
                   Container(
@@ -3534,7 +5364,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       color: AppTheme.brandLight,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.group_outlined, size: 18, color: AppTheme.brandPrimary),
+                    child: const Icon(
+                      Icons.group_outlined,
+                      size: 18,
+                      color: AppTheme.brandPrimary,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -3562,7 +5396,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ],
                     ),
                   ),
-                  const Icon(Icons.keyboard_arrow_down_rounded, color: AppTheme.slateMuted),
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: AppTheme.slateMuted,
+                  ),
                 ],
               ),
               secondChild: Column(
@@ -3580,14 +5417,21 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: AppTheme.brandLight,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           '$_totalGuests guest${_totalGuests > 1 ? "s" : ""}',
-                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.brandPrimary,
+                          ),
                         ),
                       ),
                     ],
@@ -3595,7 +5439,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   const SizedBox(height: 2),
                   Text(
                     '1 adult is selected by default',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppTheme.slateMuted,
+                    ),
                   ),
                   const SizedBox(height: 18),
 
@@ -3606,8 +5453,21 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Adults', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
-                          Text('Ages 13 or above', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
+                          Text(
+                            'Adults',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.slateDark,
+                            ),
+                          ),
+                          Text(
+                            'Ages 13 or above',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: AppTheme.slateMuted,
+                            ),
+                          ),
                         ],
                       ),
                       Row(
@@ -3615,21 +5475,29 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           _buildAirbnbCounterButton(
                             icon: Icons.remove_rounded,
                             enabled: _numAdults > 1,
-                            onTap: () => setState(() => _numAdults = (_numAdults - 1).clamp(1, 10)),
+                            onTap: () => setState(
+                              () => _numAdults = (_numAdults - 1).clamp(1, 10),
+                            ),
                           ),
                           SizedBox(
                             width: 36,
                             child: Center(
                               child: Text(
                                 '$_numAdults',
-                                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
                               ),
                             ),
                           ),
                           _buildAirbnbCounterButton(
                             icon: Icons.add_rounded,
                             enabled: _numAdults < 10,
-                            onTap: () => setState(() => _numAdults = (_numAdults + 1).clamp(1, 10)),
+                            onTap: () => setState(
+                              () => _numAdults = (_numAdults + 1).clamp(1, 10),
+                            ),
                           ),
                         ],
                       ),
@@ -3644,8 +5512,21 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Children', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.slateDark)),
-                          Text('Ages 0 to 12', style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted)),
+                          Text(
+                            'Children',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.slateDark,
+                            ),
+                          ),
+                          Text(
+                            'Ages 0 to 12',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: AppTheme.slateMuted,
+                            ),
+                          ),
                         ],
                       ),
                       Row(
@@ -3653,21 +5534,29 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           _buildAirbnbCounterButton(
                             icon: Icons.remove_rounded,
                             enabled: _numKids > 0,
-                            onTap: () => setState(() => _numKids = (_numKids - 1).clamp(0, 10)),
+                            onTap: () => setState(
+                              () => _numKids = (_numKids - 1).clamp(0, 10),
+                            ),
                           ),
                           SizedBox(
                             width: 36,
                             child: Center(
                               child: Text(
                                 '$_numKids',
-                                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
                               ),
                             ),
                           ),
                           _buildAirbnbCounterButton(
                             icon: Icons.add_rounded,
                             enabled: _numKids < 10,
-                            onTap: () => setState(() => _numKids = (_numKids + 1).clamp(0, 10)),
+                            onTap: () => setState(
+                              () => _numKids = (_numKids + 1).clamp(0, 10),
+                            ),
                           ),
                         ],
                       ),
@@ -3682,7 +5571,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
   }
 
-  Widget _buildAirbnbCounterButton({required IconData icon, required bool enabled, required VoidCallback onTap}) {
+  Widget _buildAirbnbCounterButton({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
@@ -3692,7 +5585,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
           shape: BoxShape.circle,
           color: enabled ? AppTheme.brandLight : const Color(0xFFF1F5F9),
           border: Border.all(
-            color: enabled ? AppTheme.brandPrimary.withValues(alpha: 0.35) : AppTheme.slateBorder,
+            color: enabled
+                ? AppTheme.brandPrimary.withValues(alpha: 0.35)
+                : AppTheme.slateBorder,
             width: 1.2,
           ),
         ),
@@ -3725,7 +5620,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     color: AppTheme.brandPrimary.withValues(alpha: 0.22),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
-                  )
+                  ),
                 ]
               : null,
         ),
@@ -3759,7 +5654,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     color: AppTheme.brandPrimary.withValues(alpha: 0.22),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
-                  )
+                  ),
                 ]
               : null,
         ),
@@ -3782,12 +5677,15 @@ class _CheckInScreenState extends State<CheckInScreen> {
     required bool isNoRooms,
     required HotelStore store,
   }) {
-    final double advanceAmt = double.tryParse(_advanceController.text) ?? totalEstimatedAmount;
+    final double advanceAmt =
+        double.tryParse(_advanceController.text) ?? totalEstimatedAmount;
 
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: AppTheme.slateBorder, width: 1.2)),
+        border: Border(
+          top: BorderSide(color: AppTheme.slateBorder, width: 1.2),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black12,
@@ -3819,7 +5717,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ),
                       const SizedBox(width: 5),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(6),
@@ -3841,8 +5742,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     _currentStep == 1
                         ? '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : "Select room"} • $nights night${nights > 1 ? "s" : ""} • $_totalGuests guest${_totalGuests > 1 ? "s" : ""}'
                         : _currentStep == 2
-                            ? '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_nameController.text.trim().isNotEmpty ? _nameController.text.trim() : "Primary Guest"} • $nights night${nights > 1 ? "s" : ""}'
-                            : '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_paymentMethod.toUpperCase()} • Bal: ₹${(totalEstimatedAmount - advanceAmt).clamp(0, 999999).toInt()}',
+                        ? '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_nameController.text.trim().isNotEmpty ? _nameController.text.trim() : "Primary Guest"} • $nights night${nights > 1 ? "s" : ""}'
+                        : '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_paymentMethod.toUpperCase()} • Bal: ₹${(totalEstimatedAmount - advanceAmt).clamp(0, 999999).toInt()}',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: AppTheme.slateMuted,
@@ -3861,7 +5762,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.onBack != null || Navigator.of(context).canPop()) ...[
+                  if (widget.onBack != null ||
+                      Navigator.of(context).canPop()) ...[
                     OutlinedButton(
                       onPressed: () {
                         if (widget.onBack != null) {
@@ -3872,16 +5774,28 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       },
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size(0, 42),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        side: const BorderSide(color: AppTheme.slateBorder, width: 1.2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        side: const BorderSide(
+                          color: AppTheme.slateBorder,
+                          width: 1.2,
+                        ),
                         backgroundColor: Colors.white,
                         foregroundColor: AppTheme.slateDark,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.slateDark),
+                          const Icon(
+                            Icons.arrow_back_rounded,
+                            size: 14,
+                            color: AppTheme.slateDark,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             'Back',
@@ -3899,13 +5813,20 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   PressableScale(
                     pressedScale: 0.95,
                     child: ElevatedButton(
-                      onPressed: isNoRooms ? null : () => setState(() => _currentStep = 2),
+                      onPressed: isNoRooms
+                          ? null
+                          : () => setState(() => _currentStep = 2),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.brandPrimary,
                         foregroundColor: Colors.white,
                         minimumSize: const Size(0, 42),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         elevation: 0,
                       ),
                       child: Row(
@@ -3934,16 +5855,28 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     onPressed: () => setState(() => _currentStep = 1),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(0, 42),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      side: const BorderSide(color: AppTheme.slateBorder, width: 1.2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      side: const BorderSide(
+                        color: AppTheme.slateBorder,
+                        width: 1.2,
+                      ),
                       backgroundColor: Colors.white,
                       foregroundColor: AppTheme.slateDark,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.slateDark),
+                        const Icon(
+                          Icons.arrow_back_rounded,
+                          size: 14,
+                          color: AppTheme.slateDark,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           'Back',
@@ -3961,12 +5894,48 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     pressedScale: 0.95,
                     child: ElevatedButton(
                       onPressed: () {
-                        if (_nameController.text.trim().isEmpty) {
+                        if (!_isNameValid(_nameController.text)) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(_bookingMode == BookingMode.reservation
-                                  ? 'Please enter guest name to proceed to deposit & confirmation'
-                                  : 'Please enter guest name to proceed to payment'),
+                            const SnackBar(
+                              content: Text('Please enter a valid guest name (minimum 2 characters)'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+                        if (_dobController.text.trim().isNotEmpty && !_isDobValid(_dobController.text)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter a valid DOB in DD/MM/YYYY format'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+                        if (_phoneController.text.replaceAll(RegExp(r'\D'), '').isNotEmpty &&
+                            !_isPhoneValid(_phoneController.text)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter a valid 10-digit phone number'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+                        if (_pincodeController.text.replaceAll(RegExp(r'\D'), '').isNotEmpty &&
+                            !_isPincodeValid(_pincodeController.text)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter a valid 6-digit pincode'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+                        if (_emailController.text.trim().isNotEmpty && !_isEmailValid(_emailController.text)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please enter a valid email address'),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
@@ -3978,15 +5947,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         backgroundColor: AppTheme.brandPrimary,
                         foregroundColor: Colors.white,
                         minimumSize: const Size(0, 42),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         elevation: 0,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            _bookingMode == BookingMode.reservation ? 'Next: Deposit' : 'Next: Payment',
+                            _bookingMode == BookingMode.reservation
+                                ? 'Next: Deposit'
+                                : 'Next: Payment',
                             style: GoogleFonts.inter(
                               fontSize: 12.5,
                               fontWeight: FontWeight.bold,
@@ -4008,16 +5984,28 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     onPressed: () => setState(() => _currentStep = 2),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(0, 42),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      side: const BorderSide(color: AppTheme.slateBorder, width: 1.2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      side: const BorderSide(
+                        color: AppTheme.slateBorder,
+                        width: 1.2,
+                      ),
                       backgroundColor: Colors.white,
                       foregroundColor: AppTheme.slateDark,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.slateDark),
+                        const Icon(
+                          Icons.arrow_back_rounded,
+                          size: 14,
+                          color: AppTheme.slateDark,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           'Back',
@@ -4036,25 +6024,42 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     child: ElevatedButton.icon(
                       onPressed: selectedRoom == null
                           ? null
-                          : () => _handlePaymentAndCheckIn(store, selectedRoom, totalEstimatedAmount),
+                          : () => _handlePaymentAndCheckIn(
+                              store,
+                              selectedRoom,
+                              totalEstimatedAmount,
+                            ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _paymentMethod == 'upi' ? const Color(0xFF16A34A) : AppTheme.brandPrimary,
+                        backgroundColor: _paymentMethod == 'upi'
+                            ? const Color(0xFF16A34A)
+                            : AppTheme.brandPrimary,
                         foregroundColor: Colors.white,
                         minimumSize: const Size(0, 42),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         elevation: 0,
                       ),
                       icon: Icon(
                         _paymentMethod == 'upi'
                             ? Icons.qr_code_2_rounded
-                            : (_bookingMode == BookingMode.reservation ? Icons.event_available_rounded : Icons.check_circle_rounded),
+                            : (_bookingMode == BookingMode.reservation
+                                  ? Icons.event_available_rounded
+                                  : Icons.check_circle_rounded),
                         size: 15,
                       ),
                       label: Text(
                         _paymentMethod == 'upi'
-                            ? (_bookingMode == BookingMode.reservation ? 'Show QR & Pay Deposit' : 'Show QR & Pay')
-                            : (_bookingMode == BookingMode.reservation ? 'Confirm Reservation' : 'Complete Check-In'),
+                            ? (_bookingMode == BookingMode.reservation
+                                  ? 'Show QR & Pay Deposit'
+                                  : 'Show QR & Pay')
+                            : (_bookingMode == BookingMode.reservation
+                                  ? 'Confirm Reservation'
+                                  : 'Complete Check-In'),
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -4070,7 +6075,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
   }
 }
-
 
 /// Data holder for an additional (co-)guest with full OCR state.
 class _ExtraGuest {

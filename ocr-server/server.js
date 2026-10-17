@@ -9,6 +9,7 @@ const apiRoutes = require("./src/routes/api.routes");
 const whatsappRoutes = require("./src/routes/whatsapp.routes");
 const whatsappService = require("./src/services/whatsapp.service");
 const { errorHandler } = require("./src/middleware/error.middleware");
+const { requireSupabaseSession } = require("./src/middleware/require-supabase-session");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +26,13 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+app.use("/api/whatsapp", (req, res, next) => {
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    console.log(`[WhatsApp API] ${req.method} ${req.path} ${res.statusCode} ${Date.now() - startedAt}ms`);
+  });
+  next();
+});
 
 // Serve processed files statically (for debugging/download)
 app.use("/processed", express.static(path.join(__dirname, "processed")));
@@ -59,7 +67,7 @@ app.get("/", (req, res) => {
 
 // API Routes
 app.use("/api", apiRoutes);
-app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/whatsapp", requireSupabaseSession, whatsappRoutes);
 
 // Global error handler
 app.use(errorHandler);
