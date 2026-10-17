@@ -20,7 +20,8 @@ class AuthResult {
 }
 
 class AuthService {
-  static const String _keyOnboardingCompleted = 'easeinn_onboarding_completed_v1';
+  static const String _keyOnboardingCompleted =
+      'easeinn_onboarding_completed_v1';
   static const String _keyIsAuthenticated = 'easeinn_is_authenticated_v1';
   static const String _keyUserEmail = 'easeinn_user_email';
   static const String _keyUserName = 'easeinn_user_name';
@@ -51,7 +52,10 @@ class AuthService {
   }
 
   /// Update cached property details when switching properties
-  Future<void> updateCachedProperty(String propertyId, String propertyName) async {
+  Future<void> updateCachedProperty(
+    String propertyId,
+    String propertyName,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyPropertyId, propertyId);
     await prefs.setString(_keyPropertyName, propertyName);
@@ -100,25 +104,30 @@ class AuthService {
             debugPrint('[AuthService] Supabase profile fetch notice: $e');
           }
 
-          final fullName = profileRes?['full_name'] as String? ??
+          final fullName =
+              profileRes?['full_name'] as String? ??
               prefs.getString(_keyUserName) ??
               'General Manager';
-          final role = profileRes?['role'] as String? ??
+          final role =
+              profileRes?['role'] as String? ??
               prefs.getString(_keyUserRole) ??
               'General Manager / Owner';
           final propData = profileRes?['properties'] as Map<String, dynamic>?;
 
           // Determine property ID - NEVER allow prop-001 for real users!
-          var assignedPropId = profileRes?['property_id']?.toString() ??
+          var assignedPropId =
+              profileRes?['property_id']?.toString() ??
               propData?['id']?.toString() ??
               prefs.getString(_keyPropertyId);
 
           if (assignedPropId == null || assignedPropId == 'prop-001') {
-            assignedPropId = 'prop-${user.id.length >= 8 ? user.id.substring(0, 8) : userEmail.hashCode.abs()}';
+            assignedPropId =
+                'prop-${user.id.length >= 8 ? user.id.substring(0, 8) : userEmail.hashCode.abs()}';
             await prefs.setString(_keyPropertyId, assignedPropId);
           }
 
-          final propName = propData?['name']?.toString() ??
+          final propName =
+              propData?['name']?.toString() ??
               prefs.getString(_keyPropertyName) ??
               'My Hotel';
 
@@ -172,7 +181,8 @@ class AuthService {
       var cachedPropId = prefs.getString(_keyPropertyId);
 
       // Demo account
-      if (cachedEmail != null && cachedEmail.trim().toLowerCase() == 'frontdesk@easeinn.com') {
+      if (cachedEmail != null &&
+          cachedEmail.trim().toLowerCase() == 'frontdesk@easeinn.com') {
         store.loadDemoAccount();
         return true;
       }
@@ -180,7 +190,8 @@ class AuthService {
       // Real user account
       if (cachedEmail != null && cachedEmail.isNotEmpty) {
         if (cachedPropId == null || cachedPropId == 'prop-001') {
-          cachedPropId = 'prop-${cachedEmail.trim().toLowerCase().hashCode.abs()}';
+          cachedPropId =
+              'prop-${cachedEmail.trim().toLowerCase().hashCode.abs()}';
           await prefs.setString(_keyPropertyId, cachedPropId);
         }
 
@@ -248,7 +259,8 @@ class AuthService {
           }
 
           // Real user sign in
-          String activePropId = 'prop-${user.id.length >= 8 ? user.id.substring(0, 8) : trimmedEmail.hashCode.abs()}';
+          String activePropId =
+              'prop-${user.id.length >= 8 ? user.id.substring(0, 8) : trimmedEmail.hashCode.abs()}';
           String activePropName = 'My Hotel';
           String fullName = 'General Manager';
           String role = 'General Manager / Owner';
@@ -264,8 +276,10 @@ class AuthService {
             if (profileRes != null) {
               fullName = profileRes['full_name'] as String? ?? fullName;
               role = profileRes['role'] as String? ?? role;
-              final propData = profileRes['properties'] as Map<String, dynamic>?;
-              activePropId = profileRes['property_id']?.toString() ??
+              final propData =
+                  profileRes['properties'] as Map<String, dynamic>?;
+              activePropId =
+                  profileRes['property_id']?.toString() ??
                   propData?['id']?.toString() ??
                   activePropId;
 
@@ -320,7 +334,10 @@ class AuthService {
       } catch (e) {
         debugPrint('[AuthService] Network/Auth error: $e');
         if (trimmedEmail != 'frontdesk@easeinn.com') {
-          return AuthResult(success: false, errorMessage: 'Network error: Please verify your connection.');
+          return AuthResult(
+            success: false,
+            errorMessage: 'Network error: Please verify your connection.',
+          );
         }
       }
     }
@@ -341,9 +358,11 @@ class AuthService {
     // Offline / Locally registered account fallback
     final prefs = await SharedPreferences.getInstance();
     final cachedEmail = prefs.getString(_keyUserEmail);
-    if (cachedEmail != null && cachedEmail.trim().toLowerCase() == trimmedEmail) {
+    if (cachedEmail != null &&
+        cachedEmail.trim().toLowerCase() == trimmedEmail) {
       final cachedName = prefs.getString(_keyUserName) ?? 'General Manager';
-      final cachedRole = prefs.getString(_keyUserRole) ?? 'General Manager / Owner';
+      final cachedRole =
+          prefs.getString(_keyUserRole) ?? 'General Manager / Owner';
       final cachedPropName = prefs.getString(_keyPropertyName) ?? 'My Hotel';
       var cachedPropId = prefs.getString(_keyPropertyId);
       if (cachedPropId == null || cachedPropId == 'prop-001') {
@@ -419,16 +438,20 @@ class AuthService {
           // 2. Insert into properties table
           String? createdPropertyId;
           try {
-            final propertyInsert = await client.from('properties').insert({
-              'name': hotelName.trim(),
-              'city': city.trim(),
-              'state': state.trim(),
-              'address': address.trim(),
-              'phone': phone.trim(),
-              'email': trimmedEmail,
-              'currency': 'INR',
-              'timezone': 'Asia/Kolkata',
-            }).select('id').single();
+            final propertyInsert = await client
+                .from('properties')
+                .insert({
+                  'name': hotelName.trim(),
+                  'city': city.trim(),
+                  'state': state.trim(),
+                  'address': address.trim(),
+                  'phone': phone.trim(),
+                  'email': trimmedEmail,
+                  'currency': 'INR',
+                  'timezone': 'Asia/Kolkata',
+                })
+                .select('id')
+                .single();
 
             createdPropertyId = propertyInsert['id']?.toString();
 
@@ -445,7 +468,9 @@ class AuthService {
           }
 
           // 4. Update local HotelStore state with guaranteed clean property
-          final assignedPropId = createdPropertyId ?? 'prop-${DateTime.now().millisecondsSinceEpoch}';
+          final assignedPropId =
+              createdPropertyId ??
+              'prop-${DateTime.now().millisecondsSinceEpoch}';
           final newProp = Property(
             id: assignedPropId,
             name: hotelName.trim(),
@@ -456,8 +481,12 @@ class AuthService {
             phone: phone.trim(),
             email: trimmedEmail,
             totalRooms: totalRooms > 0 ? totalRooms : 12,
-            upiId: upiId.trim().isNotEmpty ? upiId.trim() : 'piyushpal427@okaxis',
-            upiPayeeName: upiPayeeName.trim().isNotEmpty ? upiPayeeName.trim() : hotelName.trim(),
+            upiId: upiId.trim().isNotEmpty
+                ? upiId.trim()
+                : 'piyushpal427@okaxis',
+            upiPayeeName: upiPayeeName.trim().isNotEmpty
+                ? upiPayeeName.trim()
+                : hotelName.trim(),
           );
 
           // CRITICAL: Initialize 100% clean account with ZERO demo seed data!
@@ -511,7 +540,9 @@ class AuthService {
       email: trimmedEmail,
       totalRooms: totalRooms > 0 ? totalRooms : 12,
       upiId: upiId.trim().isNotEmpty ? upiId.trim() : 'piyushpal427@okaxis',
-      upiPayeeName: upiPayeeName.trim().isNotEmpty ? upiPayeeName.trim() : hotelName.trim(),
+      upiPayeeName: upiPayeeName.trim().isNotEmpty
+          ? upiPayeeName.trim()
+          : hotelName.trim(),
     );
 
     // CRITICAL: Initialize 100% clean account with ZERO demo seed data!

@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'backend_config.dart';
-import 'supabase_service.dart';
 
 class WhatsAppStatusData {
   final bool success;
@@ -185,31 +184,12 @@ class WhatsAppService {
     return _cachedBaseUrl ?? defaultBaseUrl;
   }
 
-  static Future<Map<String, String>> _requestHeaders({
+  static Map<String, String> _requestHeaders({
     bool json = false,
   }) async {
-    final headers = <String, String>{
+    return <String, String>{
       if (json) 'Content-Type': 'application/json',
     };
-    final client = SupabaseConfig.client;
-    var session = client?.auth.currentSession;
-    final expiresAt = session?.expiresAt;
-    if (client != null &&
-        session != null &&
-        expiresAt != null &&
-        expiresAt <= DateTime.now().millisecondsSinceEpoch ~/ 1000 + 60) {
-      try {
-        session = (await client.auth.refreshSession()).session ??
-            client.auth.currentSession;
-      } catch (error) {
-        debugPrint('[WhatsAppService] Could not refresh EaseInn session: $error');
-      }
-    }
-    final accessToken = session?.accessToken;
-    if (accessToken != null && accessToken.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $accessToken';
-    }
-    return headers;
   }
 
   static Future<void> loadBaseUrl() async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/hotel_store.dart';
@@ -26,6 +27,7 @@ class _HomeShellState extends State<HomeShell> {
   String? _preselectedRoomId;
   BookingMode _initialBookingMode = BookingMode.checkIn;
   bool _redirectedFromRooms = false;
+  DateTime? _lastHomeBackPress;
 
   @override
   void initState() {
@@ -33,7 +35,13 @@ class _HomeShellState extends State<HomeShell> {
     _currentIndex = widget.initialIndex;
   }
 
-  void _onTabSelected(int index, {String? preselectedRoomId, bool fromRooms = false, BookingMode? initialMode}) {
+  void _onTabSelected(
+    int index, {
+    String? preselectedRoomId,
+    bool fromRooms = false,
+    BookingMode? initialMode,
+  }) {
+    _lastHomeBackPress = null;
     setState(() {
       _preselectedRoomId = preselectedRoomId;
       _redirectedFromRooms = fromRooms;
@@ -42,15 +50,60 @@ class _HomeShellState extends State<HomeShell> {
     });
   }
 
+  void _handleSystemBack() {
+    if (_currentIndex != 0) {
+      setState(() {
+        _currentIndex = 0;
+        _preselectedRoomId = null;
+        _redirectedFromRooms = false;
+        _initialBookingMode = BookingMode.checkIn;
+      });
+      _lastHomeBackPress = null;
+      return;
+    }
+
+    final now = DateTime.now();
+    final lastPress = _lastHomeBackPress;
+    if (lastPress != null &&
+        now.difference(lastPress) <= const Duration(seconds: 2)) {
+      SystemNavigator.pop();
+      return;
+    }
+
+    _lastHomeBackPress = now;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Press back again to exit EaseInn.'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = context.watch<HotelStore>();
 
     final screens = [
       DashboardScreen(
-        onNavigateTab: (idx, {initialMode, preselectedRoomId}) => _onTabSelected(idx, initialMode: initialMode, preselectedRoomId: preselectedRoomId),
+        onNavigateTab: (idx, {initialMode, preselectedRoomId}) =>
+            _onTabSelected(
+              idx,
+              initialMode: initialMode,
+              preselectedRoomId: preselectedRoomId,
+            ),
       ),
-      RoomsScreen(onNavigateTab: (idx, {preselectedRoomId, initialMode}) => _onTabSelected(idx, preselectedRoomId: preselectedRoomId, fromRooms: true, initialMode: initialMode)),
+      RoomsScreen(
+        onNavigateTab: (idx, {preselectedRoomId, initialMode}) =>
+            _onTabSelected(
+              idx,
+              preselectedRoomId: preselectedRoomId,
+              fromRooms: true,
+              initialMode: initialMode,
+            ),
+      ),
       CheckInScreen(
         key: ValueKey('checkin_${_initialBookingMode}_$_preselectedRoomId'),
         preselectedRoomId: _preselectedRoomId,
@@ -70,195 +123,238 @@ class _HomeShellState extends State<HomeShell> {
       const GuestsScreen(),
     ];
 
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 16,
-        title: InkWell(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const HotelsScreen()),
-            );
-          },
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.brandPrimary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.2), width: 0.8),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.asset(
-                      'assets/images/easeinn_logo.png',
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.hotel_rounded, color: AppTheme.brandPrimary, size: 18),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              store.currentProperty.name,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.slateDark,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: AppTheme.slateMuted),
-                        ],
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _handleSystemBack();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: 16,
+          title: InkWell(
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const HotelsScreen()));
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.brandPrimary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppTheme.brandPrimary.withValues(alpha: 0.2),
+                        width: 0.8,
                       ),
-                      Text(
-                        '${store.currentProperty.city} • ${store.rooms.length} Rooms',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.slateMuted,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.asset(
+                        'assets/images/easeinn_logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.hotel_rounded,
+                          color: AppTheme.brandPrimary,
+                          size: 18,
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chat_rounded, color: Color(0xFF25D366), size: 21),
-            tooltip: 'WhatsApp Automation',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const WhatsAppScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.calendar_month_rounded, color: AppTheme.brandPrimary, size: 22),
-            tooltip: 'Dynamic Room Timeline & Calendar',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CalendarScreen()),
-              );
-            },
-          ),
-          // Shift Staff Badge / Manager Profile Button
-          InkWell(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ManagerProfileScreen()),
-              );
-            },
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.only(right: 16, left: 4),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 16,
-                    backgroundColor: AppTheme.brandPrimary,
-                    child: Text(
-                      store.staffName.isNotEmpty ? store.staffName.substring(0, 1) : 'D',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                store.currentProperty.name,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              size: 16,
+                              color: AppTheme.slateMuted,
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '${store.currentProperty.city} • ${store.rooms.length} Rooms',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
           ),
-        ],
-      ),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: Row(
-            children: [
-              // Left Floating Pill Container holding primary tabs
-              Expanded(
-                child: Container(
-                  height: 64,
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(color: const Color(0xFFE8ECEF), width: 1.2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 18,
-                        offset: const Offset(0, 6),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.02),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+          actions: [
+            IconButton(
+              icon: const Icon(
+                Icons.chat_rounded,
+                color: Color(0xFF25D366),
+                size: 21,
+              ),
+              tooltip: 'WhatsApp Automation',
+              onPressed: () {
+                _lastHomeBackPress = null;
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const WhatsAppScreen()),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(
+                Icons.calendar_month_rounded,
+                color: AppTheme.brandPrimary,
+                size: 22,
+              ),
+              tooltip: 'Dynamic Room Timeline & Calendar',
+              onPressed: () {
+                _lastHomeBackPress = null;
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CalendarScreen()),
+                );
+              },
+            ),
+            // Shift Staff Badge / Manager Profile Button
+            InkWell(
+              onTap: () {
+                _lastHomeBackPress = null;
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ManagerProfileScreen(),
                   ),
-                  child: Row(
-                    children: [
-                      _buildPillTabItem(
-                        index: 0,
-                        icon: Icons.home_outlined,
-                        activeIcon: Icons.home_rounded,
-                        label: 'Home',
+                );
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16, left: 4),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: AppTheme.brandPrimary,
+                      child: Text(
+                        store.staffName.isNotEmpty
+                            ? store.staffName.substring(0, 1)
+                            : 'D',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
-                      _buildPillTabItem(
-                        index: 1,
-                        icon: Icons.meeting_room_outlined,
-                        activeIcon: Icons.meeting_room_rounded,
-                        label: 'Rooms',
-                        badgeCount: store.cleaningRooms > 0 ? store.cleaningRooms : null,
-                        badgeColor: AppTheme.statusCleaning,
-                      ),
-                      _buildPillTabItem(
-                        index: 3,
-                        icon: Icons.logout_rounded,
-                        activeIcon: Icons.logout_rounded,
-                        label: 'Check-Out',
-                        badgeCount: store.occupiedRooms > 0 ? store.occupiedRooms : null,
-                        badgeColor: AppTheme.brandPrimary,
-                      ),
-                      _buildPillTabItem(
-                        index: 4,
-                        icon: Icons.people_outline_rounded,
-                        activeIcon: Icons.people_rounded,
-                        label: 'Guests',
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+          ],
+        ),
+        body: IndexedStack(index: _currentIndex, children: screens),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Row(
+              children: [
+                // Left Floating Pill Container holding primary tabs
+                Expanded(
+                  child: Container(
+                    height: 64,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(
+                        color: const Color(0xFFE8ECEF),
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 18,
+                          offset: const Offset(0, 6),
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        _buildPillTabItem(
+                          index: 0,
+                          icon: Icons.home_outlined,
+                          activeIcon: Icons.home_rounded,
+                          label: 'Home',
+                        ),
+                        _buildPillTabItem(
+                          index: 1,
+                          icon: Icons.meeting_room_outlined,
+                          activeIcon: Icons.meeting_room_rounded,
+                          label: 'Rooms',
+                          badgeCount: store.cleaningRooms > 0
+                              ? store.cleaningRooms
+                              : null,
+                          badgeColor: AppTheme.statusCleaning,
+                        ),
+                        _buildPillTabItem(
+                          index: 3,
+                          icon: Icons.logout_rounded,
+                          activeIcon: Icons.logout_rounded,
+                          label: 'Check-Out',
+                          badgeCount: store.occupiedRooms > 0
+                              ? store.occupiedRooms
+                              : null,
+                          badgeColor: AppTheme.brandPrimary,
+                        ),
+                        _buildPillTabItem(
+                          index: 4,
+                          icon: Icons.people_outline_rounded,
+                          activeIcon: Icons.people_rounded,
+                          label: 'Guests',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
 
-              // Right Circular Action Button dedicated to Check-In (+ / Check-in icon)
-              _buildCheckInActionButton(),
-            ],
+                // Right Circular Action Button dedicated to Check-In (+ / Check-in icon)
+                _buildCheckInActionButton(),
+              ],
+            ),
           ),
         ),
       ),
@@ -305,7 +401,9 @@ class _HomeShellState extends State<HomeShell> {
                       child: Icon(
                         isSelected ? activeIcon : icon,
                         size: 21,
-                        color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF334155),
+                        color: isSelected
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFF334155),
                       ),
                     ),
                     if (badgeCount != null && badgeCount > 0)
@@ -330,7 +428,9 @@ class _HomeShellState extends State<HomeShell> {
                   style: GoogleFonts.inter(
                     fontSize: 9.5,
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                    color: isSelected
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFF64748B),
                     letterSpacing: -0.2,
                   ),
                   child: Text(
@@ -371,7 +471,9 @@ class _HomeShellState extends State<HomeShell> {
                   color: isSelected ? const Color(0xFF0F172A) : Colors.white,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: isSelected ? const Color(0xFF0F172A) : const Color(0xFFE2E8F0),
+                    color: isSelected
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFFE2E8F0),
                     width: 1.2,
                   ),
                   boxShadow: [
@@ -395,7 +497,9 @@ class _HomeShellState extends State<HomeShell> {
                       Icon(
                         Icons.how_to_reg_rounded,
                         size: 22,
-                        color: isSelected ? Colors.white : const Color(0xFF0F172A),
+                        color: isSelected
+                            ? Colors.white
+                            : const Color(0xFF0F172A),
                       ),
                       // Sleek '+' micro badge conveying immediate new check-in
                       Positioned(
@@ -404,7 +508,9 @@ class _HomeShellState extends State<HomeShell> {
                         child: Container(
                           padding: const EdgeInsets.all(1.5),
                           decoration: BoxDecoration(
-                            color: isSelected ? const Color(0xFF8B5CF6) : const Color(0xFF0F172A),
+                            color: isSelected
+                                ? AppTheme.brandPrimary
+                                : const Color(0xFF0F172A),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -424,7 +530,9 @@ class _HomeShellState extends State<HomeShell> {
                 style: GoogleFonts.inter(
                   fontSize: 10,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF475569),
+                  color: isSelected
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFF475569),
                   letterSpacing: -0.2,
                 ),
                 child: const Text('Check-In'),

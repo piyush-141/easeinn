@@ -2,29 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Brand Colors
-  static const Color brandPrimary = Color(0xFF6D28D9); // Rich Violet
-  static const Color brandDark = Color(0xFF4C1D95);
-  static const Color brandLight = Color(0xFFEDE9FE);
-  static const Color brandAccent = Color(0xFF8B5CF6);
+  // Brand Colors (Apple Action Blue & System Palette)
+  static const Color brandPrimary = Color(0xFF0066CC); // Apple Action Blue (#0066cc)
+  static const Color brandDark = Color(0xFF004499);    // Deeper Focus Navy
+  static const Color brandLight = Color(0xFFEBF5FF);   // Ultra-light Apple Blue tint
+  static const Color brandAccent = Color(0xFF0071E3);  // Apple Bright Interactive Blue
 
-  // Surface & Slate
-  static const Color background = Color(0xFFF8FAFC);
-  static const Color surface = Colors.white;
-  static const Color slateDark = Color(0xFF0F172A);
-  static const Color slateCard = Color(0xFF1E293B);
-  static const Color slateMuted = Color(0xFF64748B);
-  static const Color slateBorder = Color(0xFFE2E8F0);
+  // Surface & Canvas (Apple Design Canvas & Ink)
+  static const Color background = Color(0xFFF5F5F7);   // Apple Canvas Parchment (#f5f5f7)
+  static const Color surface = Colors.white;           // Pure Canvas White
+  static const Color slateDark = Color(0xFF1D1D1F);    // Apple System Ink (#1d1d1f)
+  static const Color slateCard = Color(0xFF272729);    // Apple Dark Surface Tile
+  static const Color slateMuted = Color(0xFF86868B);   // Apple System Gray (#86868b)
+  static const Color slateBorder = Color(0xFFE5E5EA);  // Apple System Hairline/Divider
 
-  // Hotel Status Colors
-  static const Color statusVacant = Color(0xFF10B981); // Emerald
-  static const Color statusVacantBg = Color(0xFFECFDF5);
-  static const Color statusOccupied = Color(0xFF6366F1); // Indigo
-  static const Color statusOccupiedBg = Color(0xFFEEF2FF);
-  static const Color statusCleaning = Color(0xFFF59E0B); // Amber
-  static const Color statusCleaningBg = Color(0xFFFEF3C7);
-  static const Color statusReserved = Color(0xFF0EA5E9); // Sky
-  static const Color statusReservedBg = Color(0xFFE0F2FE);
+  // Hotel Status Colors (Clean Apple System Accents)
+  static const Color statusVacant = Color(0xFF34C759); // Apple System Green
+  static const Color statusVacantBg = Color(0xFFE8F9ED);
+  static const Color statusOccupied = Color(0xFF0066CC); // Apple System Blue
+  static const Color statusOccupiedBg = Color(0xFFEBF5FF);
+  static const Color statusCleaning = Color(0xFFFF9500); // Apple System Amber / Orange
+  static const Color statusCleaningBg = Color(0xFFFFF7ED);
+  static const Color statusReserved = Color(0xFF5AC8FA); // Apple System Teal / Sky
+  static const Color statusReservedBg = Color(0xFFF0F9FF);
 
   static ThemeData get lightTheme {
     return ThemeData(
@@ -39,10 +39,10 @@ class AppTheme {
         surface: surface,
       ),
       textTheme: GoogleFonts.interTextTheme().copyWith(
-        displayLarge: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-        displayMedium: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-        displaySmall: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-        headlineLarge: GoogleFonts.outfit(fontWeight: FontWeight.w700),
+        displayLarge: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        displayMedium: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        displaySmall: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        headlineLarge: GoogleFonts.inter(fontWeight: FontWeight.w700),
         headlineMedium: GoogleFonts.outfit(fontWeight: FontWeight.w700),
         headlineSmall: GoogleFonts.outfit(fontWeight: FontWeight.w600),
         titleLarge: GoogleFonts.outfit(fontWeight: FontWeight.w600),

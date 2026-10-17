@@ -17,7 +17,8 @@ class WhatsAppScreen extends StatefulWidget {
   State<WhatsAppScreen> createState() => _WhatsAppScreenState();
 }
 
-class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProviderStateMixin {
+class _WhatsAppScreenState extends State<WhatsAppScreen>
+    with SingleTickerProviderStateMixin {
   Timer? _statusPoller;
   Timer? _deliveryPoller;
   bool _isRefreshingLogs = false;
@@ -67,12 +68,18 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
       if (!mounted || _isRefreshingLogs) return;
       final hasRecentPending = _logs.any((log) {
         final accepted = log.status == 'ACCEPTED' || log.status == 'SENT';
-        final confirmed = log.delivered ||
+        final confirmed =
+            log.delivered ||
             log.deliveryStatus == 'DELIVERED' ||
             log.deliveryStatus == 'READ';
         final timestamp = DateTime.tryParse(log.timestamp);
-        final age = timestamp == null ? const Duration(days: 1) : DateTime.now().difference(timestamp);
-        return accepted && !confirmed && age >= Duration.zero && age < const Duration(minutes: 2);
+        final age = timestamp == null
+            ? const Duration(days: 1)
+            : DateTime.now().difference(timestamp);
+        return accepted &&
+            !confirmed &&
+            age >= Duration.zero &&
+            age < const Duration(minutes: 2);
       });
       if (hasRecentPending) _fetchLogs();
     });
@@ -122,7 +129,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
         _templates = templates;
         for (final entry in templates.entries) {
           if (!_templateControllers.containsKey(entry.key)) {
-            _templateControllers[entry.key] = TextEditingController(text: entry.value.template);
+            _templateControllers[entry.key] = TextEditingController(
+              text: entry.value.template,
+            );
           } else {
             _templateControllers[entry.key]!.text = entry.value.template;
           }
@@ -138,8 +147,12 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     try {
       final logs = await WhatsAppService.getLogs();
       logs.sort((a, b) {
-        final dateA = DateTime.tryParse(a.timestamp) ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final dateB = DateTime.tryParse(b.timestamp) ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final dateA =
+            DateTime.tryParse(a.timestamp) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final dateB =
+            DateTime.tryParse(b.timestamp) ??
+            DateTime.fromMillisecondsSinceEpoch(0);
         return dateB.compareTo(dateA);
       });
       if (mounted) setState(() => _logs = logs);
@@ -154,12 +167,15 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     if (!ok) {
       if (mounted) {
         setState(() => _isConnecting = false);
-        final details = WhatsAppService.lastConnectError ?? _status.initializationError;
+        final details =
+            WhatsAppService.lastConnectError ?? _status.initializationError;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(details == null || details.isEmpty
-                ? 'Could not reach WhatsApp service. Check your connection and try again.'
-                : 'WhatsApp: $details'),
+            content: Text(
+              details == null || details.isEmpty
+                  ? 'Could not reach WhatsApp service. Check your connection and try again.'
+                  : 'WhatsApp: $details',
+            ),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -188,15 +204,24 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Disconnect WhatsApp?', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'Disconnect WhatsApp?',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         content: const Text(
           'This will unlink your hotel WhatsApp session. Automated guest messages will be paused until you re-link your device.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Disconnect'),
           ),
         ],
@@ -212,14 +237,21 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
       setState(() => _isDisconnecting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok ? 'WhatsApp session disconnected.' : 'Failed to disconnect session.'),
+          content: Text(
+            ok
+                ? 'WhatsApp session disconnected.'
+                : 'Failed to disconnect session.',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
-  Future<void> _handleSaveTemplate(String templateId, StateSetter setModalState) async {
+  Future<void> _handleSaveTemplate(
+    String templateId,
+    StateSetter setModalState,
+  ) async {
     final template = _templates[templateId];
     final ctrl = _templateControllers[templateId];
     if (template == null || ctrl == null) return;
@@ -244,7 +276,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok ? 'Template "${updated.name}" saved successfully!' : 'Failed to save template.'),
+          content: Text(
+            ok
+                ? 'Template "${updated.name}" saved successfully!'
+                : 'Failed to save template.',
+          ),
           backgroundColor: ok ? const Color(0xFF10B981) : Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
@@ -257,15 +293,24 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Reset All Templates?', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'Reset All Templates?',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         content: const Text(
           'This will restore all WhatsApp message templates back to their factory default wording.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.brandPrimary, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.brandPrimary,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Reset Defaults'),
           ),
         ],
@@ -298,7 +343,8 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     }
 
     if (rawDigits.length != 10) {
-      _dispatcherFeedbackMessage = 'Please enter a valid 10-digit Indian mobile number.';
+      _dispatcherFeedbackMessage =
+          'Please enter a valid 10-digit Indian mobile number.';
       _dispatcherFeedbackIsError = true;
       setModalState(() {});
       return;
@@ -318,7 +364,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
       'hotelName': store.currentProperty.name,
       'roomNumber': '104',
       'checkInDate': DateFormat('dd MMM yyyy').format(DateTime.now()),
-      'checkOutDate': DateFormat('dd MMM yyyy').format(DateTime.now().add(const Duration(days: 1))),
+      'checkOutDate': DateFormat(
+        'dd MMM yyyy',
+      ).format(DateTime.now().add(const Duration(days: 1))),
     };
 
     final messageToSend = _testTemplateId == 'custom'
@@ -327,23 +375,31 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
 
     final res = await WhatsAppService.sendTestMessage(
       recipientPhone: phone,
-      templateId: null, // send as customized message so single-send edits are delivered exactly as edited
+      templateId:
+          null, // send as customized message so single-send edits are delivered exactly as edited
       customMessage: messageToSend,
       context: sampleContext,
     );
 
     if (mounted) {
       setState(() => _isSendingTest = false);
-      if (res['success'] == true && res['accepted'] == true && res['suppressed'] != true) {
+      if (res['success'] == true &&
+          res['accepted'] == true &&
+          res['suppressed'] != true) {
         _dispatcherFeedbackMessage = res['selfSend'] == true
             ? 'WhatsApp accepted this message to the connected number. Delivery is not independently confirmed; test another WhatsApp number to verify recipient delivery.'
             : 'WhatsApp accepted the message for $phone. Recipient delivery is not confirmed.';
         _dispatcherFeedbackIsError = false;
       } else if (res['suppressed'] == true) {
-        _dispatcherFeedbackMessage = res['message'] ?? 'Duplicate skipped — this number already received that template recently.';
+        _dispatcherFeedbackMessage =
+            res['message'] ??
+            'Duplicate skipped — this number already received that template recently.';
         _dispatcherFeedbackIsError = true;
       } else {
-        _dispatcherFeedbackMessage = res['error'] ?? res['message'] ?? 'Failed to send WhatsApp message. Ensure session is connected.';
+        _dispatcherFeedbackMessage =
+            res['error'] ??
+            res['message'] ??
+            'Failed to send WhatsApp message. Ensure session is connected.';
         _dispatcherFeedbackIsError = true;
       }
       setModalState(() {});
@@ -353,7 +409,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     }
   }
 
-  void _insertPlaceholder(String templateId, String placeholder, StateSetter setModalState) {
+  void _insertPlaceholder(
+    String templateId,
+    String placeholder,
+    StateSetter setModalState,
+  ) {
     final ctrl = _templateControllers[templateId];
     if (ctrl == null) return;
 
@@ -361,10 +421,16 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     final selection = ctrl.selection;
 
     if (selection.start >= 0) {
-      final newText = text.replaceRange(selection.start, selection.end, placeholder);
+      final newText = text.replaceRange(
+        selection.start,
+        selection.end,
+        placeholder,
+      );
       ctrl.value = TextEditingValue(
         text: newText,
-        selection: TextSelection.collapsed(offset: selection.start + placeholder.length),
+        selection: TextSelection.collapsed(
+          offset: selection.start + placeholder.length,
+        ),
       );
     } else {
       ctrl.text = '$text $placeholder';
@@ -378,7 +444,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     final hotelName = store.currentProperty.name;
     final now = DateTime.now();
     final checkIn = DateFormat('dd MMM yyyy').format(now);
-    final checkOut = DateFormat('dd MMM yyyy').format(now.add(const Duration(days: 1)));
+    final checkOut = DateFormat(
+      'dd MMM yyyy',
+    ).format(now.add(const Duration(days: 1)));
 
     return rawTemplate
         .replaceAll('{guestName}', 'Ananya Deshmukh')
@@ -423,7 +491,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                     color: const Color(0xFFFEF3C7),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.info_outline_rounded, color: Color(0xFFD97706), size: 20),
+                  child: const Icon(
+                    Icons.info_outline_rounded,
+                    color: Color(0xFFD97706),
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -432,11 +504,18 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                     children: [
                       Text(
                         'WhatsApp Automation Guidelines',
-                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppTheme.slateDark,
+                        ),
                       ),
                       Text(
                         'Best practices for hotel guest messaging',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppTheme.slateMuted,
+                        ),
                       ),
                     ],
                   ),
@@ -448,21 +527,24 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
               icon: Icons.check_circle_outline_rounded,
               iconColor: const Color(0xFF10B981),
               title: 'Operational Messages Only',
-              description: 'Use strictly for 1-on-1 guest interactions such as check-in welcomes, room keys, and checkout invoices.',
+              description:
+                  'Use strictly for 1-on-1 guest interactions such as check-in welcomes, room keys, and checkout invoices.',
             ),
             const SizedBox(height: 12),
             _buildGuidelineItem(
               icon: Icons.block_flipped,
               iconColor: const Color(0xFFEF4444),
               title: 'Avoid Bulk Spam',
-              description: 'Never use this account for bulk advertising or unsolicited marketing blasts to protect your number from restrictions.',
+              description:
+                  'Never use this account for bulk advertising or unsolicited marketing blasts to protect your number from restrictions.',
             ),
             const SizedBox(height: 12),
             _buildGuidelineItem(
               icon: Icons.verified_user_outlined,
               iconColor: const Color(0xFF25D366),
               title: 'Direct Phone Link',
-              description: 'Messages are dispatched directly from your linked WhatsApp instance without third-party recurring API fees.',
+              description:
+                  'Messages are dispatched directly from your linked WhatsApp instance without third-party recurring API fees.',
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -472,7 +554,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.slateDark,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Text('Understood'),
               ),
@@ -505,9 +589,23 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark)),
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(description, style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.slateMuted, height: 1.35)),
+                Text(
+                  description,
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    color: AppTheme.slateMuted,
+                    height: 1.35,
+                  ),
+                ),
               ],
             ),
           ),
@@ -528,7 +626,8 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
           builder: (context, setModalState) {
             final template = _templates[_selectedTemplateId];
             final ctrl = _templateControllers[_selectedTemplateId];
-            final isEnabled = _templateEnabledState[_selectedTemplateId] ?? true;
+            final isEnabled =
+                _templateEnabledState[_selectedTemplateId] ?? true;
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.92,
@@ -560,10 +659,16 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                             Container(
                               padding: const EdgeInsets.all(7),
                               decoration: BoxDecoration(
-                                color: AppTheme.brandPrimary.withValues(alpha: 0.1),
+                                color: AppTheme.brandPrimary.withValues(
+                                  alpha: 0.1,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: const Icon(Icons.edit_note_rounded, color: AppTheme.brandPrimary, size: 22),
+                              child: const Icon(
+                                Icons.edit_note_rounded,
+                                color: AppTheme.brandPrimary,
+                                size: 22,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -572,28 +677,46 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 children: [
                                   Text(
                                     'Message Templates',
-                                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.slateDark),
+                                    style: GoogleFonts.outfit(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 17,
+                                      color: AppTheme.slateDark,
+                                    ),
                                   ),
                                   Text(
                                     'Customize automated guest notifications',
-                                    style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: AppTheme.slateMuted,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
                             TextButton(
-                              onPressed: () => _handleResetTemplates(setModalState),
+                              onPressed: () =>
+                                  _handleResetTemplates(setModalState),
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
                                 visualDensity: VisualDensity.compact,
                               ),
                               child: Text(
                                 'Reset Defaults',
-                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.brandPrimary),
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.brandPrimary,
+                                ),
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: AppTheme.slateMuted,
+                              ),
                               onPressed: () => Navigator.pop(ctx),
                               visualDensity: VisualDensity.compact,
                             ),
@@ -609,18 +732,37 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   Container(
                     width: double.infinity,
                     color: const Color(0xFFF8FAFC),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          _buildTemplateTabItem('checkin_welcome', 'Check-in Welcome', setModalState),
+                          _buildTemplateTabItem(
+                            'checkin_welcome',
+                            'Check-in Welcome',
+                            setModalState,
+                          ),
                           const SizedBox(width: 8),
-                          _buildTemplateTabItem('checkout_thankyou', 'Checkout Thank-you', setModalState),
+                          _buildTemplateTabItem(
+                            'checkout_thankyou',
+                            'Checkout Thank-you',
+                            setModalState,
+                          ),
                           const SizedBox(width: 8),
-                          _buildTemplateTabItem('booking_confirmation', 'Booking Confirmed', setModalState),
+                          _buildTemplateTabItem(
+                            'booking_confirmation',
+                            'Booking Confirmed',
+                            setModalState,
+                          ),
                           const SizedBox(width: 8),
-                          _buildTemplateTabItem('custom_notification', 'Custom Notice', setModalState),
+                          _buildTemplateTabItem(
+                            'custom_notification',
+                            'Custom Notice',
+                            setModalState,
+                          ),
                         ],
                       ),
                     ),
@@ -638,7 +780,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                           if (template != null && ctrl != null) ...[
                             // Active status & toggle
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF8FAFC),
                                 borderRadius: BorderRadius.circular(14),
@@ -648,15 +793,23 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           template.name,
-                                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13.5, color: AppTheme.slateDark),
+                                          style: GoogleFonts.outfit(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13.5,
+                                            color: AppTheme.slateDark,
+                                          ),
                                         ),
                                         Text(
                                           template.description,
-                                          style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            color: AppTheme.slateMuted,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -669,16 +822,21 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                         style: GoogleFonts.inter(
                                           fontSize: 10.5,
                                           fontWeight: FontWeight.bold,
-                                          color: isEnabled ? const Color(0xFF16A34A) : AppTheme.slateMuted,
+                                          color: isEnabled
+                                              ? const Color(0xFF16A34A)
+                                              : AppTheme.slateMuted,
                                         ),
                                       ),
                                       const SizedBox(width: 6),
                                       Switch(
                                         value: isEnabled,
-                                        activeThumbColor: const Color(0xFF25D366),
+                                        activeThumbColor: const Color(
+                                          0xFF25D366,
+                                        ),
                                         onChanged: (val) {
                                           setState(() {
-                                            _templateEnabledState[_selectedTemplateId] = val;
+                                            _templateEnabledState[_selectedTemplateId] =
+                                                val;
                                           });
                                           setModalState(() {});
                                         },
@@ -697,11 +855,18 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                               children: [
                                 Text(
                                   'Template Wording:',
-                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.slateDark,
+                                  ),
                                 ),
                                 Text(
                                   '${ctrl.text.length} chars',
-                                  style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10.5,
+                                    color: AppTheme.slateMuted,
+                                  ),
                                 ),
                               ],
                             ),
@@ -713,15 +878,36 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 setState(() {});
                                 setModalState(() {});
                               },
-                              style: GoogleFonts.inter(fontSize: 13, color: AppTheme.slateDark, height: 1.4),
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppTheme.slateDark,
+                                height: 1.4,
+                              ),
                               decoration: InputDecoration(
-                                hintText: 'Type your WhatsApp template message...',
+                                hintText:
+                                    'Type your WhatsApp template message...',
                                 contentPadding: const EdgeInsets.all(14),
                                 filled: true,
                                 fillColor: const Color(0xFFF8FAFC),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                    color: AppTheme.slateBorder,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                    color: AppTheme.slateBorder,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                    color: AppTheme.brandPrimary,
+                                    width: 1.5,
+                                  ),
+                                ),
                               ),
                             ),
 
@@ -732,7 +918,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                               children: [
                                 Text(
                                   'Insert: ',
-                                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.slateMuted),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.slateMuted,
+                                  ),
                                 ),
                                 const SizedBox(width: 4),
                                 Expanded(
@@ -742,16 +932,34 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                     child: Row(
                                       children: _placeholders.map((p) {
                                         return Padding(
-                                          padding: const EdgeInsets.only(right: 6),
+                                          padding: const EdgeInsets.only(
+                                            right: 6,
+                                          ),
                                           child: ActionChip(
                                             label: Text(p['key']!),
-                                            labelStyle: GoogleFonts.robotoMono(fontSize: 10, color: AppTheme.brandDark, fontWeight: FontWeight.w600),
-                                            backgroundColor: AppTheme.brandLight,
+                                            labelStyle: GoogleFonts.robotoMono(
+                                              fontSize: 10,
+                                              color: AppTheme.brandDark,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            backgroundColor:
+                                                AppTheme.brandLight,
                                             side: BorderSide.none,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 0),
-                                            visualDensity: VisualDensity.compact,
-                                            onPressed: () => _insertPlaceholder(_selectedTemplateId, p['key']!, setModalState),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 5,
+                                              vertical: 0,
+                                            ),
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            onPressed: () => _insertPlaceholder(
+                                              _selectedTemplateId,
+                                              p['key']!,
+                                              setModalState,
+                                            ),
                                           ),
                                         );
                                       }).toList(),
@@ -766,7 +974,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                             // WhatsApp Chat Bubble Preview
                             Text(
                               'Guest WhatsApp Preview:',
-                              style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.slateDark,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Container(
@@ -774,13 +986,22 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                               decoration: BoxDecoration(
                                 color: const Color(0xFFEFEAE2),
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: const Color(0xFFE5DDD5)),
+                                border: Border.all(
+                                  color: const Color(0xFFE5DDD5),
+                                ),
                               ),
                               child: Align(
                                 alignment: Alignment.centerLeft,
                                 child: Container(
-                                  constraints: const BoxConstraints(maxWidth: 300),
-                                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 300,
+                                  ),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    14,
+                                    10,
+                                    14,
+                                    8,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFDCF8C6),
                                     borderRadius: const BorderRadius.only(
@@ -791,30 +1012,47 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.05),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.05,
+                                        ),
                                         blurRadius: 4,
                                         offset: const Offset(0, 1),
                                       ),
                                     ],
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         _renderInterpolatedPreview(ctrl.text),
-                                        style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF111827), height: 1.35),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12.5,
+                                          color: const Color(0xFF111827),
+                                          height: 1.35,
+                                        ),
                                       ),
                                       const SizedBox(height: 4),
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
-                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
                                         children: [
                                           Text(
-                                            DateFormat('hh:mm a').format(DateTime.now()),
-                                            style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF6B7280)),
+                                            DateFormat(
+                                              'hh:mm a',
+                                            ).format(DateTime.now()),
+                                            style: GoogleFonts.inter(
+                                              fontSize: 9.5,
+                                              color: const Color(0xFF6B7280),
+                                            ),
                                           ),
                                           const SizedBox(width: 4),
-                                          const Icon(Icons.done_all_rounded, size: 14, color: Color(0xFF34B7F1)),
+                                          const Icon(
+                                            Icons.done_all_rounded,
+                                            size: 14,
+                                            color: Color(0xFF34B7F1),
+                                          ),
                                         ],
                                       ),
                                     ],
@@ -833,7 +1071,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      border: const Border(top: BorderSide(color: AppTheme.slateBorder)),
+                      border: const Border(
+                        top: BorderSide(color: AppTheme.slateBorder),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.04),
@@ -848,15 +1088,33 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                       child: PressableScale(
                         pressedScale: 0.97,
                         child: ElevatedButton.icon(
-                          onPressed: _isSavingTemplate ? null : () => _handleSaveTemplate(_selectedTemplateId, setModalState),
+                          onPressed: _isSavingTemplate
+                              ? null
+                              : () => _handleSaveTemplate(
+                                  _selectedTemplateId,
+                                  setModalState,
+                                ),
                           icon: _isSavingTemplate
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
                               : const Icon(Icons.check_rounded, size: 18),
-                          label: Text(_isSavingTemplate ? 'Saving Changes...' : 'Save Template Changes'),
+                          label: Text(
+                            _isSavingTemplate
+                                ? 'Saving Changes...'
+                                : 'Save Template Changes',
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.brandPrimary,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                             elevation: 0,
                           ),
                         ),
@@ -872,7 +1130,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildTemplateTabItem(String id, String title, StateSetter setModalState) {
+  Widget _buildTemplateTabItem(
+    String id,
+    String title,
+    StateSetter setModalState,
+  ) {
     final isSelected = _selectedTemplateId == id;
     return InkWell(
       onTap: () {
@@ -887,7 +1149,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
         decoration: BoxDecoration(
           color: isSelected ? AppTheme.brandPrimary : Colors.white,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder),
+          border: Border.all(
+            color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+          ),
         ),
         child: Text(
           title,
@@ -905,7 +1169,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
   void _openLiveDispatcherDrawer() {
     if (!_hasManualLiveEdit || _liveDispatchMsgController.text.trim().isEmpty) {
       if (_testTemplateId != 'custom') {
-        _liveDispatchMsgController.text = _renderInterpolatedPreview(_templates[_testTemplateId]?.template ?? '');
+        _liveDispatchMsgController.text = _renderInterpolatedPreview(
+          _templates[_testTemplateId]?.template ?? '',
+        );
         _hasManualLiveEdit = false;
       }
     }
@@ -951,10 +1217,16 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                               Container(
                                 padding: const EdgeInsets.all(7),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                  color: const Color(
+                                    0xFF10B981,
+                                  ).withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const Icon(Icons.send_rounded, color: Color(0xFF10B981), size: 20),
+                                child: const Icon(
+                                  Icons.send_rounded,
+                                  color: Color(0xFF10B981),
+                                  size: 20,
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -963,17 +1235,27 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                   children: [
                                     Text(
                                       'Live WhatsApp Dispatcher',
-                                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.slateDark),
+                                      style: GoogleFonts.outfit(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 17,
+                                        color: AppTheme.slateDark,
+                                      ),
                                     ),
                                     Text(
                                       'Send a test message and see acceptance and recipient receipts',
-                                      style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: AppTheme.slateMuted,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  color: AppTheme.slateMuted,
+                                ),
                                 onPressed: () => Navigator.pop(ctx),
                                 visualDensity: VisualDensity.compact,
                               ),
@@ -987,7 +1269,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                     TabBar(
                       labelColor: AppTheme.brandPrimary,
                       unselectedLabelColor: AppTheme.slateMuted,
-                      labelStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold),
+                      labelStyle: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                       unselectedLabelStyle: GoogleFonts.inter(fontSize: 13),
                       indicatorColor: AppTheme.brandPrimary,
                       indicatorWeight: 2.5,
@@ -1016,16 +1301,25 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFFEF2F2),
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: const Color(0xFFFECACA)),
+                                      border: Border.all(
+                                        color: const Color(0xFFFECACA),
+                                      ),
                                     ),
                                     child: Row(
                                       children: [
-                                        const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 18),
+                                        const Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: Color(0xFFDC2626),
+                                          size: 18,
+                                        ),
                                         const SizedBox(width: 10),
                                         Expanded(
                                           child: Text(
                                             'WhatsApp is currently disconnected. Link your WhatsApp account first to send live messages.',
-                                            style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF991B1B)),
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11.5,
+                                              color: const Color(0xFF991B1B),
+                                            ),
                                           ),
                                         ),
                                       ],
@@ -1035,7 +1329,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 // Recipient Phone Number
                                 Text(
                                   'Guest Mobile Number (10 digits) *',
-                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.slateDark,
+                                  ),
                                 ),
                                 const SizedBox(height: 6),
                                 TextField(
@@ -1045,20 +1343,39 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                     FilteringTextInputFormatter.digitsOnly,
                                     LengthLimitingTextInputFormatter(10),
                                   ],
-                                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 1.1),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.1,
+                                  ),
                                   decoration: InputDecoration(
                                     hintText: '99XXX XXXXX',
-                                    hintStyle: GoogleFonts.inter(fontSize: 13.5, color: AppTheme.slateMuted, letterSpacing: 1),
+                                    hintStyle: GoogleFonts.inter(
+                                      fontSize: 13.5,
+                                      color: AppTheme.slateMuted,
+                                      letterSpacing: 1,
+                                    ),
                                     prefixIcon: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 12,
+                                      ),
                                       margin: const EdgeInsets.only(right: 10),
                                       decoration: const BoxDecoration(
-                                        border: Border(right: BorderSide(color: AppTheme.slateBorder, width: 1)),
+                                        border: Border(
+                                          right: BorderSide(
+                                            color: AppTheme.slateBorder,
+                                            width: 1,
+                                          ),
+                                        ),
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Text('🇮🇳', style: TextStyle(fontSize: 15)),
+                                          const Text(
+                                            '🇮🇳',
+                                            style: TextStyle(fontSize: 15),
+                                          ),
                                           const SizedBox(width: 6),
                                           Text(
                                             '+91',
@@ -1074,9 +1391,25 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                     isDense: true,
                                     filled: true,
                                     fillColor: const Color(0xFFF8FAFC),
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: AppTheme.slateBorder,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: AppTheme.slateBorder,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: AppTheme.brandPrimary,
+                                        width: 1.5,
+                                      ),
+                                    ),
                                   ),
                                 ),
 
@@ -1085,32 +1418,70 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 // Template Selection
                                 Text(
                                   'Select Message Template',
-                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.slateDark,
+                                  ),
                                 ),
                                 const SizedBox(height: 6),
                                 DropdownButtonFormField<String>(
                                   initialValue: _testTemplateId,
-                                  style: GoogleFonts.inter(fontSize: 13, color: AppTheme.slateDark),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: AppTheme.slateDark,
+                                  ),
                                   decoration: InputDecoration(
                                     isDense: true,
                                     filled: true,
                                     fillColor: const Color(0xFFF8FAFC),
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: AppTheme.slateBorder,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: AppTheme.slateBorder,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: AppTheme.brandPrimary,
+                                        width: 1.5,
+                                      ),
+                                    ),
                                   ),
                                   items: const [
-                                    DropdownMenuItem(value: 'checkin_welcome', child: Text('Check-in Welcome')),
-                                    DropdownMenuItem(value: 'checkout_thankyou', child: Text('Checkout Thank-you')),
-                                    DropdownMenuItem(value: 'booking_confirmation', child: Text('Booking Confirmation')),
-                                    DropdownMenuItem(value: 'custom', child: Text('Custom Text Notice')),
+                                    DropdownMenuItem(
+                                      value: 'checkin_welcome',
+                                      child: Text('Check-in Welcome'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'checkout_thankyou',
+                                      child: Text('Checkout Thank-you'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'booking_confirmation',
+                                      child: Text('Booking Confirmation'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'custom',
+                                      child: Text('Custom Text Notice'),
+                                    ),
                                   ],
                                   onChanged: (val) {
                                     if (val != null) {
                                       setState(() {
                                         _testTemplateId = val;
                                         if (val != 'custom') {
-                                          _liveDispatchMsgController.text = _renderInterpolatedPreview(_templates[val]?.template ?? '');
+                                          _liveDispatchMsgController.text =
+                                              _renderInterpolatedPreview(
+                                                _templates[val]?.template ?? '',
+                                              );
                                           _hasManualLiveEdit = false;
                                         }
                                       });
@@ -1123,7 +1494,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                   const SizedBox(height: 14),
                                   Text(
                                     'Custom Message Text',
-                                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.slateDark,
+                                    ),
                                   ),
                                   const SizedBox(height: 6),
                                   TextField(
@@ -1131,34 +1506,75 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                     maxLines: 4,
                                     style: GoogleFonts.inter(fontSize: 13),
                                     decoration: InputDecoration(
-                                      hintText: 'Enter your custom message to dispatch...',
+                                      hintText:
+                                          'Enter your custom message to dispatch...',
                                       filled: true,
                                       fillColor: const Color(0xFFF8FAFC),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: AppTheme.slateBorder,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: AppTheme.slateBorder,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: AppTheme.brandPrimary,
+                                          width: 1.5,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ] else ...[
                                   const SizedBox(height: 16),
                                   Text(
                                     'Message Content',
-                                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.slateDark,
+                                    ),
                                   ),
                                   const SizedBox(height: 6),
                                   TextField(
                                     controller: _liveDispatchMsgController,
                                     maxLines: 5,
-                                    style: GoogleFonts.inter(fontSize: 13, color: AppTheme.slateDark, height: 1.35),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      color: AppTheme.slateDark,
+                                      height: 1.35,
+                                    ),
                                     onChanged: (_) {
                                       _hasManualLiveEdit = true;
                                     },
                                     decoration: InputDecoration(
                                       filled: true,
                                       fillColor: const Color(0xFFF8FAFC),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.slateBorder)),
-                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.5)),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: AppTheme.slateBorder,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: AppTheme.slateBorder,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: AppTheme.brandPrimary,
+                                          width: 1.5,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1166,20 +1582,32 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 if (_dispatcherFeedbackMessage != null) ...[
                                   const SizedBox(height: 16),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 11,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: _dispatcherFeedbackIsError ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                                      color: _dispatcherFeedbackIsError
+                                          ? const Color(0xFFFEF2F2)
+                                          : const Color(0xFFF0FDF4),
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: _dispatcherFeedbackIsError ? const Color(0xFFFECACA) : const Color(0xFFBBF7D0),
+                                        color: _dispatcherFeedbackIsError
+                                            ? const Color(0xFFFECACA)
+                                            : const Color(0xFFBBF7D0),
                                       ),
                                     ),
                                     child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Icon(
-                                          _dispatcherFeedbackIsError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
-                                          color: _dispatcherFeedbackIsError ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                                          _dispatcherFeedbackIsError
+                                              ? Icons.error_outline_rounded
+                                              : Icons.check_circle_rounded,
+                                          color: _dispatcherFeedbackIsError
+                                              ? const Color(0xFFDC2626)
+                                              : const Color(0xFF16A34A),
                                           size: 18,
                                         ),
                                         const SizedBox(width: 10),
@@ -1189,7 +1617,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                             style: GoogleFonts.inter(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w500,
-                                              color: _dispatcherFeedbackIsError ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                                              color: _dispatcherFeedbackIsError
+                                                  ? const Color(0xFF991B1B)
+                                                  : const Color(0xFF166534),
                                               height: 1.35,
                                             ),
                                           ),
@@ -1206,15 +1636,40 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                   child: PressableScale(
                                     pressedScale: 0.97,
                                     child: ElevatedButton.icon(
-                                      onPressed: (!isConnected || _isSendingTest) ? null : () => _handleSendTestMessage(setModalState),
+                                      onPressed:
+                                          (!isConnected || _isSendingTest)
+                                          ? null
+                                          : () => _handleSendTestMessage(
+                                              setModalState,
+                                            ),
                                       icon: _isSendingTest
-                                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                          : const Icon(Icons.send_rounded, size: 18),
-                                      label: Text(_isSendingTest ? 'Sending Message...' : 'Send WhatsApp Message Now'),
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.send_rounded,
+                                              size: 18,
+                                            ),
+                                      label: Text(
+                                        _isSendingTest
+                                            ? 'Sending Message...'
+                                            : 'Send WhatsApp Message Now',
+                                      ),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF10B981),
+                                        backgroundColor: const Color(
+                                          0xFF10B981,
+                                        ),
                                         foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
                                         elevation: 0,
                                       ),
                                     ),
@@ -1237,15 +1692,26 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                       Center(
                                         child: Column(
                                           children: [
-                                            Icon(Icons.mark_email_read_outlined, size: 48, color: AppTheme.slateBorder),
+                                            Icon(
+                                              Icons.mark_email_read_outlined,
+                                              size: 48,
+                                              color: AppTheme.slateBorder,
+                                            ),
                                             const SizedBox(height: 12),
                                             Text(
                                               'No WhatsApp logs yet',
-                                              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.slateDark),
+                                              style: GoogleFonts.outfit(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 15,
+                                                color: AppTheme.slateDark,
+                                              ),
                                             ),
                                             Text(
                                               'Dispatched messages will show up here.',
-                                              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12,
+                                                color: AppTheme.slateMuted,
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -1255,45 +1721,86 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                 : ListView.separated(
                                     padding: const EdgeInsets.all(16),
                                     itemCount: _logs.length,
-                                    separatorBuilder: (_, __) => const Divider(color: Color(0xFFF1F5F9), height: 1),
+                                    separatorBuilder: (_, __) => const Divider(
+                                      color: Color(0xFFF1F5F9),
+                                      height: 1,
+                                    ),
                                     itemBuilder: (ctx, i) {
                                       final log = _logs[i];
-                                      final isAccepted = log.status == 'ACCEPTED' || log.status == 'SENT';
-                                      final isDelivered = log.delivered || log.deliveryStatus == 'DELIVERED' || log.deliveryStatus == 'READ';
+                                      final isAccepted =
+                                          log.status == 'ACCEPTED' ||
+                                          log.status == 'SENT';
+                                      final isDelivered =
+                                          log.delivered ||
+                                          log.deliveryStatus == 'DELIVERED' ||
+                                          log.deliveryStatus == 'READ';
 
                                       return Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                        ),
                                         child: Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Container(
-                                              margin: const EdgeInsets.only(top: 2),
+                                              margin: const EdgeInsets.only(
+                                                top: 2,
+                                              ),
                                               padding: const EdgeInsets.all(6),
                                               decoration: BoxDecoration(
-                                                color: isAccepted ? const Color(0xFFFEF3C7) : const Color(0xFFFEE2E2),
+                                                color: isAccepted
+                                                    ? const Color(0xFFFEF3C7)
+                                                    : const Color(0xFFFEE2E2),
                                                 shape: BoxShape.circle,
                                               ),
                                               child: Icon(
-                                                isDelivered ? Icons.done_all_rounded : isAccepted ? Icons.schedule_rounded : Icons.close_rounded,
-                                                color: isDelivered ? const Color(0xFF16A34A) : isAccepted ? const Color(0xFFD97706) : const Color(0xFFDC2626),
+                                                isDelivered
+                                                    ? Icons.done_all_rounded
+                                                    : isAccepted
+                                                    ? Icons.schedule_rounded
+                                                    : Icons.close_rounded,
+                                                color: isDelivered
+                                                    ? const Color(0xFF16A34A)
+                                                    : isAccepted
+                                                    ? const Color(0xFFD97706)
+                                                    : const Color(0xFFDC2626),
                                                 size: 14,
                                               ),
                                             ),
                                             const SizedBox(width: 12),
                                             Expanded(
                                               child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceBetween,
                                                     children: [
                                                       Text(
                                                         log.recipientPhone,
-                                                        style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.slateDark),
+                                                        style:
+                                                            GoogleFonts.inter(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              fontSize: 13,
+                                                              color: AppTheme
+                                                                  .slateDark,
+                                                            ),
                                                       ),
                                                       Text(
-                                                        _formatLogTime(log.timestamp),
-                                                        style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted),
+                                                        _formatLogTime(
+                                                          log.timestamp,
+                                                        ),
+                                                        style:
+                                                            GoogleFonts.inter(
+                                                              fontSize: 10.5,
+                                                              color: AppTheme
+                                                                  .slateMuted,
+                                                            ),
                                                       ),
                                                     ],
                                                   ),
@@ -1301,19 +1808,50 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                                                   Text(
                                                     '${log.templateId} • ${log.messageText}',
                                                     maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.slateMuted, height: 1.3),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 11.5,
+                                                      color:
+                                                          AppTheme.slateMuted,
+                                                      height: 1.3,
+                                                    ),
                                                   ),
                                                   const SizedBox(height: 4),
                                                   Text(
                                                     isDelivered
                                                         ? 'Delivered to recipient'
-                                                        : isAccepted && DateTime.now().difference(DateTime.tryParse(log.timestamp) ?? DateTime.now()) >= const Duration(minutes: 1)
-                                                            ? 'No delivery receipt after 1 min · delivery unconfirmed'
-                                                            : isAccepted
-                                                                ? 'Accepted by WhatsApp · awaiting delivery receipt'
-                                                                : log.errorMessage ?? 'Not sent',
-                                                    style: GoogleFonts.inter(fontSize: 10.5, color: isDelivered ? const Color(0xFF15803D) : isAccepted ? const Color(0xFFB45309) : const Color(0xFFB91C1C), fontWeight: FontWeight.w600),
+                                                        : isAccepted &&
+                                                              DateTime.now().difference(
+                                                                    DateTime.tryParse(
+                                                                          log.timestamp,
+                                                                        ) ??
+                                                                        DateTime.now(),
+                                                                  ) >=
+                                                                  const Duration(
+                                                                    minutes: 1,
+                                                                  )
+                                                        ? 'No delivery receipt after 1 min · delivery unconfirmed'
+                                                        : isAccepted
+                                                        ? 'Accepted by WhatsApp · awaiting delivery receipt'
+                                                        : log.errorMessage ??
+                                                              'Not sent',
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 10.5,
+                                                      color: isDelivered
+                                                          ? const Color(
+                                                              0xFF15803D,
+                                                            )
+                                                          : isAccepted
+                                                          ? const Color(
+                                                              0xFFB45309,
+                                                            )
+                                                          : const Color(
+                                                              0xFFB91C1C,
+                                                            ),
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
                                                   ),
                                                 ],
                                               ),
@@ -1353,7 +1891,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                 color: const Color(0xFF25D366).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.chat_rounded, color: Color(0xFF25D366), size: 20),
+              child: const Icon(
+                Icons.chat_rounded,
+                color: Color(0xFF25D366),
+                size: 20,
+              ),
             ),
             const SizedBox(width: 10),
             Column(
@@ -1361,11 +1903,19 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
               children: [
                 Text(
                   'WhatsApp Automation',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 17, color: AppTheme.slateDark),
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    color: AppTheme.slateDark,
+                  ),
                 ),
                 Text(
                   'Guest Transactional Messaging',
-                  style: GoogleFonts.inter(fontSize: 10.5, color: AppTheme.slateMuted, fontWeight: FontWeight.w500),
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    color: AppTheme.slateMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -1374,7 +1924,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
         actions: [
           IconButton(
             tooltip: 'Operational Guidelines',
-            icon: const Icon(Icons.info_outline_rounded, color: AppTheme.slateMuted, size: 22),
+            icon: const Icon(
+              Icons.info_outline_rounded,
+              color: AppTheme.slateMuted,
+              size: 22,
+            ),
             onPressed: _showGuidelinesSheet,
           ),
           IconButton(
@@ -1383,9 +1937,16 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.brandPrimary),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppTheme.brandPrimary,
+                    ),
                   )
-                : const Icon(Icons.refresh_rounded, color: AppTheme.brandPrimary, size: 22),
+                : const Icon(
+                    Icons.refresh_rounded,
+                    color: AppTheme.brandPrimary,
+                    size: 22,
+                  ),
             onPressed: () => _initData(),
           ),
           const SizedBox(width: 6),
@@ -1411,7 +1972,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
               color: AppTheme.brandPrimary,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1452,36 +2016,6 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     final isReady = _status.isReady;
     final hasQr = _status.hasActiveQr && _status.qrCodeDataUrl != null;
 
-    if (_status.errorCode == 'AUTH_REQUIRED' ||
-        _status.errorCode == 'SESSION_EXPIRED') {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF7ED),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFFED7AA)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.account_circle_outlined,
-                color: Color(0xFFC2410C), size: 21),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'WhatsApp needs an online EaseInn sign-in. Your app can still work offline, but connect to the internet and sign in online to use WhatsApp. This does not unlink your WhatsApp session.',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: const Color(0xFF9A3412),
-                  height: 1.4,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     if (isReady) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1499,7 +2033,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                 color: const Color(0xFFDCFCE7),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.verified_rounded, color: Color(0xFF16A34A), size: 20),
+              child: const Icon(
+                Icons.verified_rounded,
+                color: Color(0xFF16A34A),
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1524,7 +2062,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1.5,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(6),
@@ -1542,7 +2083,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _status.connectedNumber != null ? '+${_status.connectedNumber}' : 'Automated messages active',
+                    _status.connectedNumber != null
+                        ? '+${_status.connectedNumber}'
+                        : 'Automated messages active',
                     style: GoogleFonts.inter(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,
@@ -1550,7 +2093,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                     ),
                   ),
                   Text(
-                    WhatsAppService.baseUrl.replaceFirst(RegExp(r'https?://'), ''),
+                    WhatsAppService.baseUrl.replaceFirst(
+                      RegExp(r'https?://'),
+                      '',
+                    ),
                     style: GoogleFonts.inter(
                       fontSize: 10,
                       color: const Color(0xFF86EFAC),
@@ -1599,13 +2145,20 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
           children: [
             Text(
               'Scan WhatsApp QR Code',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: AppTheme.slateDark,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               'Open WhatsApp on phone > Settings > Linked Devices > Link a Device',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppTheme.slateMuted,
+              ),
             ),
             const SizedBox(height: 14),
             Container(
@@ -1640,7 +2193,9 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.brandPrimary,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
               ),
@@ -1679,13 +2234,21 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
             const SizedBox(height: 16),
             Text(
               'Generating WhatsApp QR Code...',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: AppTheme.slateDark,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
               'Initializing secure session. The QR code will appear here in a few seconds.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted, height: 1.35),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppTheme.slateMuted,
+                height: 1.35,
+              ),
             ),
           ],
         ),
@@ -1719,7 +2282,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   color: const Color(0xFF25D366).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF25D366), size: 24),
+                child: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  color: Color(0xFF25D366),
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -1728,11 +2295,18 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   children: [
                     Text(
                       'Connect WhatsApp',
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.slateDark),
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: AppTheme.slateDark,
+                      ),
                     ),
                     Text(
                       'Link your hotel account to automate guest messages',
-                      style: GoogleFonts.inter(fontSize: 11.5, color: AppTheme.slateMuted),
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: AppTheme.slateMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -1747,14 +2321,27 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
               child: ElevatedButton.icon(
                 onPressed: _isConnecting ? null : _handleConnect,
                 icon: _isConnecting
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Icon(Icons.qr_code_rounded, size: 18),
-                label: Text(_isConnecting ? 'Initializing Session...' : 'Connect WhatsApp & Show QR Code'),
+                label: Text(
+                  _isConnecting
+                      ? 'Initializing Session...'
+                      : 'Connect WhatsApp & Show QR Code',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF25D366),
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -1768,19 +2355,17 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
     try {
       final base64String = dataUrl.split(',').last;
       final bytes = base64Decode(base64String);
-      return Image.memory(
-        bytes,
-        width: 190,
-        height: 190,
-        fit: BoxFit.contain,
-      );
+      return Image.memory(bytes, width: 190, height: 190, fit: BoxFit.contain);
     } catch (_) {
       return Container(
         width: 190,
         height: 190,
         color: const Color(0xFFF1F5F9),
         child: const Center(
-          child: Text('QR Code format error', style: TextStyle(fontSize: 11, color: AppTheme.slateMuted)),
+          child: Text(
+            'QR Code format error',
+            style: TextStyle(fontSize: 11, color: AppTheme.slateMuted),
+          ),
         ),
       );
     }
@@ -1818,7 +2403,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   color: AppTheme.brandPrimary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.edit_note_rounded, color: AppTheme.brandPrimary, size: 24),
+                child: const Icon(
+                  Icons.edit_note_rounded,
+                  color: AppTheme.brandPrimary,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -1861,7 +2450,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                 ),
               ),
               const SizedBox(width: 6),
-              const Icon(Icons.chevron_right_rounded, color: AppTheme.slateMuted, size: 20),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.slateMuted,
+                size: 20,
+              ),
             ],
           ),
         ),
@@ -1899,7 +2492,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                   color: const Color(0xFF10B981).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.send_rounded, color: Color(0xFF10B981), size: 20),
+                child: const Icon(
+                  Icons.send_rounded,
+                  color: Color(0xFF10B981),
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -1942,7 +2539,11 @@ class _WhatsAppScreenState extends State<WhatsAppScreen> with SingleTickerProvid
                 ),
               ),
               const SizedBox(width: 6),
-              const Icon(Icons.chevron_right_rounded, color: AppTheme.slateMuted, size: 20),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppTheme.slateMuted,
+                size: 20,
+              ),
             ],
           ),
         ),

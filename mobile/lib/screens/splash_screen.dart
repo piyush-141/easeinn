@@ -204,7 +204,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Color(0xFF6366F1),
+                      color: AppTheme.brandPrimary,
                     ),
                   ),
                   const SizedBox(height: 14),

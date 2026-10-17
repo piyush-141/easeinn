@@ -2132,7 +2132,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                           vertical: 1.5,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFEDE9FE),
+                                          color: AppTheme.brandLight,
                                           borderRadius: BorderRadius.circular(
                                             4,
                                           ),
@@ -2142,7 +2142,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                           style: GoogleFonts.inter(
                                             fontSize: 9,
                                             fontWeight: FontWeight.bold,
-                                            color: const Color(0xFF7C3AED),
+                                            color: AppTheme.brandPrimary,
                                           ),
                                         ),
                                       ),
@@ -2193,13 +2193,13 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                                 children: [
                                   CircleAvatar(
                                     radius: 16,
-                                    backgroundColor: Colors.indigo.shade100,
+                                    backgroundColor: AppTheme.brandLight,
                                     child: Text(
                                       cg.fullName.isNotEmpty
                                           ? cg.fullName[0].toUpperCase()
                                           : 'C',
                                       style: GoogleFonts.outfit(
-                                        color: Colors.indigo.shade800,
+                                        color: AppTheme.brandPrimary,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
                                       ),
@@ -2469,7 +2469,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                     radius: 24,
                     backgroundColor: isPrimary
                         ? AppTheme.brandPrimary
-                        : Colors.indigo,
+                        : AppTheme.slateMuted,
                     child: Text(
                       guest.fullName.isNotEmpty
                           ? guest.fullName[0].toUpperCase()
@@ -2500,7 +2500,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                             fontSize: 11,
                             color: isPrimary
                                 ? AppTheme.brandPrimary
-                                : Colors.indigo,
+                                : AppTheme.slateMuted,
                             fontWeight: FontWeight.w600,
                           ),
                         ),

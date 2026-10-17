@@ -157,14 +157,12 @@ class DashboardScreen extends StatelessWidget {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: const Color(0xFFDDD6FE),
-                        width: 1.2,
+                        color: AppTheme.slateBorder,
+                        width: 1.0,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(
-                            0xFF7C3AED,
-                          ).withValues(alpha: 0.08),
+                          color: Colors.black.withValues(alpha: 0.04),
                           blurRadius: 16,
                           offset: const Offset(0, 4),
                         ),
@@ -591,12 +589,12 @@ class DashboardScreen extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFEDE9FE), // Soft light purple
+                  color: Color(0xFFFEF3C7), // Warm golden tint
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.wb_sunny_rounded,
-                  color: Color(0xFF7C3AED), // Rich purple
+                  color: Color(0xFFF59E0B), // Warm Sun Amber
                   size: 24,
                 ),
               ),
@@ -649,7 +647,7 @@ class DashboardScreen extends StatelessWidget {
                 child: _buildInfoItem(
                   label: 'Departures',
                   value: '${store.departuresToday}',
-                  valueColor: const Color(0xFF8B5CF6), // Purple accent
+                  valueColor: const Color(0xFFFF9500), // Apple System Orange
                   caption: 'Expected today',
                   onTap: () => _showDeparturesDrawer(context, store),
                 ),
@@ -1232,14 +1230,14 @@ class DashboardScreen extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF3E8FF),
+                    color: const Color(0xFFFFF7ED),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${departures.length}',
                     style: GoogleFonts.outfit(
                       fontWeight: FontWeight.bold,
-                      color: const Color(0xFF7C3AED),
+                      color: const Color(0xFFFF9500),
                       fontSize: 14,
                     ),
                   ),
@@ -1297,7 +1295,7 @@ class DashboardScreen extends StatelessWidget {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF3E8FF),
+                                  color: AppTheme.brandLight,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Center(
@@ -1306,7 +1304,7 @@ class DashboardScreen extends StatelessWidget {
                                     style: GoogleFonts.outfit(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,
-                                      color: const Color(0xFF7C3AED),
+                                      color: AppTheme.brandPrimary,
                                     ),
                                   ),
                                 ),
@@ -1336,7 +1334,7 @@ class DashboardScreen extends StatelessWidget {
                                       'Due Out: ${DateFormat('hh:mm a').format(stay.expectedCheckOut)}',
                                       style: GoogleFonts.inter(
                                         fontSize: 10.5,
-                                        color: const Color(0xFF7C3AED),
+                                        color: const Color(0xFFFF9500),
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -1354,7 +1352,7 @@ class DashboardScreen extends StatelessWidget {
                                   );
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF7C3AED),
+                                  backgroundColor: AppTheme.brandPrimary,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                     vertical: 6,
@@ -1933,14 +1931,14 @@ class DashboardScreen extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF3E8FF),
+                    color: const Color(0xFFE8F9ED),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     currencyFormat.format(store.revenueToday),
                     style: GoogleFonts.outfit(
                       fontWeight: FontWeight.bold,
-                      color: const Color(0xFF7C3AED),
+                      color: const Color(0xFF34C759),
                       fontSize: 14,
                     ),
                   ),

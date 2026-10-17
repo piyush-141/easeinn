@@ -258,10 +258,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 label: 'Upcoming Stays',
                 subtitle: '${store.upcomingStays.length} upcoming',
                 icon: Icons.upcoming_rounded,
-                iconColor: const Color(0xFF7C3AED),
-                iconBg: const Color(0xFFF5F3FF),
+                iconColor: AppTheme.brandPrimary,
+                iconBg: AppTheme.brandLight,
                 badgeText: store.upcomingStays.isNotEmpty ? '${store.upcomingStays.length}' : null,
-                badgeBg: const Color(0xFF7C3AED),
+                badgeBg: AppTheme.brandPrimary,
                 onTap: () => _showUpcomingStaysSheet(context, store),
               ),
             ),
@@ -632,7 +632,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   style: GoogleFonts.inter(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: isToday ? const Color(0xFF6366F1) : AppTheme.slateMuted,
+                                    color: isToday ? AppTheme.brandPrimary : AppTheme.slateMuted,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
@@ -640,7 +640,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   width: 24,
                                   height: 24,
                                   decoration: BoxDecoration(
-                                    color: isToday ? const Color(0xFF6366F1) : Colors.transparent,
+                                    color: isToday ? AppTheme.brandPrimary : Colors.transparent,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Center(
@@ -835,7 +835,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (stay.status == StayStatus.reserved) {
       pillColor = const Color(0xFFF59E0B); // Amber for reserved
     } else if (room.categoryName.contains('Suite')) {
-      pillColor = const Color(0xFF8B5CF6); // Purple for suite
+      pillColor = const Color(0xFF0066CC); // Apple Action Blue for suite
     } else {
       pillColor = const Color(0xFF22C55E); // Green matching inspiration image 2
     }
@@ -1320,7 +1320,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             children: [
               _legendDot(const Color(0xFF22C55E), 'Occupied Stay'),
               _legendDot(const Color(0xFFF59E0B), 'Reserved Stay'),
-              _legendDot(const Color(0xFF8B5CF6), 'Executive Suite'),
+              _legendDot(AppTheme.brandPrimary, 'Executive Suite'),
               _legendDot(AppTheme.slateBorder, 'Vacant Slot (Tap to book)'),
             ],
           ),

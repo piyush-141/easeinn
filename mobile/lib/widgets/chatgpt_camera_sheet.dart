@@ -7,6 +7,7 @@ import 'package:camera/camera.dart';
 
 import 'camera_web_bridge/camera_web_bridge.dart';
 import 'camera_web_bridge/camera_bridge_interface.dart';
+import '../theme/app_theme.dart';
 
 class ChatGptCameraSheet extends StatefulWidget {
   final Function(Uint8List bytes, String filename) onCaptured;
@@ -239,7 +240,7 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
                           ElevatedButton.icon(
                             onPressed: _pickFromFile,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF6366F1),
+                              backgroundColor: AppTheme.brandPrimary,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
@@ -383,14 +384,14 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                          color: AppTheme.brandPrimary.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.4)),
+                          border: Border.all(color: AppTheme.brandPrimary.withValues(alpha: 0.4)),
                         ),
                         child: Text(
                           'AI Vision Active',
                           style: GoogleFonts.inter(
-                            color: const Color(0xFF818CF8),
+                            color: const Color(0xFF5AC8FA),
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
@@ -463,7 +464,7 @@ class _ChatGptCameraSheetState extends State<ChatGptCameraSheet> with SingleTick
                           width: _isCapturing ? 46 : 54,
                           height: _isCapturing ? 46 : 54,
                           decoration: BoxDecoration(
-                            color: _isCapturing ? const Color(0xFF6366F1) : Colors.white,
+                            color: _isCapturing ? AppTheme.brandPrimary : Colors.white,
                             shape: BoxShape.circle,
                           ),
                           child: _isCapturing

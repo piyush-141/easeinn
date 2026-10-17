@@ -19,7 +19,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<Map<String, dynamic>> _pages = [
     {
       'icon': Icons.document_scanner_rounded,
-      'accent': const Color(0xFF6366F1), // Indigo
+      'accent': AppTheme.brandPrimary, // Action Blue
       'tag': 'AI VISION OCR',
       'title': '10-Second Indian ID Check-In',
       'description':
