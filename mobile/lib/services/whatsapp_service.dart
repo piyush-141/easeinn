@@ -184,7 +184,7 @@ class WhatsAppService {
     return _cachedBaseUrl ?? defaultBaseUrl;
   }
 
-  static Map<String, String> _requestHeaders({
+  static Future<Map<String, String>> _requestHeaders({
     bool json = false,
   }) async {
     return <String, String>{

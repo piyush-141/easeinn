@@ -56,8 +56,6 @@ class CheckInScreen extends StatefulWidget {
   State<CheckInScreen> createState() => _CheckInScreenState();
 }
 
-enum _AirbnbStep1Section { where, when, who }
-
 class _CheckInScreenState extends State<CheckInScreen> {
   int _currentStep = 1; // 1: Room, 2: Guest & OCR, 3: Payment & Confirm
   late BookingMode _bookingMode; // checkIn vs reservation
@@ -68,10 +66,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
   DateTime _expectedCheckOut = DateTime.now().add(const Duration(days: 1));
   int _numAdults = 1; // Default 1 adult
   int _numKids = 0;
-  _AirbnbStep1Section _activeSection = _AirbnbStep1Section.where;
+  bool _customDurationSelected = false;
+  bool _guestsExpanded = false;
   int _selectedFloorFilter = 0; // 0 = all floors
-  late DateTime _calendarMonth;
-  bool _pickingStartDate = true;
 
   // Additional guests (beyond primary guest)
   final List<_ExtraGuest> _extraGuests = [];
@@ -125,7 +122,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
     if (lower.contains('aadhaar')) {
       return RegExp(r'^\d{12}$').hasMatch(clean);
     } else if (lower.contains('pan')) {
-      return RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]$', caseSensitive: false).hasMatch(clean);
+      return RegExp(
+        r'^[A-Z]{5}[0-9]{4}[A-Z]$',
+        caseSensitive: false,
+      ).hasMatch(clean);
     } else {
       return clean.length >= 5;
     }
@@ -163,7 +163,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
     return RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,}$').hasMatch(trimmed);
   }
 
-  Widget? _buildVerificationSuffix({required bool isValid, required bool isNotEmpty}) {
+  Widget? _buildVerificationSuffix({
+    required bool isValid,
+    required bool isNotEmpty,
+  }) {
     if (!isNotEmpty) return null;
     if (isValid) {
       return const Padding(
@@ -202,7 +205,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
     _expectedCheckOut = _checkInDate.add(
       const Duration(days: 1),
     ); // Default: just tonight (today and tomorrow)
-    _calendarMonth = DateTime(_checkInDate.year, _checkInDate.month, 1);
   }
 
   @override
@@ -232,7 +234,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
       setState(() {
         _selectedRoomId = widget.preselectedRoomId;
         _currentStep = 1;
-        _activeSection = _AirbnbStep1Section.when;
       });
     }
   }
@@ -601,7 +602,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
     setState(() {
       _primaryScanToken++;
       _currentStep = 1;
-      _activeSection = _AirbnbStep1Section.where;
+      _guestsExpanded = false;
+      _customDurationSelected = false;
       _nameController.clear();
       _phoneController.clear();
       _emailController.clear();
@@ -1325,39 +1327,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: Navigator.of(context).canPop()
-          ? AppBar(
-              backgroundColor: Colors.white,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_rounded,
-                  color: AppTheme.slateDark,
-                ),
-                onPressed: () {
-                  if (widget.onBack != null) {
-                    widget.onBack!();
-                  } else {
-                    Navigator.of(context).pop();
-                  }
-                },
-              ),
-              title: Text(
-                _bookingMode == BookingMode.checkIn
-                    ? 'Check-In Wizard'
-                    : 'Reservation Wizard',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.slateDark,
-                ),
-              ),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(color: AppTheme.slateBorder, height: 1),
-              ),
-            )
-          : null,
+      appBar: null,
       bottomNavigationBar: _buildUnifiedStickyFooter(
         selectedRoom: selectedRoom,
         nights: nights,
@@ -1420,88 +1390,46 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 ),
               ],
 
-              // Wizard Header & Stepper
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      if (widget.onBack == null &&
-                          Navigator.of(context).canPop()) ...[
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(
-                            Icons.arrow_back_rounded,
-                            color: AppTheme.slateDark,
-                            size: 20,
-                          ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          tooltip: 'Back',
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _bookingMode == BookingMode.checkIn
-                                ? 'Check-In Wizard'
-                                : 'Reservation Wizard',
-                            style: GoogleFonts.outfit(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.slateDark,
-                            ),
-                          ),
-                          Text(
-                            'Step $_currentStep of 3 • ${_currentStep == 1
-                                ? "Room & Dates"
-                                : _currentStep == 2
-                                ? "Guest ID Verification"
-                                : (_bookingMode == BookingMode.checkIn ? "Payment & Finalize" : "Deposit & Confirm")}',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: AppTheme.slateMuted,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                  if (widget.onBack == null &&
+                      Navigator.of(context).canPop()) ...[
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: AppTheme.slateDark,
+                        size: 20,
                       ),
-                    ],
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Back',
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      _bookingMode == BookingMode.checkIn
+                          ? 'Check-In'
+                          : 'Reservation',
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.slateDark,
+                      ),
+                    ),
                   ),
-                  Row(
-                    children: [1, 2, 3].map((step) {
-                      final isCurrent = _currentStep == step;
-                      final isDone = _currentStep > step;
-                      return Container(
-                        margin: const EdgeInsets.only(left: 4),
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isCurrent
-                              ? AppTheme.brandPrimary
-                              : (isDone
-                                    ? AppTheme.statusVacant
-                                    : AppTheme.slateBorder),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '$step',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                  Text(
+                    'Step $_currentStep of 3',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppTheme.slateMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 8),
 
               // ── BOOKING MODE SWITCHER (Immediate Walk-In vs Future Advance Reservation) ──
               if (_currentStep == 1) ...[
@@ -1530,7 +1458,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 _expectedCheckOut = _checkInDate.add(
                                   const Duration(days: 1),
                                 );
-                                _activeSection = _AirbnbStep1Section.where;
+                                _customDurationSelected = false;
                               });
                             }
                           },
@@ -1566,7 +1494,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  'Immediate Check-In',
+                                  'Check-In Now',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
                                     fontWeight:
@@ -1601,8 +1529,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                     const Duration(days: 2),
                                   );
                                 }
-                                _activeSection = _AirbnbStep1Section
-                                    .when; // Manager should select future dates first
+                                _customDurationSelected = false;
                               });
                             }
                           },
@@ -1638,7 +1565,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  'Future Reservation',
+                                  'Reservation',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
                                     fontWeight:
@@ -1660,59 +1587,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // Context helper banner
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _bookingMode == BookingMode.checkIn
-                        ? AppTheme.brandLight.withValues(alpha: 0.5)
-                        : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AppTheme.slateBorder.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _bookingMode == BookingMode.checkIn
-                            ? Icons.flash_on_rounded
-                            : Icons.date_range_rounded,
-                        size: 14,
-                        color: AppTheme.brandPrimary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _bookingMode == BookingMode.checkIn
-                              ? 'Walk-in guest arriving now • Instant room key assignment'
-                              : 'Advance booking • Select any future start & end dates',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: AppTheme.slateDark,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
               ],
 
               // ==========================================
               // STEP 1: AIRBNB-STYLE CHOOSER (WHERE • WHEN • WHO)
               // ==========================================
               if (_currentStep == 1) ...[
-                _buildAirbnbWhereSection(availableRooms, selectedRoom),
-                const SizedBox(height: 12),
-                _buildAirbnbWhenSection(store, nights),
-                const SizedBox(height: 12),
-                _buildAirbnbWhoSection(),
-                const SizedBox(height: 32),
+                _buildCompactRoomChooser(availableRooms, selectedRoom, store),
+                const SizedBox(height: 10),
+                _buildCompactStaySelector(nights),
+                const SizedBox(height: 4),
+                _buildCompactGuestSelector(),
+                const SizedBox(height: 8),
               ],
 
               // ==========================================
@@ -2692,8 +2578,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: _nameController.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isNameValid(_nameController.text)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -2745,8 +2631,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: _idNumberController.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isIdValid(_idNumberController.text, _idType)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -2810,8 +2696,12 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               color: _dobController.text.trim().isEmpty
                                   ? AppTheme.slateBorder
                                   : (_isDobValid(_dobController.text)
-                                      ? const Color(0xFF16A34A).withOpacity(0.5)
-                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                                        ? const Color(
+                                            0xFF16A34A,
+                                          ).withOpacity(0.5)
+                                        : const Color(
+                                            0xFFEF4444,
+                                          ).withOpacity(0.5)),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -2908,7 +2798,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           ),
                           suffixIcon: _buildVerificationSuffix(
                             isValid: _isAddressValid(_addressController.text),
-                            isNotEmpty: _addressController.text.trim().isNotEmpty,
+                            isNotEmpty: _addressController.text
+                                .trim()
+                                .isNotEmpty,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -2927,8 +2819,12 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               color: _addressController.text.trim().isEmpty
                                   ? AppTheme.slateBorder
                                   : (_isAddressValid(_addressController.text)
-                                      ? const Color(0xFF16A34A).withOpacity(0.5)
-                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                                        ? const Color(
+                                            0xFF16A34A,
+                                          ).withOpacity(0.5)
+                                        : const Color(
+                                            0xFFEF4444,
+                                          ).withOpacity(0.5)),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -2969,7 +2865,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           ),
                           suffixIcon: _buildVerificationSuffix(
                             isValid: _isPincodeValid(_pincodeController.text),
-                            isNotEmpty: _pincodeController.text.trim().isNotEmpty,
+                            isNotEmpty: _pincodeController.text
+                                .trim()
+                                .isNotEmpty,
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -2988,8 +2886,12 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               color: _pincodeController.text.trim().isEmpty
                                   ? AppTheme.slateBorder
                                   : (_isPincodeValid(_pincodeController.text)
-                                      ? const Color(0xFF16A34A).withOpacity(0.5)
-                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                                        ? const Color(
+                                            0xFF16A34A,
+                                          ).withOpacity(0.5)
+                                        : const Color(
+                                            0xFFEF4444,
+                                          ).withOpacity(0.5)),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -3083,8 +2985,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: _phoneController.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isPhoneValid(_phoneController.text)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -3138,8 +3040,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: _emailController.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isEmailValid(_emailController.text)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -3637,8 +3539,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: g.nameCtrl.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isNameValid(g.nameCtrl.text)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -3690,8 +3592,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: g.idNumberCtrl.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isIdValid(g.idNumberCtrl.text, g.idType)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -3755,8 +3657,12 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               color: g.dobCtrl.text.trim().isEmpty
                                   ? AppTheme.slateBorder
                                   : (_isDobValid(g.dobCtrl.text)
-                                      ? const Color(0xFF16A34A).withOpacity(0.5)
-                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                                        ? const Color(
+                                            0xFF16A34A,
+                                          ).withOpacity(0.5)
+                                        : const Color(
+                                            0xFFEF4444,
+                                          ).withOpacity(0.5)),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -3872,8 +3778,12 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               color: g.addressCtrl.text.trim().isEmpty
                                   ? AppTheme.slateBorder
                                   : (_isAddressValid(g.addressCtrl.text)
-                                      ? const Color(0xFF16A34A).withOpacity(0.5)
-                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                                        ? const Color(
+                                            0xFF16A34A,
+                                          ).withOpacity(0.5)
+                                        : const Color(
+                                            0xFFEF4444,
+                                          ).withOpacity(0.5)),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -3933,8 +3843,12 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               color: g.pincodeCtrl.text.trim().isEmpty
                                   ? AppTheme.slateBorder
                                   : (_isPincodeValid(g.pincodeCtrl.text)
-                                      ? const Color(0xFF16A34A).withOpacity(0.5)
-                                      : const Color(0xFFEF4444).withOpacity(0.5)),
+                                        ? const Color(
+                                            0xFF16A34A,
+                                          ).withOpacity(0.5)
+                                        : const Color(
+                                            0xFFEF4444,
+                                          ).withOpacity(0.5)),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -4028,8 +3942,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: g.phoneCtrl.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isPhoneValid(g.phoneCtrl.text)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -4083,8 +3997,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         color: g.emailCtrl.text.trim().isEmpty
                             ? AppTheme.slateBorder
                             : (_isEmailValid(g.emailCtrl.text)
-                                ? const Color(0xFF16A34A).withOpacity(0.5)
-                                : const Color(0xFFEF4444).withOpacity(0.5)),
+                                  ? const Color(0xFF16A34A).withOpacity(0.5)
+                                  : const Color(0xFFEF4444).withOpacity(0.5)),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
@@ -4171,1402 +4085,550 @@ class _CheckInScreenState extends State<CheckInScreen> {
   // AIRBNB STEP 1 CHOOSER HELPER METHODS
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _buildAirbnbWhereSection(
+  Widget _buildCompactRoomChooser(
     List<Room> availableRooms,
     Room? selectedRoom,
+    HotelStore store,
   ) {
-    final isExpanded = _activeSection == _AirbnbStep1Section.where;
-    final isReservation = _bookingMode == BookingMode.reservation;
+    final filtered = _selectedFloorFilter == 0
+        ? availableRooms
+        : availableRooms
+              .where((room) => room.floor == _selectedFloorFilter)
+              .toList();
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOutCubic,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-        border: Border.all(
-          color: isExpanded ? AppTheme.brandPrimary : AppTheme.slateBorder,
-          width: isExpanded ? 1.8 : 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isExpanded
-                ? AppTheme.brandPrimary.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.025),
-            blurRadius: isExpanded ? 16 : 8,
-            offset: Offset(0, isExpanded ? 4 : 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-          onTap: isExpanded
-              ? null
-              : () =>
-                    setState(() => _activeSection = _AirbnbStep1Section.where),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: AnimatedCrossFade(
-              duration: const Duration(milliseconds: 220),
-              crossFadeState: isExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              firstChild: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: AppTheme.brandLight,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      isReservation
-                          ? Icons.event_available_rounded
-                          : Icons.hotel_rounded,
-                      size: 20,
-                      color: AppTheme.brandPrimary,
-                    ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (selectedRoom != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.bed_rounded,
+                  size: 17,
+                  color: AppTheme.brandPrimary,
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  'Room ${selectedRoom.roomNumber}',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.slateDark,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isReservation
-                              ? 'WHERE • AVAILABLE ROOM'
-                              : 'WHERE • VACANT ROOM',
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                            color: AppTheme.brandPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          selectedRoom != null
-                              ? 'Room ${selectedRoom.roomNumber} • ${selectedRoom.categoryName} (Floor ${selectedRoom.floor})'
-                              : (isReservation
-                                    ? 'Choose an available room for dates'
-                                    : 'Choose a vacant room'),
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.slateDark,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: AppTheme.slateMuted,
-                  ),
-                ],
-              ),
-              secondChild: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        isReservation
-                            ? 'Rooms Available for Dates'
-                            : 'Where will the guest stay?',
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.slateDark,
-                        ),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          size: 20,
-                          color: AppTheme.slateMuted,
-                        ),
-                        onPressed: () => setState(
-                          () => _activeSection = _AirbnbStep1Section.when,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    isReservation
-                        ? 'Showing inventory free for ${DateFormat('d MMM').format(_checkInDate)} – ${DateFormat('d MMM').format(_expectedCheckOut)}'
-                        : 'Tap any vacant room to assign (automatically moves to When)',
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${selectedRoom.categoryName} · Floor ${selectedRoom.floor}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       color: AppTheme.slateMuted,
                     ),
                   ),
-                  const SizedBox(height: 14),
-
-                  // Floor Filter Pills
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildFilterPill(
-                          'All (${availableRooms.length})',
-                          _selectedFloorFilter == 0,
-                          () {
-                            setState(() => _selectedFloorFilter = 0);
-                          },
-                        ),
-                        ...context.read<HotelStore>().floors.map((fl) {
-                          final count = availableRooms
-                              .where((r) => r.floor == fl)
-                              .length;
-                          return Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: _buildFilterPill(
-                              'Floor $fl ($count)',
-                              _selectedFloorFilter == fl,
-                              () {
-                                setState(() => _selectedFloorFilter = fl);
-                              },
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Vacant / Available Rooms List
-                  if (availableRooms.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.info_outline_rounded,
-                            color: Colors.redAccent,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              isReservation
-                                  ? 'No rooms available for ${DateFormat('d MMM').format(_checkInDate)} – ${DateFormat('d MMM').format(_expectedCheckOut)}. Please select different dates in "When".'
-                                  : 'No vacant rooms available right now. Please mark a room as cleaned.',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: Colors.red.shade900,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Builder(
-                      builder: (context) {
-                        final filtered = _selectedFloorFilter == 0
-                            ? availableRooms
-                            : availableRooms
-                                  .where((r) => r.floor == _selectedFloorFilter)
-                                  .toList();
-
-                        if (filtered.isEmpty) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            child: Center(
-                              child: Text(
-                                'No available rooms on Floor $_selectedFloorFilter',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: AppTheme.slateMuted,
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-
-                        return SizedBox(
-                          height: 110,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            physics: const BouncingScrollPhysics(),
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 10),
-                            itemBuilder: (context, i) {
-                              final room = filtered[i];
-                              final isSelected = room.id == _selectedRoomId;
-
-                              return GestureDetector(
-                                onTap: () {
-                                  // SELECT ROOM AND AUTOMATICALLY MOVE TO WHEN!
-                                  setState(() {
-                                    _selectedRoomId = room.id;
-                                    _activeSection = _AirbnbStep1Section.when;
-                                  });
-                                },
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 130,
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? AppTheme.brandLight.withValues(
-                                            alpha: 0.35,
-                                          )
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? AppTheme.brandPrimary
-                                          : AppTheme.slateBorder,
-                                      width: isSelected ? 2.0 : 1.0,
-                                    ),
-                                    boxShadow: isSelected
-                                        ? [
-                                            BoxShadow(
-                                              color: AppTheme.brandPrimary
-                                                  .withValues(alpha: 0.12),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 3),
-                                            ),
-                                          ]
-                                        : [
-                                            BoxShadow(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.02,
-                                              ),
-                                              blurRadius: 4,
-                                              offset: const Offset(0, 1),
-                                            ),
-                                          ],
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            room.roomNumber,
-                                            style: GoogleFonts.outfit(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                              color: isSelected
-                                                  ? AppTheme.brandDark
-                                                  : AppTheme.slateDark,
-                                            ),
-                                          ),
-                                          if (isSelected)
-                                            Container(
-                                              padding: const EdgeInsets.all(3),
-                                              decoration: const BoxDecoration(
-                                                color: AppTheme.brandPrimary,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: const Icon(
-                                                Icons.check_rounded,
-                                                size: 10,
-                                                color: Colors.white,
-                                              ),
-                                            )
-                                          else
-                                            Text(
-                                              'Fl ${room.floor}',
-                                              style: GoogleFonts.inter(
-                                                fontSize: 10,
-                                                color: AppTheme.slateMuted,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      Text(
-                                        room.categoryName,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                          color: isSelected
-                                              ? AppTheme.brandPrimary
-                                              : AppTheme.slateMuted,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            '₹${room.baseRate.toInt()}/n',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: isSelected
-                                                  ? AppTheme.brandDark
-                                                  : AppTheme.slateDark,
-                                            ),
-                                          ),
-                                          if (isReservation)
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 4,
-                                                    vertical: 1,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF0FDF4),
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                'Free',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 8.5,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: const Color(
-                                                    0xFF16A34A,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAirbnbWhenSection(HotelStore store, int nights) {
-    final isExpanded = _activeSection == _AirbnbStep1Section.when;
-    final isReservation = _bookingMode == BookingMode.reservation;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOutCubic,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-        border: Border.all(
-          color: isExpanded ? AppTheme.brandPrimary : AppTheme.slateBorder,
-          width: isExpanded ? 1.8 : 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isExpanded
-                ? AppTheme.brandPrimary.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.025),
-            blurRadius: isExpanded ? 16 : 8,
-            offset: Offset(0, isExpanded ? 4 : 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-          onTap: isExpanded
-              ? null
-              : () => setState(() => _activeSection = _AirbnbStep1Section.when),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: AnimatedCrossFade(
-              duration: const Duration(milliseconds: 220),
-              crossFadeState: isExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              firstChild: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: AppTheme.brandLight,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      isReservation
-                          ? Icons.date_range_rounded
-                          : Icons.calendar_today_rounded,
-                      size: 18,
-                      color: AppTheme.brandPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isReservation
-                              ? 'WHEN • RESERVATION PERIOD'
-                              : 'WHEN • DURATION (CHECK-IN TODAY)',
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                            color: AppTheme.brandPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${DateFormat('d MMM').format(_checkInDate)} – ${DateFormat('d MMM').format(_expectedCheckOut)} ($nights night${nights > 1 ? "s" : ""})',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.slateDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: AppTheme.slateMuted,
-                  ),
-                ],
-              ),
-              secondChild: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        isReservation
-                            ? 'Select Reservation Period'
-                            : "When's the stay?",
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.slateDark,
-                        ),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          size: 20,
-                          color: AppTheme.slateMuted,
-                        ),
-                        onPressed: () => setState(
-                          () => _activeSection = _AirbnbStep1Section.who,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    isReservation
-                        ? 'Select both start and end dates anytime in the future.'
-                        : 'Immediate check-in starts today. Choose departure date or duration below.',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: AppTheme.slateMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // For Reservation: Arrival & Departure Interactive Selector
-                  if (isReservation) ...[
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTheme.slateBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          // Arrival Date Box
-                          Expanded(
-                            child: InkWell(
-                              onTap: () =>
-                                  setState(() => _pickingStartDate = true),
-                              borderRadius: BorderRadius.circular(12),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _pickingStartDate
-                                      ? Colors.white
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: _pickingStartDate
-                                        ? AppTheme.brandPrimary
-                                        : Colors.transparent,
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: _pickingStartDate
-                                      ? [
-                                          BoxShadow(
-                                            color: AppTheme.brandPrimary
-                                                .withValues(alpha: 0.1),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.flight_land_rounded,
-                                          size: 13,
-                                          color: _pickingStartDate
-                                              ? AppTheme.brandPrimary
-                                              : AppTheme.slateMuted,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'CHECK-IN',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: _pickingStartDate
-                                                ? AppTheme.brandPrimary
-                                                : AppTheme.slateMuted,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      DateFormat(
-                                        'EEE, d MMM',
-                                      ).format(_checkInDate),
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.slateDark,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 14,
-                              color: AppTheme.slateMuted,
-                            ),
-                          ),
-                          // Departure Date Box
-                          Expanded(
-                            child: InkWell(
-                              onTap: () =>
-                                  setState(() => _pickingStartDate = false),
-                              borderRadius: BorderRadius.circular(12),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: !_pickingStartDate
-                                      ? Colors.white
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: !_pickingStartDate
-                                        ? AppTheme.brandPrimary
-                                        : Colors.transparent,
-                                    width: 1.5,
-                                  ),
-                                  boxShadow: !_pickingStartDate
-                                      ? [
-                                          BoxShadow(
-                                            color: AppTheme.brandPrimary
-                                                .withValues(alpha: 0.1),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.flight_takeoff_rounded,
-                                          size: 13,
-                                          color: !_pickingStartDate
-                                              ? AppTheme.brandPrimary
-                                              : AppTheme.slateMuted,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'CHECK-OUT',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: !_pickingStartDate
-                                                ? AppTheme.brandPrimary
-                                                : AppTheme.slateMuted,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      DateFormat(
-                                        'EEE, d MMM',
-                                      ).format(_expectedCheckOut),
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.slateDark,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // Quick Stay Presets
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: isReservation
-                          ? [
-                              // RESERVATION PRESETS
-                              _buildPresetChip('This Weekend', false, () {
-                                final now = DateTime.now();
-                                final daysToFri =
-                                    (DateTime.friday - now.weekday + 7) % 7;
-                                final start = DateTime(
-                                  now.year,
-                                  now.month,
-                                  now.day + (daysToFri == 0 ? 7 : daysToFri),
-                                );
-                                final end = start.add(const Duration(days: 2));
-                                setState(() {
-                                  _checkInDate = start;
-                                  _expectedCheckOut = end;
-                                  _pickingStartDate = true;
-                                });
-                              }),
-                              const SizedBox(width: 8),
-                              _buildPresetChip('Next Week (4N)', false, () {
-                                final now = DateTime.now();
-                                final daysToMon =
-                                    (DateTime.monday - now.weekday + 7) % 7;
-                                final start = DateTime(
-                                  now.year,
-                                  now.month,
-                                  now.day + (daysToMon == 0 ? 7 : daysToMon),
-                                );
-                                final end = start.add(const Duration(days: 4));
-                                setState(() {
-                                  _checkInDate = start;
-                                  _expectedCheckOut = end;
-                                  _pickingStartDate = true;
-                                });
-                              }),
-                              const SizedBox(width: 8),
-                              _buildPresetChip('In 2 Weeks (3N)', false, () {
-                                final now = DateTime.now();
-                                final start = DateTime(
-                                  now.year,
-                                  now.month,
-                                  now.day + 14,
-                                );
-                                final end = start.add(const Duration(days: 3));
-                                setState(() {
-                                  _checkInDate = start;
-                                  _expectedCheckOut = end;
-                                  _pickingStartDate = true;
-                                });
-                              }),
-                              const SizedBox(width: 8),
-                              _buildPresetChip('Next Month (3N)', false, () {
-                                final now = DateTime.now();
-                                final start = DateTime(
-                                  now.year,
-                                  now.month + 1,
-                                  1,
-                                );
-                                final end = start.add(const Duration(days: 3));
-                                setState(() {
-                                  _calendarMonth = DateTime(
-                                    start.year,
-                                    start.month,
-                                    1,
-                                  );
-                                  _checkInDate = start;
-                                  _expectedCheckOut = end;
-                                  _pickingStartDate = true;
-                                });
-                              }),
-                            ]
-                          : [
-                              // IMMEDIATE CHECK-IN PRESETS
-                              _buildPresetChip('Tonight (1N)', nights == 1, () {
-                                final today = DateTime.now();
-                                setState(() {
-                                  _checkInDate = DateTime(
-                                    today.year,
-                                    today.month,
-                                    today.day,
-                                  );
-                                  _expectedCheckOut = _checkInDate.add(
-                                    const Duration(days: 1),
-                                  );
-                                  _activeSection = _AirbnbStep1Section.who;
-                                });
-                              }),
-                              const SizedBox(width: 8),
-                              _buildPresetChip('2 Nights', nights == 2, () {
-                                final today = DateTime.now();
-                                setState(() {
-                                  _checkInDate = DateTime(
-                                    today.year,
-                                    today.month,
-                                    today.day,
-                                  );
-                                  _expectedCheckOut = _checkInDate.add(
-                                    const Duration(days: 2),
-                                  );
-                                  _activeSection = _AirbnbStep1Section.who;
-                                });
-                              }),
-                              const SizedBox(width: 8),
-                              _buildPresetChip('3 Nights', nights == 3, () {
-                                final today = DateTime.now();
-                                setState(() {
-                                  _checkInDate = DateTime(
-                                    today.year,
-                                    today.month,
-                                    today.day,
-                                  );
-                                  _expectedCheckOut = _checkInDate.add(
-                                    const Duration(days: 3),
-                                  );
-                                  _activeSection = _AirbnbStep1Section.who;
-                                });
-                              }),
-                              const SizedBox(width: 8),
-                              _buildPresetChip('1 Week', nights == 7, () {
-                                final today = DateTime.now();
-                                setState(() {
-                                  _checkInDate = DateTime(
-                                    today.year,
-                                    today.month,
-                                    today.day,
-                                  );
-                                  _expectedCheckOut = _checkInDate.add(
-                                    const Duration(days: 7),
-                                  );
-                                  _activeSection = _AirbnbStep1Section.who;
-                                });
-                              }),
-                            ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // Embedded Minimal Calendar Grid
-                  _buildEmbeddedAirbnbCalendar(),
-
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => setState(
-                        () => _activeSection = _AirbnbStep1Section.who,
-                      ),
-                      icon: const Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 14,
-                        color: AppTheme.brandPrimary,
-                      ),
-                      label: Text(
-                        'Confirm Dates & Continue to Who',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.brandPrimary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmbeddedAirbnbCalendar() {
-    final daysInMonth = DateTime(
-      _calendarMonth.year,
-      _calendarMonth.month + 1,
-      0,
-    ).day;
-    final firstWeekday =
-        DateTime(_calendarMonth.year, _calendarMonth.month, 1).weekday %
-        7; // 0 = Sun
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTheme.slateBorder),
-      ),
-      child: Column(
-        children: [
-          // Month header & Navigation
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        SizedBox(
+          height: 34,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
             children: [
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(
-                  Icons.chevron_left_rounded,
-                  color: AppTheme.slateDark,
-                  size: 22,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _calendarMonth = DateTime(
-                      _calendarMonth.year,
-                      _calendarMonth.month - 1,
-                      1,
-                    );
-                  });
-                },
+              _buildFilterPill(
+                'All (${availableRooms.length})',
+                _selectedFloorFilter == 0,
+                () => setState(() => _selectedFloorFilter = 0),
               ),
-              Text(
-                DateFormat('MMMM yyyy').format(_calendarMonth),
-                style: GoogleFonts.outfit(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.slateDark,
-                ),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppTheme.slateDark,
-                  size: 22,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _calendarMonth = DateTime(
-                      _calendarMonth.year,
-                      _calendarMonth.month + 1,
-                      1,
-                    );
-                  });
-                },
-              ),
+              ...store.floors.map((floor) {
+                final count = availableRooms
+                    .where((room) => room.floor == floor)
+                    .length;
+                return Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: _buildFilterPill(
+                    'Floor $floor ($count)',
+                    _selectedFloorFilter == floor,
+                    () => setState(() => _selectedFloorFilter = floor),
+                  ),
+                );
+              }),
             ],
           ),
-
-          // Weekday header
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) {
-                return SizedBox(
-                  width: 32,
-                  child: Center(
-                    child: Text(
-                      d,
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.slateMuted,
+        ),
+        const SizedBox(height: 8),
+        if (availableRooms.isEmpty)
+          Container(
+            height: 86,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              _bookingMode == BookingMode.reservation
+                  ? 'No rooms available for these dates.'
+                  : 'No vacant rooms available right now.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: Colors.red.shade800,
+              ),
+            ),
+          )
+        else if (filtered.isEmpty)
+          SizedBox(
+            height: 86,
+            child: Center(
+              child: Text(
+                'No rooms on this floor',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppTheme.slateMuted,
+                ),
+              ),
+            ),
+          )
+        else
+          SizedBox(
+            height: 104,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: filtered.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 9),
+              itemBuilder: (context, index) {
+                final room = filtered[index];
+                final selected = room.id == _selectedRoomId;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(15),
+                  onTap: () => setState(() => _selectedRoomId = room.id),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 130,
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppTheme.brandLight.withValues(alpha: .35)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(
+                        color: selected
+                            ? AppTheme.brandPrimary
+                            : AppTheme.slateBorder,
+                        width: selected ? 1.6 : 1,
                       ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              room.roomNumber,
+                              style: GoogleFonts.outfit(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.slateDark,
+                              ),
+                            ),
+                            Text(
+                              'Fl ${room.floor}',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: AppTheme.slateMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          room.categoryName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
+                        Text(
+                          '₹${room.baseRate.toInt()}/n',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.slateDark,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
-              }).toList(),
+              },
             ),
           ),
+      ],
+    );
+  }
 
-          // Days grid
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: 42,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              childAspectRatio: 1.1,
-            ),
-            itemBuilder: (context, i) {
-              final dayNum = i - firstWeekday + 1;
-              if (dayNum < 1 || dayNum > daysInMonth) {
-                return const SizedBox.shrink();
-              }
-              final date = DateTime(
-                _calendarMonth.year,
-                _calendarMonth.month,
-                dayNum,
-              );
-              final isPast = date.isBefore(today);
-
-              final isStart = date.isAtSameMomentAs(_checkInDate);
-              final isEnd = date.isAtSameMomentAs(_expectedCheckOut);
-              final isMiddle =
-                  date.isAfter(_checkInDate) &&
-                  date.isBefore(_expectedCheckOut);
-              final isSelected = isStart || isEnd;
-
-              Widget? bridge;
-              if (_expectedCheckOut.isAfter(_checkInDate)) {
-                if (isStart) {
-                  bridge = Align(
-                    alignment: Alignment.centerRight,
-                    child: Container(
-                      width: 20,
-                      height: 32,
-                      color: AppTheme.brandLight,
-                    ),
-                  );
-                } else if (isEnd) {
-                  bridge = Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      width: 20,
-                      height: 32,
-                      color: AppTheme.brandLight,
-                    ),
-                  );
-                } else if (isMiddle) {
-                  bridge = Container(height: 32, color: AppTheme.brandLight);
-                }
-              }
-
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: isPast
-                    ? null
-                    : () {
-                        setState(() {
-                          if (_bookingMode == BookingMode.checkIn) {
-                            // Immediate Check-In: check-in is today, date picked is checkout!
-                            if (date.isAtSameMomentAs(today)) {
-                              _checkInDate = today;
-                              _expectedCheckOut = today.add(
-                                const Duration(days: 1),
-                              );
-                            } else {
-                              _checkInDate = today;
-                              _expectedCheckOut = date;
-                            }
-                            Future.delayed(
-                              const Duration(milliseconds: 260),
-                              () {
-                                if (mounted)
-                                  setState(
-                                    () => _activeSection =
-                                        _AirbnbStep1Section.who,
-                                  );
-                              },
-                            );
-                          } else {
-                            // Advance Reservation: can pick any future start and end date!
-                            if (_pickingStartDate) {
-                              _checkInDate = date;
-                              if (!_expectedCheckOut.isAfter(date)) {
-                                _expectedCheckOut = date.add(
-                                  const Duration(days: 1),
-                                );
-                              }
-                              _pickingStartDate = false;
-                            } else {
-                              if (date.isAfter(_checkInDate)) {
-                                _expectedCheckOut = date;
-                                _pickingStartDate = true;
-                                Future.delayed(
-                                  const Duration(milliseconds: 260),
-                                  () {
-                                    if (mounted)
-                                      setState(
-                                        () => _activeSection =
-                                            _AirbnbStep1Section.who,
-                                      );
-                                  },
-                                );
-                              } else {
-                                _checkInDate = date;
-                                _expectedCheckOut = date.add(
-                                  const Duration(days: 1),
-                                );
-                                _pickingStartDate = false;
-                              }
-                            }
-                          }
-                        });
-                      },
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    if (bridge != null) bridge,
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppTheme.brandPrimary
-                            : Colors.transparent,
-                        shape: BoxShape.circle,
-                        border: (date.isAtSameMomentAs(today) && !isSelected)
-                            ? Border.all(
-                                color: AppTheme.brandPrimary,
-                                width: 1.5,
-                              )
-                            : null,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '$dayNum',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.w600,
-                            color: isSelected
-                                ? Colors.white
-                                : (isPast
-                                      ? const Color(0xFFCBD5E1)
-                                      : (isMiddle
-                                            ? AppTheme.brandDark
-                                            : AppTheme.slateDark)),
-                            decoration: isPast
-                                ? TextDecoration.lineThrough
-                                : null,
-                            decorationColor: const Color(0xFFCBD5E1),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+  Future<DateTime?> _showDatePickerSheet({
+    required String title,
+    required DateTime initialDate,
+    required DateTime firstDate,
+  }) {
+    final today = DateTime.now();
+    return showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 34,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.slateBorder,
+                  borderRadius: BorderRadius.circular(4),
                 ),
-              );
-            },
+              ),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
+              ),
+              CalendarDatePicker(
+                initialDate: initialDate.isBefore(firstDate)
+                    ? firstDate
+                    : initialDate,
+                firstDate: firstDate,
+                lastDate: DateTime(today.year + 3, today.month, today.day),
+                onDateChanged: (date) => Navigator.of(sheetContext).pop(date),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildAirbnbWhoSection() {
-    final isExpanded = _activeSection == _AirbnbStep1Section.who;
+  Future<void> _pickArrivalDate() async {
+    final today = DateTime.now();
+    final firstDate = _bookingMode == BookingMode.reservation
+        ? DateTime(today.year, today.month, today.day + 1)
+        : DateTime(today.year, today.month, today.day);
+    final picked = await _showDatePickerSheet(
+      title: 'Check-in date',
+      initialDate: _checkInDate,
+      firstDate: firstDate,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      final duration = _expectedCheckOut
+          .difference(_checkInDate)
+          .inDays
+          .clamp(1, 365);
+      _checkInDate = DateTime(picked.year, picked.month, picked.day);
+      _expectedCheckOut = _checkInDate.add(Duration(days: duration));
+    });
+  }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOutCubic,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-        border: Border.all(
-          color: isExpanded ? AppTheme.brandPrimary : AppTheme.slateBorder,
-          width: isExpanded ? 1.8 : 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isExpanded
-                ? AppTheme.brandPrimary.withValues(alpha: 0.08)
-                : Colors.black.withValues(alpha: 0.025),
-            blurRadius: isExpanded ? 16 : 8,
-            offset: Offset(0, isExpanded ? 4 : 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(isExpanded ? 24 : 20),
-          onTap: isExpanded
-              ? null
-              : () => setState(() => _activeSection = _AirbnbStep1Section.who),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: AnimatedCrossFade(
-              duration: const Duration(milliseconds: 220),
-              crossFadeState: isExpanded
-                  ? CrossFadeState.showSecond
-                  : CrossFadeState.showFirst,
-              firstChild: Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: AppTheme.brandLight,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.group_outlined,
-                      size: 18,
-                      color: AppTheme.brandPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'WHO',
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                            color: AppTheme.brandPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$_totalGuests guest(s) ($_numAdults Adult${_numAdults > 1 ? "s" : ""}${_numKids > 0 ? ", $_numKids Kid${_numKids > 1 ? "s" : ""}" : ""})',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.slateDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: AppTheme.slateMuted,
-                  ),
-                ],
-              ),
-              secondChild: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Future<void> _pickCustomCheckout() async {
+    final picked = await _showDatePickerSheet(
+      title: 'Choose check-out date',
+      initialDate: _expectedCheckOut,
+      firstDate: _checkInDate.add(const Duration(days: 1)),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _expectedCheckOut = DateTime(picked.year, picked.month, picked.day);
+      _customDurationSelected = true;
+    });
+  }
+
+  Widget _buildCompactStaySelector(int nights) {
+    final durations = const [(1, '1 Night'), (2, '2 Nights'), (3, '3 Nights')];
+    final today = DateTime.now();
+    final checkInLabel = _bookingMode == BookingMode.checkIn
+        ? 'Today · ${DateFormat('EEE, d MMM').format(_checkInDate)}'
+        : DateFormat('EEE, d MMM').format(_checkInDate);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: _bookingMode == BookingMode.reservation
+                    ? _pickArrivalDate
+                    : null,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "Who's checking in?",
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                        'CHECK-IN',
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.slateMuted,
+                          letterSpacing: .4,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        checkInLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           color: AppTheme.slateDark,
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.brandLight,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '$_totalGuests guest${_totalGuests > 1 ? "s" : ""}',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.brandPrimary,
-                          ),
-                        ),
-                      ),
                     ],
+                  ),
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.arrow_forward_rounded,
+              size: 16,
+              color: AppTheme.slateMuted,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'CHECK-OUT',
+                    style: GoogleFonts.inter(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.slateMuted,
+                      letterSpacing: .4,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '1 adult is selected by default',
+                    DateFormat('EEE, d MMM').format(_expectedCheckOut),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: AppTheme.slateMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.slateDark,
                     ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  // Adults row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Adults',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.slateDark,
-                            ),
-                          ),
-                          Text(
-                            'Ages 13 or above',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: AppTheme.slateMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          _buildAirbnbCounterButton(
-                            icon: Icons.remove_rounded,
-                            enabled: _numAdults > 1,
-                            onTap: () => setState(
-                              () => _numAdults = (_numAdults - 1).clamp(1, 10),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 36,
-                            child: Center(
-                              child: Text(
-                                '$_numAdults',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.slateDark,
-                                ),
-                              ),
-                            ),
-                          ),
-                          _buildAirbnbCounterButton(
-                            icon: Icons.add_rounded,
-                            enabled: _numAdults < 10,
-                            onTap: () => setState(
-                              () => _numAdults = (_numAdults + 1).clamp(1, 10),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 24, color: AppTheme.slateBorder),
-
-                  // Children row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Children',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.slateDark,
-                            ),
-                          ),
-                          Text(
-                            'Ages 0 to 12',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: AppTheme.slateMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          _buildAirbnbCounterButton(
-                            icon: Icons.remove_rounded,
-                            enabled: _numKids > 0,
-                            onTap: () => setState(
-                              () => _numKids = (_numKids - 1).clamp(0, 10),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 36,
-                            child: Center(
-                              child: Text(
-                                '$_numKids',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.slateDark,
-                                ),
-                              ),
-                            ),
-                          ),
-                          _buildAirbnbCounterButton(
-                            icon: Icons.add_rounded,
-                            enabled: _numKids < 10,
-                            onTap: () => setState(
-                              () => _numKids = (_numKids + 1).clamp(0, 10),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
                   ),
                 ],
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (var i = 0; i < durations.length; i++) ...[
+              if (i > 0) const SizedBox(width: 7),
+              Expanded(
+                child: _buildDurationChip(
+                  durations[i].$2,
+                  !_customDurationSelected && nights == durations[i].$1,
+                  () => setState(() {
+                    if (_bookingMode == BookingMode.checkIn) {
+                      _checkInDate = DateTime(
+                        today.year,
+                        today.month,
+                        today.day,
+                      );
+                    }
+                    _expectedCheckOut = _checkInDate.add(
+                      Duration(days: durations[i].$1),
+                    );
+                    _customDurationSelected = false;
+                  }),
+                ),
+              ),
+            ],
+            const SizedBox(width: 7),
+            Expanded(
+              child: _buildDurationChip(
+                'Custom',
+                _customDurationSelected,
+                _pickCustomCheckout,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDurationChip(String label, bool selected, VoidCallback onTap) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 170),
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.brandLight : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: selected ? AppTheme.brandDark : AppTheme.slateDark,
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCompactGuestSelector() {
+    return Column(
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => _guestsExpanded = !_guestsExpanded),
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.people_alt_outlined,
+                  size: 18,
+                  color: AppTheme.brandPrimary,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    '$_totalGuests ${_totalGuests == 1 ? 'guest' : 'guests'}  ·  $_numAdults ${_numAdults == 1 ? 'adult' : 'adults'}${_numKids > 0 ? '  ·  $_numKids ${_numKids == 1 ? 'child' : 'children'}' : ''}',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.slateDark,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _guestsExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: AppTheme.slateMuted,
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          child: _guestsExpanded
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 8, left: 27),
+                  child: Column(
+                    children: [
+                      _buildCompactGuestCounter(
+                        'Adults',
+                        _numAdults,
+                        _numAdults > 1,
+                        _numAdults < 10,
+                        () => setState(() => _numAdults--),
+                        () => setState(() => _numAdults++),
+                      ),
+                      const Divider(height: 1, color: AppTheme.slateBorder),
+                      _buildCompactGuestCounter(
+                        'Children',
+                        _numKids,
+                        _numKids > 0,
+                        _numKids < 10,
+                        () => setState(() => _numKids--),
+                        () => setState(() => _numKids++),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactGuestCounter(
+    String label,
+    int count,
+    bool canDecrease,
+    bool canIncrease,
+    VoidCallback decrease,
+    VoidCallback increase,
+  ) {
+    return SizedBox(
+      height: 46,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.slateDark,
+              ),
+            ),
+          ),
+          _buildAirbnbCounterButton(
+            icon: Icons.remove_rounded,
+            enabled: canDecrease,
+            onTap: decrease,
+          ),
+          SizedBox(
+            width: 38,
+            child: Center(
+              child: Text(
+                '$count',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.slateDark,
+                ),
+              ),
+            ),
+          ),
+          _buildAirbnbCounterButton(
+            icon: Icons.add_rounded,
+            enabled: canIncrease,
+            onTap: increase,
+          ),
+        ],
       ),
     );
   }
@@ -5628,40 +4690,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
           label,
           style: GoogleFonts.inter(
             fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : AppTheme.slateDark,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPresetChip(String label, bool isSelected, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.brandPrimary : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
-            width: 1.2,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: AppTheme.brandPrimary.withValues(alpha: 0.22),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 11,
             fontWeight: FontWeight.bold,
             color: isSelected ? Colors.white : AppTheme.slateDark,
           ),
@@ -5897,45 +4925,61 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         if (!_isNameValid(_nameController.text)) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Please enter a valid guest name (minimum 2 characters)'),
+                              content: Text(
+                                'Please enter a valid guest name (minimum 2 characters)',
+                              ),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
                           return;
                         }
-                        if (_dobController.text.trim().isNotEmpty && !_isDobValid(_dobController.text)) {
+                        if (_dobController.text.trim().isNotEmpty &&
+                            !_isDobValid(_dobController.text)) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Please enter a valid DOB in DD/MM/YYYY format'),
+                              content: Text(
+                                'Please enter a valid DOB in DD/MM/YYYY format',
+                              ),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
                           return;
                         }
-                        if (_phoneController.text.replaceAll(RegExp(r'\D'), '').isNotEmpty &&
+                        if (_phoneController.text
+                                .replaceAll(RegExp(r'\D'), '')
+                                .isNotEmpty &&
                             !_isPhoneValid(_phoneController.text)) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Please enter a valid 10-digit phone number'),
+                              content: Text(
+                                'Please enter a valid 10-digit phone number',
+                              ),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
                           return;
                         }
-                        if (_pincodeController.text.replaceAll(RegExp(r'\D'), '').isNotEmpty &&
+                        if (_pincodeController.text
+                                .replaceAll(RegExp(r'\D'), '')
+                                .isNotEmpty &&
                             !_isPincodeValid(_pincodeController.text)) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Please enter a valid 6-digit pincode'),
+                              content: Text(
+                                'Please enter a valid 6-digit pincode',
+                              ),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
                           return;
                         }
-                        if (_emailController.text.trim().isNotEmpty && !_isEmailValid(_emailController.text)) {
+                        if (_emailController.text.trim().isNotEmpty &&
+                            !_isEmailValid(_emailController.text)) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Please enter a valid email address'),
+                              content: Text(
+                                'Please enter a valid email address',
+                              ),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
