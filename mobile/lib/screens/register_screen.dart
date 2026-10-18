@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/hotel_store.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
+import '../widgets/email_otp_dialog.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -124,19 +125,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = false);
 
     if (result.success) {
+      if (result.requiresEmailConfirmation && result.email != null) {
+        showEmailOtpSheet(
+          context,
+          email: result.email!,
+          onSuccess: () async {
+            await authService.setCompletedOnboarding();
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Welcome to EaseInn! Hotel workspace is ready.'),
+                backgroundColor: Color(0xFF10B981),
+              ),
+            );
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const HomeShell()),
+              (route) => false,
+            );
+          },
+        );
+        return;
+      }
+
       // Mark onboarding completed
       await authService.setCompletedOnboarding();
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.requiresEmailConfirmation
-                ? 'Hotel registered! Check email for confirmation if required.'
-                : 'Welcome to EaseInn! Hotel workspace is ready.',
-          ),
-          backgroundColor: const Color(0xFF10B981),
+        const SnackBar(
+          content: Text('Welcome to EaseInn! Hotel workspace is ready.'),
+          backgroundColor: Color(0xFF10B981),
         ),
       );
 
@@ -145,9 +164,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
         (route) => false,
       );
     } else {
-      setState(() {
-        _errorMessage = result.errorMessage ?? 'Registration failed. Please try again.';
-      });
+      if (result.requiresEmailConfirmation && result.email != null) {
+        showEmailOtpSheet(
+          context,
+          email: result.email!,
+          onSuccess: () async {
+            await authService.setCompletedOnboarding();
+            if (!mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const HomeShell()),
+              (route) => false,
+            );
+          },
+        );
+      } else {
+        setState(() {
+          _errorMessage = result.errorMessage ?? 'Registration failed. Please try again.';
+        });
+      }
     }
   }
 

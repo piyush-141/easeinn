@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import 'register_screen.dart';
 import 'home_shell.dart';
 import '../widgets/pressable_scale.dart';
+import '../widgets/email_otp_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -67,9 +68,24 @@ class _LoginScreenState extends State<LoginScreen> {
         (route) => false,
       );
     } else {
-      setState(() {
-        _errorMessage = result.errorMessage ?? 'Sign in failed. Check email or password.';
-      });
+      if (result.requiresEmailConfirmation && result.email != null) {
+        showEmailOtpSheet(
+          context,
+          email: result.email!,
+          onSuccess: () async {
+            await authService.setCompletedOnboarding();
+            if (!mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const HomeShell()),
+              (route) => false,
+            );
+          },
+        );
+      } else {
+        setState(() {
+          _errorMessage = result.errorMessage ?? 'Sign in failed. Check email or password.';
+        });
+      }
     }
   }
 

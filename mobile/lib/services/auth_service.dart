@@ -10,12 +10,14 @@ class AuthResult {
   final bool success;
   final String? errorMessage;
   final bool requiresEmailConfirmation;
+  final String? email;
   final User? user;
 
   AuthResult({
     required this.success,
     this.errorMessage,
     this.requiresEmailConfirmation = false,
+    this.email,
     this.user,
   });
 }
@@ -331,7 +333,16 @@ class AuthService {
         debugPrint('[AuthService] Supabase AuthException: ${e.message}');
         // If not demo credentials, return the real error
         if (trimmedEmail != 'frontdesk@easeinn.com') {
-          return AuthResult(success: false, errorMessage: e.message);
+          final isUnconfirmed =
+              e.message.toLowerCase().contains('email not confirmed');
+          return AuthResult(
+            success: false,
+            errorMessage: isUnconfirmed
+                ? 'Email not confirmed yet. Tap below to verify.'
+                : e.message,
+            requiresEmailConfirmation: isUnconfirmed,
+            email: trimmedEmail,
+          );
         }
       } catch (e) {
         debugPrint('[AuthService] Network/Auth error: $e');
@@ -437,6 +448,17 @@ class AuthService {
 
         final user = authResponse.user;
         if (user != null) {
+          // If Supabase anti-enumeration is triggered (email already exists in Supabase):
+          // user.identities will be empty!
+          if (user.identities != null && user.identities!.isEmpty) {
+            return AuthResult(
+              success: false,
+              errorMessage:
+                  'An account with this email already exists. Please sign in instead.',
+              email: trimmedEmail,
+            );
+          }
+
           // 2. Insert into properties table
           String? createdPropertyId;
           try {
@@ -515,6 +537,7 @@ class AuthService {
             success: true,
             user: user,
             requiresEmailConfirmation: !hasSession,
+            email: trimmedEmail,
           );
         }
       } on AuthException catch (e) {
@@ -589,6 +612,86 @@ class AuthService {
     WhatsAppService.currentHotelId = null;
 
     store.logout();
+  }
+
+  /// Verify 6-digit Email OTP / Token
+  Future<AuthResult> verifyEmailOtp({
+    required String email,
+    required String token,
+    required HotelStore store,
+  }) async {
+    final client = SupabaseConfig.client;
+    if (client == null) {
+      return AuthResult(
+        success: false,
+        errorMessage: 'Database connection not initialized.',
+      );
+    }
+
+    final trimmedEmail = email.trim().toLowerCase();
+    final cleanToken = token.trim();
+
+    try {
+      final res = await client.auth.verifyOTP(
+        email: trimmedEmail,
+        token: cleanToken,
+        type: OtpType.signup,
+      );
+
+      if (res.session != null && res.user != null) {
+        await checkInitialSession(store);
+        return AuthResult(success: true, user: res.user);
+      }
+      return AuthResult(
+        success: false,
+        errorMessage: 'Verification failed. Please check the code.',
+      );
+    } on AuthException catch (e) {
+      // Also try OtpType.email in case type differed
+      try {
+        final res = await client.auth.verifyOTP(
+          email: trimmedEmail,
+          token: cleanToken,
+          type: OtpType.email,
+        );
+        if (res.session != null && res.user != null) {
+          await checkInitialSession(store);
+          return AuthResult(success: true, user: res.user);
+        }
+      } catch (_) {}
+      return AuthResult(success: false, errorMessage: e.message);
+    } catch (e) {
+      return AuthResult(
+        success: false,
+        errorMessage: 'Verification error: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Resend confirmation email / OTP
+  Future<bool> resendVerificationEmail(String email) async {
+    final client = SupabaseConfig.client;
+    if (client == null) return false;
+    final trimmedEmail = email.trim().toLowerCase();
+
+    try {
+      await client.auth.resend(
+        type: OtpType.signup,
+        email: trimmedEmail,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[AuthService] Resend signup OTP error: $e');
+      try {
+        await client.auth.resend(
+          type: OtpType.email,
+          email: trimmedEmail,
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
   }
 
   Future<void> _saveSessionLocally({
