@@ -3,12 +3,20 @@ const whatsappService = require("../services/whatsapp.service");
 const invoiceService = require("../services/invoice.service");
 const { DEFAULT_TEMPLATES } = require("../config/whatsapp.config");
 
+function resolveHotelId(req) {
+  const header = req.headers["x-hotel-id"];
+  const query = req.query?.hotelId;
+  const body = req.body?.hotelId;
+  return header || query || body || "default";
+}
+
 /**
  * GET /api/whatsapp/status
  */
 exports.getStatus = async (req, res) => {
   try {
-    const status = whatsappService.getStatus();
+    const hotelId = resolveHotelId(req);
+    const status = whatsappService.getStatus(hotelId);
     return res.json({ success: true, ...status });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -20,13 +28,13 @@ exports.getStatus = async (req, res) => {
  */
 exports.connect = async (req, res) => {
   try {
-    // Non-blocking trigger so HTTP request doesn't wait for full QR scan
-    const current = whatsappService.getStatus();
+    const hotelId = resolveHotelId(req);
+    const current = whatsappService.getStatus(hotelId);
     if (current.isConnected || current.hasActiveQr || current.status === "INITIALIZING" || current.status === "AUTHENTICATED") {
       return res.json({ success: true, message: "WhatsApp connection is already active or initializing.", status: current.status });
     }
-    whatsappService.initializeWhatsAppClient().catch((err) => {
-      console.error("[WhatsApp] Error during connect:", err.message);
+    whatsappService.initializeWhatsAppClient(hotelId).catch((err) => {
+      console.error(`[WhatsApp] [${hotelId}] Error during connect:`, err.message);
     });
     return res.json({
       success: true,
@@ -39,11 +47,37 @@ exports.connect = async (req, res) => {
 };
 
 /**
+ * POST /api/whatsapp/pairing-code
+ * Request an 8-digit WhatsApp pairing code by phone number
+ */
+exports.requestPairingCode = async (req, res) => {
+  try {
+    const hotelId = resolveHotelId(req);
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        error: "Phone number is required to generate a pairing code.",
+      });
+    }
+
+    const result = await whatsappService.requestPairingCode(hotelId, phoneNumber);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
  * POST /api/whatsapp/disconnect
  */
 exports.disconnect = async (req, res) => {
   try {
-    const result = await whatsappService.disconnectWhatsAppClient();
+    const hotelId = resolveHotelId(req);
+    const result = await whatsappService.disconnectWhatsAppClient(hotelId);
     return res.json({ success: true, ...result });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -55,7 +89,8 @@ exports.disconnect = async (req, res) => {
  */
 exports.getTemplates = async (req, res) => {
   try {
-    const templates = whatsappService.getTemplates();
+    const hotelId = resolveHotelId(req);
+    const templates = whatsappService.getTemplates(hotelId);
     return res.json({
       success: true,
       templates,
@@ -71,10 +106,11 @@ exports.getTemplates = async (req, res) => {
  */
 exports.updateTemplate = async (req, res) => {
   try {
+    const hotelId = resolveHotelId(req);
     const { templateId } = req.params;
     const { template, enabled, name, description } = req.body;
 
-    const templates = whatsappService.getTemplates();
+    const templates = whatsappService.getTemplates(hotelId);
     if (!templates[templateId]) {
       return res.status(404).json({ success: false, error: `Template "${templateId}" not found.` });
     }
@@ -84,7 +120,7 @@ exports.updateTemplate = async (req, res) => {
     if (name) templates[templateId].name = name;
     if (description) templates[templateId].description = description;
 
-    whatsappService.saveTemplates(templates);
+    whatsappService.saveTemplates(hotelId, templates);
     return res.json({
       success: true,
       message: `Template "${templateId}" updated successfully.`,
@@ -100,7 +136,8 @@ exports.updateTemplate = async (req, res) => {
  */
 exports.resetTemplates = async (req, res) => {
   try {
-    whatsappService.saveTemplates(DEFAULT_TEMPLATES);
+    const hotelId = resolveHotelId(req);
+    whatsappService.saveTemplates(hotelId, DEFAULT_TEMPLATES);
     return res.json({
       success: true,
       message: "Reset all templates to factory defaults.",
@@ -116,11 +153,12 @@ exports.resetTemplates = async (req, res) => {
  */
 exports.previewTemplate = async (req, res) => {
   try {
+    const hotelId = resolveHotelId(req);
     const { templateId, templateString, context, variables } = req.body;
     let rawText = templateString;
 
     if (!rawText && templateId) {
-      const templates = whatsappService.getTemplates();
+      const templates = whatsappService.getTemplates(hotelId);
       rawText = templates[templateId]?.template;
     }
 
@@ -141,6 +179,7 @@ exports.previewTemplate = async (req, res) => {
  */
 exports.sendMessage = async (req, res) => {
   try {
+    const hotelId = resolveHotelId(req);
     const {
       templateId,
       recipientPhone,
@@ -167,6 +206,7 @@ exports.sendMessage = async (req, res) => {
       : undefined;
 
     const result = await whatsappService.sendWhatsAppNotification({
+      hotelId,
       templateId,
       recipientPhone,
       customMessage,
@@ -188,9 +228,10 @@ exports.sendMessage = async (req, res) => {
  */
 exports.getLogs = async (req, res) => {
   try {
+    const hotelId = resolveHotelId(req);
     const requestedLimit = Number.parseInt(req.query.limit, 10);
     const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 200)) : 50;
-    const logs = whatsappService.getLogs(limit);
+    const logs = whatsappService.getLogs(hotelId, limit);
     return res.json({ success: true, logs });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -203,12 +244,14 @@ exports.getLogs = async (req, res) => {
  */
 exports.onCheckIn = async (req, res) => {
   try {
+    const hotelId = resolveHotelId(req);
     const { guestName, phone, hotelName, roomNumber, checkInDate, checkOutDate, stayId } = req.body;
     if (!phone) {
       return res.status(400).json({ success: false, error: "Guest phone number is required" });
     }
 
     const result = await whatsappService.sendWhatsAppNotification({
+      hotelId,
       templateId: "checkin_welcome",
       recipientPhone: phone,
       stayId,
@@ -234,6 +277,7 @@ exports.onCheckIn = async (req, res) => {
  */
 exports.onCheckOut = async (req, res) => {
   try {
+    const hotelId = resolveHotelId(req);
     const {
       guestName,
       phone,
@@ -288,6 +332,7 @@ exports.onCheckOut = async (req, res) => {
     }
 
     const result = await whatsappService.sendWhatsAppNotification({
+      hotelId,
       templateId: "checkout_thankyou",
       recipientPhone: phone,
       stayId,
@@ -314,12 +359,14 @@ exports.onCheckOut = async (req, res) => {
  */
 exports.onReservation = async (req, res) => {
   try {
+    const hotelId = resolveHotelId(req);
     const { guestName, phone, hotelName, roomNumber, checkInDate, checkOutDate, stayId } = req.body;
     if (!phone) {
       return res.json({ success: false, error: "Guest phone number is required", nonBlocking: true });
     }
 
     const result = await whatsappService.sendWhatsAppNotification({
+      hotelId,
       templateId: "booking_confirmation",
       recipientPhone: phone,
       stayId,

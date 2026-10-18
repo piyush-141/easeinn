@@ -1,0 +1,13 @@
+{
+    "BudgetLimit": {
+        "Amount": "1",
+        "Unit": "USD"
+    },
+    "BudgetName": "STRICT ZERO SPEND",
+    "BudgetType": "COST",
+    "TimePeriod": {
+        "Start": 1790812800000,
+        "End": 3706473600000
+    },
+    "TimeUnit": "Monthly"
+}

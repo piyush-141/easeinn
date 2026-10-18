@@ -1,5 +1,6 @@
 // src/config/whatsapp.config.js
 const path = require("path");
+const fs = require("fs");
 
 const DATA_DIR = process.env.WHATSAPP_DATA_DIR || path.join(__dirname, "../../data");
 const TEMPLATES_FILE = path.join(DATA_DIR, "whatsapp_templates.json");
@@ -106,6 +107,41 @@ const SUPPORTED_PLACEHOLDERS = [
   { key: "{messageHindi}", label: "Custom Message (Hindi)", sample: "आपकी लॉन्ड्री संग्रह के लिए तैयार है।" },
 ];
 
+function sanitizeHotelId(hotelId) {
+  if (!hotelId || typeof hotelId !== "string") return "default";
+  const cleaned = hotelId.trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+  return cleaned || "default";
+}
+
+function getHotelAuthDir(hotelId) {
+  const sanitized = sanitizeHotelId(hotelId);
+  // If base AUTH_DIR already contains creds directly and requested is default, keep for backward compat
+  if (sanitized === "default" && fs.existsSync(path.join(AUTH_DIR, "creds.json"))) {
+    return AUTH_DIR;
+  }
+  const dir = path.join(AUTH_DIR, sanitized);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+  return dir;
+}
+
+function getHotelTemplatesFile(hotelId) {
+  const sanitized = sanitizeHotelId(hotelId);
+  if (sanitized === "default") return TEMPLATES_FILE;
+  const hotelDir = path.join(DATA_DIR, "hotels", sanitized);
+  if (!fs.existsSync(hotelDir)) fs.mkdirSync(hotelDir, { recursive: true });
+  return path.join(hotelDir, "whatsapp_templates.json");
+}
+
+function getHotelLogsFile(hotelId) {
+  const sanitized = sanitizeHotelId(hotelId);
+  if (sanitized === "default") return LOGS_FILE;
+  const hotelDir = path.join(DATA_DIR, "hotels", sanitized);
+  if (!fs.existsSync(hotelDir)) fs.mkdirSync(hotelDir, { recursive: true });
+  return path.join(hotelDir, "whatsapp_logs.json");
+}
+
 module.exports = {
   DATA_DIR,
   TEMPLATES_FILE,
@@ -113,4 +149,9 @@ module.exports = {
   AUTH_DIR,
   DEFAULT_TEMPLATES,
   SUPPORTED_PLACEHOLDERS,
+  sanitizeHotelId,
+  getHotelAuthDir,
+  getHotelTemplatesFile,
+  getHotelLogsFile,
 };
+

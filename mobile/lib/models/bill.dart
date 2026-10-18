@@ -12,6 +12,22 @@ class BillLineItem {
     required this.unitPrice,
     required this.amount,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'description': description,
+    'quantity': quantity,
+    'unit_price': unitPrice,
+    'amount': amount,
+  };
+
+  factory BillLineItem.fromJson(Map<String, dynamic> json) => BillLineItem(
+    id: json['id']?.toString() ?? '',
+    description: json['description']?.toString() ?? '',
+    quantity: json['quantity'] is int ? json['quantity'] : (int.tryParse(json['quantity']?.toString() ?? '1') ?? 1),
+    unitPrice: (json['unit_price'] is num) ? (json['unit_price'] as num).toDouble() : (double.tryParse(json['unit_price']?.toString() ?? '0') ?? 0.0),
+    amount: (json['amount'] is num) ? (json['amount'] as num).toDouble() : (double.tryParse(json['amount']?.toString() ?? '0') ?? 0.0),
+  );
 }
 
 class Payment {
@@ -30,6 +46,24 @@ class Payment {
     this.reference,
     DateTime? recordedAt,
   }) : recordedAt = recordedAt ?? DateTime.now();
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'amount': amount,
+    'method': method,
+    'payment_type': paymentType,
+    'reference': reference,
+    'recorded_at': recordedAt.toIso8601String(),
+  };
+
+  factory Payment.fromJson(Map<String, dynamic> json) => Payment(
+    id: json['id']?.toString() ?? '',
+    amount: (json['amount'] is num) ? (json['amount'] as num).toDouble() : (double.tryParse(json['amount']?.toString() ?? '0') ?? 0.0),
+    method: json['method']?.toString() ?? 'cash',
+    paymentType: json['payment_type']?.toString() ?? 'advance',
+    reference: json['reference']?.toString(),
+    recordedAt: json['recorded_at'] != null ? DateTime.tryParse(json['recorded_at'].toString()) ?? DateTime.now() : DateTime.now(),
+  );
 }
 
 class Bill {
@@ -58,4 +92,52 @@ class Bill {
   })  : lineItems = lineItems ?? [],
         payments = payments ?? [],
         createdAt = createdAt ?? DateTime.now();
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'stay_id': stayId,
+    'bill_number': billNumber,
+    'subtotal': subtotal,
+    'amount_paid': amountPaid,
+    'outstanding': outstanding,
+    'status': status,
+    'line_items': lineItems.map((li) => li.toJson()).toList(),
+    'payments': payments.map((p) => p.toJson()).toList(),
+    'created_at': createdAt.toIso8601String(),
+  };
+
+  factory Bill.fromJson(Map<String, dynamic> json) {
+    final rawLineItems = json['line_items'] as List<dynamic>?;
+    final List<BillLineItem> parsedLineItems = [];
+    if (rawLineItems != null) {
+      for (final item in rawLineItems) {
+        if (item is Map<String, dynamic>) {
+          parsedLineItems.add(BillLineItem.fromJson(item));
+        }
+      }
+    }
+
+    final rawPayments = json['payments'] as List<dynamic>?;
+    final List<Payment> parsedPayments = [];
+    if (rawPayments != null) {
+      for (final item in rawPayments) {
+        if (item is Map<String, dynamic>) {
+          parsedPayments.add(Payment.fromJson(item));
+        }
+      }
+    }
+
+    return Bill(
+      id: json['id']?.toString() ?? '',
+      stayId: json['stay_id']?.toString() ?? '',
+      billNumber: json['bill_number']?.toString() ?? 'INV-001',
+      subtotal: (json['subtotal'] is num) ? (json['subtotal'] as num).toDouble() : (double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0),
+      amountPaid: (json['amount_paid'] is num) ? (json['amount_paid'] as num).toDouble() : (double.tryParse(json['amount_paid']?.toString() ?? '0') ?? 0.0),
+      outstanding: (json['outstanding'] is num) ? (json['outstanding'] as num).toDouble() : (double.tryParse(json['outstanding']?.toString() ?? '0') ?? 0.0),
+      status: json['status']?.toString() ?? 'draft',
+      lineItems: parsedLineItems,
+      payments: parsedPayments,
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now() : DateTime.now(),
+    );
+  }
 }

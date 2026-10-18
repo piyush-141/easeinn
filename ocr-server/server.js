@@ -94,10 +94,16 @@ const httpServer = app.listen(PORT, () => {
   console.log(`  WhatsApp engine:   Baileys (session auto-restore)`);
   console.log(`========================================\n`);
 
-  // Restore WhatsApp session on boot so a Render/process restart stays linked
-  whatsappService.initializeWhatsAppClient().catch((err) => {
-    console.warn("[WhatsApp] Auto-restore on boot failed:", err.message);
-  });
+  // Restore WhatsApp sessions on boot so a Render/process restart stays linked
+  if (typeof whatsappService.restoreAllSessions === "function") {
+    whatsappService.restoreAllSessions().catch((err) => {
+      console.warn("[WhatsApp] Auto-restore on boot failed:", err.message);
+    });
+  } else {
+    whatsappService.initializeWhatsAppClient().catch((err) => {
+      console.warn("[WhatsApp] Auto-restore on boot failed:", err.message);
+    });
+  }
 });
 
 async function shutdown(signal) {

@@ -129,3 +129,25 @@ const service = require('./src/services/whatsapp.service');
   assert.deepEqual(JSON.parse(raceOutput.trim().split(/\r?\n/).find((line) => line.startsWith("{"))), { status: "DISCONNECTED", qr: false });
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("enforces multi-tenant isolation between different hotel accounts", async () => {
+  const service = require("../src/services/whatsapp.service");
+  
+  // Hotel A status
+  const statusA = service.getStatus("hotel-prop-alpha");
+  assert.equal(statusA.hotelId, "hotel-prop-alpha");
+  assert.equal(statusA.isConnected, false);
+
+  // Hotel B status
+  const statusB = service.getStatus("hotel-prop-beta");
+  assert.equal(statusB.hotelId, "hotel-prop-beta");
+  assert.equal(statusB.isConnected, false);
+
+  // Modifying templates in Hotel A must not affect Hotel B
+  const templatesA = service.getTemplates("hotel-prop-alpha");
+  templatesA.checkin_welcome.name = "Custom Alpha Welcome";
+  service.saveTemplates("hotel-prop-alpha", templatesA);
+
+  const templatesB = service.getTemplates("hotel-prop-beta");
+  assert.notEqual(templatesB.checkin_welcome.name, "Custom Alpha Welcome");
+});

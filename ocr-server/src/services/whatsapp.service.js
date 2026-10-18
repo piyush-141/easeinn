@@ -1,5 +1,5 @@
 // src/services/whatsapp.service.js
-// WhatsApp engine for EaseInn — Baileys multi-device (no Chromium)
+// WhatsApp engine for EaseInn — Baileys multi-device with Multi-Tenant Session Management & Pairing Code Support
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -12,6 +12,10 @@ const {
   AUTH_DIR,
   DEFAULT_TEMPLATES,
   SUPPORTED_PLACEHOLDERS,
+  sanitizeHotelId,
+  getHotelAuthDir,
+  getHotelTemplatesFile,
+  getHotelLogsFile,
 } = require("../config/whatsapp.config");
 
 const baileys = require("@whiskeysockets/baileys");
@@ -29,78 +33,608 @@ const {
 
 const logger = pino({ level: process.env.WA_LOG_LEVEL || "silent" });
 
-let sock = null;
-let clientStatus = "DISCONNECTED"; // DISCONNECTED | INITIALIZING | QR_READY | CONNECTED | ERROR
-let isInitializing = false;
-let allowReconnect = true;
-let reconnectTimer = null;
-let currentQrCodeDataUrl = null;
-let currentQrRawString = null;
-let connectedNumber = null;
-let connectedPushname = null;
-let lastStatusChange = new Date().toISOString();
-let initializationError = null;
-let duplicateCache = new Map();
-let initializePromise = null;
-let sendQueue = Promise.resolve();
-let generation = 0;
-let pendingSends = new Map();
-// WhatsApp can emit a very fast delivery/read receipt before sendMessage()
-// resolves and the accepted log entry is written. Keep those receipts briefly
-// so the eventual log entry cannot get stuck in PENDING.
-const earlyDeliveryReceipts = new Map();
-
-// Message Store for handling Signal protocol retry receipts and preventing
-// the "Waiting for this message. This may take a while." WhatsApp decryption error.
-const messageStore = new Map();
-const MAX_CACHED_MESSAGES = 1500;
-
-function cacheMessage(id, message) {
-  if (!id || !message) return;
-  if (messageStore.size >= MAX_CACHED_MESSAGES) {
-    const oldestKey = messageStore.keys().next().value;
-    messageStore.delete(oldestKey);
-  }
-  messageStore.set(id, message);
-}
 const configuredSendTimeout = Number(process.env.WHATSAPP_SEND_TIMEOUT_MS || 90000);
 const SEND_TIMEOUT_MS = Number.isFinite(configuredSendTimeout) && configuredSendTimeout >= 10000 && configuredSendTimeout <= 180000
   ? configuredSendTimeout
   : 90000;
 
-[DATA_DIR, AUTH_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  }
-});
+// Maximum cached messages for Signal protocol retry receipts
+const MAX_CACHED_MESSAGES = 1500;
 
-function secureAuthFiles() {
-  if (process.platform === "win32") return;
-  try {
-    fs.chmodSync(AUTH_DIR, 0o700);
-    for (const name of fs.readdirSync(AUTH_DIR)) {
-      const file = path.join(AUTH_DIR, name);
-      if (fs.statSync(file).isFile()) fs.chmodSync(file, 0o600);
+/**
+ * HotelWhatsAppSession represents a completely isolated WhatsApp connection,
+ * credentials folder, logs, templates, and message store for a single hotel/account.
+ */
+class HotelWhatsAppSession {
+  constructor(hotelId) {
+    this.hotelId = sanitizeHotelId(hotelId);
+    this.authDir = getHotelAuthDir(this.hotelId);
+    this.templatesFile = getHotelTemplatesFile(this.hotelId);
+    this.logsFile = getHotelLogsFile(this.hotelId);
+    this.sock = null;
+    this.clientStatus = "DISCONNECTED"; // DISCONNECTED | INITIALIZING | QR_READY | PAIRING_CODE_READY | AUTHENTICATED | CONNECTED | ERROR
+    this.isInitializing = false;
+    this.allowReconnect = true;
+    this.reconnectTimer = null;
+    this.currentQrCodeDataUrl = null;
+    this.currentQrRawString = null;
+    this.pairingCode = null;
+    this.connectedNumber = null;
+    this.connectedPushname = null;
+    this.lastStatusChange = new Date().toISOString();
+    this.initializationError = null;
+    this.duplicateCache = new Map();
+    this.initializePromise = null;
+    this.sendQueue = Promise.resolve();
+    this.generation = 0;
+    this.pendingSends = new Map();
+    this.earlyDeliveryReceipts = new Map();
+    this.messageStore = new Map();
+
+    this.ensureDirs();
+    this.loadAcceptedMessages();
+  }
+
+  ensureDirs() {
+    try {
+      if (!fs.existsSync(this.authDir)) {
+        fs.mkdirSync(this.authDir, { recursive: true, mode: 0o700 });
+      }
+      const dataDir = path.dirname(this.templatesFile);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+    } catch (_) {}
+  }
+
+  secureAuthFiles() {
+    if (process.platform === "win32") return;
+    try {
+      fs.chmodSync(this.authDir, 0o700);
+      for (const name of fs.readdirSync(this.authDir)) {
+        const file = path.join(this.authDir, name);
+        if (fs.statSync(file).isFile()) fs.chmodSync(file, 0o600);
+      }
+    } catch (err) {
+      console.warn(`[WhatsApp] [${this.hotelId}] Could not restrict session file permissions:`, err.message);
     }
-  } catch (err) {
-    console.warn("[WhatsApp] Could not restrict session file permissions:", err.message);
+  }
+
+  setStatus(next, extra = {}) {
+    this.clientStatus = next;
+    this.lastStatusChange = new Date().toISOString();
+    if (extra.error !== undefined) this.initializationError = extra.error;
+  }
+
+  hasAuthFiles() {
+    try {
+      return fs.existsSync(path.join(this.authDir, "creds.json"));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  cacheMessage(id, message) {
+    if (!id || !message) return;
+    if (this.messageStore.size >= MAX_CACHED_MESSAGES) {
+      const oldestKey = this.messageStore.keys().next().value;
+      this.messageStore.delete(oldestKey);
+    }
+    this.messageStore.set(id, message);
+  }
+
+  getTemplates() {
+    try {
+      if (fs.existsSync(this.templatesFile)) {
+        const data = fs.readFileSync(this.templatesFile, "utf-8");
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch (err) {
+      console.error(`[WhatsApp] [${this.hotelId}] Error reading templates:`, err.message);
+    }
+    this.saveTemplates(DEFAULT_TEMPLATES);
+    return { ...DEFAULT_TEMPLATES };
+  }
+
+  saveTemplates(templates) {
+    try {
+      const tempFile = `${this.templatesFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(templates, null, 2), { encoding: "utf-8", mode: 0o600 });
+      fs.renameSync(tempFile, this.templatesFile);
+      return true;
+    } catch (err) {
+      console.error(`[WhatsApp] [${this.hotelId}] Error saving templates:`, err.message);
+      return false;
+    }
+  }
+
+  getLogs(limit = 50) {
+    try {
+      if (fs.existsSync(this.logsFile)) {
+        const data = fs.readFileSync(this.logsFile, "utf-8");
+        const logs = JSON.parse(data);
+        if (Array.isArray(logs)) {
+          const sorted = [...logs].reverse();
+          return sorted.slice(0, Math.max(1, Math.min(Number(limit) || 50, 200)));
+        }
+      }
+    } catch (err) {
+      console.error(`[WhatsApp] [${this.hotelId}] Error reading logs:`, err.message);
+    }
+    return [];
+  }
+
+  appendLog(logEntry) {
+    try {
+      const existing = this.getLogs(200);
+      const updated = [
+        ...existing,
+        {
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: new Date().toISOString(),
+          hotelId: this.hotelId,
+          ...logEntry,
+          errorMessage: logEntry.errorMessage || logEntry.error || null,
+          messageText: logEntry.messageText || logEntry.preview || "",
+        },
+      ];
+      const tempFile = `${this.logsFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(updated.slice(-100), null, 2), { encoding: "utf-8", mode: 0o600 });
+      fs.renameSync(tempFile, this.logsFile);
+    } catch (err) {
+      console.error(`[WhatsApp] [${this.hotelId}] Error appending log:`, err.message);
+    }
+  }
+
+  updateLogDelivery(messageId, deliveryStatus) {
+    try {
+      const logs = this.getLogs(1000);
+      const index = logs.findIndex((entry) => entry.messageId === messageId);
+      if (index < 0) return false;
+      const previousStatus = logs[index].deliveryStatus;
+      const rank = { PENDING: 0, DELIVERED: 1, READ: 2 };
+      if ((rank[previousStatus] || 0) > (rank[deliveryStatus] || 0)) return true;
+      logs[index] = {
+        ...logs[index],
+        deliveryStatus,
+        delivered: deliveryStatus === "DELIVERED" || deliveryStatus === "READ",
+        deliveredAt: new Date().toISOString(),
+      };
+      const tempFile = `${this.logsFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(logs.slice(-100), null, 2), { mode: 0o600 });
+      fs.renameSync(tempFile, this.logsFile);
+      return true;
+    } catch (err) {
+      console.error(`[WhatsApp] [${this.hotelId}] Could not update delivery receipt:`, err.message);
+      return false;
+    }
+  }
+
+  recordDeliveryReceipt(messageId, deliveryStatus) {
+    if (this.updateLogDelivery(messageId, deliveryStatus)) return;
+    const now = Date.now();
+    for (const [id, receipt] of this.earlyDeliveryReceipts) {
+      if (now - receipt.timestamp > 5 * 60 * 1000) this.earlyDeliveryReceipts.delete(id);
+    }
+    const existing = this.earlyDeliveryReceipts.get(messageId);
+    const rank = { DELIVERED: 1, READ: 2 };
+    if (!existing || (rank[deliveryStatus] || 0) > (rank[existing.status] || 0)) {
+      this.earlyDeliveryReceipts.set(messageId, { status: deliveryStatus, timestamp: now });
+    }
+    while (this.earlyDeliveryReceipts.size > 500) {
+      this.earlyDeliveryReceipts.delete(this.earlyDeliveryReceipts.keys().next().value);
+    }
+  }
+
+  persistAcceptedMessage(entry) {
+    try {
+      const file = path.join(path.dirname(this.logsFile), "whatsapp_idempotency.json");
+      let rows = [];
+      if (fs.existsSync(file)) {
+        const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+        if (Array.isArray(parsed)) rows = parsed;
+      }
+      rows = rows.filter((row) => row.dedupeKey !== entry.dedupeKey && Date.now() - row.timestamp < 86400000);
+      rows.push(entry);
+      const tempFile = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(rows.slice(-2000)), { mode: 0o600 });
+      fs.renameSync(tempFile, file);
+    } catch (err) {
+      console.error(`[WhatsApp] [${this.hotelId}] Idempotency persist failed:`, err.message);
+    }
+  }
+
+  loadAcceptedMessages() {
+    try {
+      const file = path.join(path.dirname(this.logsFile), "whatsapp_idempotency.json");
+      if (!fs.existsSync(file)) return;
+      const rows = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (!Array.isArray(rows)) return;
+      for (const row of rows) {
+        if (row && row.dedupeKey && Number.isFinite(row.timestamp) && Date.now() - row.timestamp < 300000) {
+          this.duplicateCache.set(row.dedupeKey, row);
+        }
+      }
+    } catch (_) {}
+  }
+
+  scheduleReconnect(delayMs = 3000) {
+    if (!this.allowReconnect || this.isInitializing) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.initializeWhatsAppClient().catch((err) => {
+        console.error(`[WhatsApp] [${this.hotelId}] Reconnect failed:`, err.message);
+      });
+    }, delayMs);
+  }
+
+  bindSocketEvents(client, saveCreds) {
+    client.ev.on("creds.update", async () => {
+      if (this.sock === client && typeof saveCreds === "function") {
+        try {
+          await saveCreds();
+        } catch (err) {
+          console.warn(`[WhatsApp] [${this.hotelId}] Failed to persist session credentials:`, err.message);
+        }
+      }
+    });
+
+    client.ev.on("messages.update", (updates = []) => {
+      for (const item of updates) {
+        const status = item.update?.status;
+        const messageId = item.key?.id;
+        if (!messageId) continue;
+        if (status === 3) this.recordDeliveryReceipt(messageId, "DELIVERED");
+        else if (status >= 4) this.recordDeliveryReceipt(messageId, "READ");
+      }
+    });
+
+    client.ev.on("message-receipt.update", (updates = []) => {
+      for (const item of updates) {
+        const messageId = item.key?.id;
+        const receipt = item.receipt || {};
+        if (!messageId) continue;
+        const deliveryStatus = receipt.readTimestamp || receipt.playedTimestamp
+          ? "READ"
+          : receipt.receiptTimestamp
+            ? "DELIVERED"
+            : null;
+        if (deliveryStatus) this.recordDeliveryReceipt(messageId, deliveryStatus);
+      }
+    });
+
+    client.ev.on("messages.upsert", async ({ messages }) => {
+      for (const msg of messages || []) {
+        if (msg?.key?.id && msg?.message) {
+          this.cacheMessage(msg.key.id, msg.message);
+        }
+      }
+    });
+
+    client.ev.on("connection.update", async (update) => {
+      const { connection, lastDisconnect, qr } = update || {};
+      if (this.sock !== client) return;
+
+      if (qr) {
+        try {
+          this.currentQrRawString = qr;
+          this.currentQrCodeDataUrl = await qrcodeLib.toDataURL(qr, {
+            margin: 2,
+            scale: 6,
+            color: { dark: "#0F172A", light: "#FFFFFF" },
+          });
+          this.isInitializing = false;
+          if (this.sock !== client) return;
+          this.setStatus("QR_READY", { error: null });
+          console.log(`[WhatsApp] [${this.hotelId}] QR ready. Scan from hotel WhatsApp (Linked devices).`);
+        } catch (qrErr) {
+          this.setStatus("ERROR", { error: `Could not generate WhatsApp QR code: ${qrErr.message}` });
+          console.error(`[WhatsApp] [${this.hotelId}] Failed to render QR:`, qrErr.message);
+        }
+      }
+
+      if (connection === "open") {
+        if (this.sock !== client) return;
+        this.isInitializing = false;
+        this.currentQrCodeDataUrl = null;
+        this.currentQrRawString = null;
+        this.pairingCode = null;
+        this.initializationError = null;
+        const user = client.user || {};
+        this.connectedNumber = extractPhoneFromJid(user.id) || extractPhoneFromJid(user.jid);
+        this.connectedPushname = user.name || user.notify || this.connectedNumber || "Hotel Reception";
+        this.setStatus("CONNECTED", { error: null });
+        console.log(`[WhatsApp] [${this.hotelId}] Connected as ${this.connectedPushname} (+${this.connectedNumber || "unknown"})`);
+      }
+
+      if (connection === "close") {
+        if (this.sock !== client) return;
+        const statusCode =
+          lastDisconnect?.error?.output?.statusCode ||
+          lastDisconnect?.error?.statusCode ||
+          null;
+        const loggedOut = statusCode === DisconnectReason.loggedOut;
+        const reason = lastDisconnect?.error?.message || `code ${statusCode}`;
+        console.warn(`[WhatsApp] [${this.hotelId}] Connection closed (${reason}). loggedOut=${loggedOut}`);
+
+        this.sock = null;
+        this.currentQrCodeDataUrl = null;
+        this.currentQrRawString = null;
+        this.pairingCode = null;
+        this.connectedNumber = null;
+        this.connectedPushname = null;
+        this.isInitializing = false;
+
+        if (loggedOut) {
+          this.allowReconnect = false;
+          try {
+            fs.rmSync(this.authDir, { recursive: true, force: true });
+          } catch (err) {
+            console.warn(`[WhatsApp] [${this.hotelId}] Could not clear invalid session files:`, err.message);
+          }
+          this.setStatus("DISCONNECTED", { error: "WhatsApp session expired or was unlinked. Please link your device again." });
+          return;
+        }
+
+        this.setStatus("DISCONNECTED", { error: `Connection dropped: ${reason}` });
+        if (this.allowReconnect) {
+          const delay = statusCode === DisconnectReason.restartRequired ? 1000 : 4000;
+          this.scheduleReconnect(delay);
+        }
+      }
+    });
+  }
+
+  async initializeWhatsAppClient(options = {}) {
+    if (this.initializePromise) return this.initializePromise;
+    this.initializePromise = this.initializeWhatsAppClientInternal(options);
+    try {
+      await this.initializePromise;
+    } finally {
+      this.initializePromise = null;
+    }
+  }
+
+  async initializeWhatsAppClientInternal(options = {}) {
+    const { usePairingCode = false, phoneNumber = null } = options;
+
+    if (this.isInitializing) {
+      console.log(`[WhatsApp] [${this.hotelId}] Initialization already in progress.`);
+      return;
+    }
+    if (this.sock && this.clientStatus === "CONNECTED") {
+      console.log(`[WhatsApp] [${this.hotelId}] Client already connected.`);
+      return;
+    }
+    if (!usePairingCode && this.clientStatus === "QR_READY" && this.currentQrCodeDataUrl && this.sock) {
+      console.log(`[WhatsApp] [${this.hotelId}] QR already waiting for scan.`);
+      return;
+    }
+    if (usePairingCode && this.pairingCode && this.sock) {
+      console.log(`[WhatsApp] [${this.hotelId}] Pairing code already active: ${this.pairingCode}`);
+      return;
+    }
+
+    this.isInitializing = true;
+    const currentGeneration = ++this.generation;
+    this.allowReconnect = true;
+    this.setStatus("INITIALIZING", { error: null });
+    this.currentQrCodeDataUrl = null;
+    this.currentQrRawString = null;
+    this.pairingCode = null;
+
+    try {
+      if (this.sock) {
+        try { this.sock.end(undefined); } catch (_) {}
+        this.sock = null;
+      }
+
+      this.ensureDirs();
+      const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
+      this.secureAuthFiles();
+      if (currentGeneration !== this.generation) return;
+
+      if (state.creds.registered) {
+        this.setStatus("AUTHENTICATED", { error: null });
+      }
+
+      let version = [2, 3000, 1027934701];
+      try {
+        const fetched = await fetchLatestBaileysVersion();
+        if (currentGeneration !== this.generation) return;
+        if (fetched?.version) version = fetched.version;
+      } catch (verErr) {
+        console.warn(`[WhatsApp] [${this.hotelId}] Using fallback WA version:`, verErr.message);
+      }
+
+      // Browser descriptor: robust cross-platform detection
+      const browser = (Browsers && typeof Browsers.windows === "function")
+        ? Browsers.windows("Chrome")
+        : (Browsers && typeof Browsers.macOS === "function")
+          ? Browsers.macOS("Desktop")
+          : ["EaseInn PMS", "Chrome", "122.0.6261.128"];
+
+      const client = makeWASocket({
+        version,
+        logger,
+        printQRInTerminal: false,
+        auth: {
+          creds: state.creds,
+          keys: makeCacheableSignalKeyStore(state.keys, logger),
+        },
+        browser,
+        markOnlineOnConnect: true,
+        syncFullHistory: false,
+        generateHighQualityLinkPreview: false,
+        connectTimeoutMs: 60_000,
+        keepAliveIntervalMs: 25_000,
+        retryRequestDelayMs: 250,
+        maxMsgRetryCount: 5,
+        defaultQueryTimeoutMs: 60_000,
+        getMessage: async (key) => {
+          if (key && key.id && this.messageStore.has(key.id)) {
+            return this.messageStore.get(key.id);
+          }
+          return undefined;
+        },
+      });
+
+      if (currentGeneration !== this.generation) {
+        try { client.end(undefined); } catch (_) {}
+        return;
+      }
+
+      this.sock = client;
+      this.bindSocketEvents(client, async () => {
+        await saveCreds();
+        this.secureAuthFiles();
+      });
+
+      console.log(
+        `[WhatsApp] [${this.hotelId}] Socket started. Existing session: ${this.hasAuthFiles() ? "yes" : "no"}`
+      );
+
+      // Pairing code generation
+      if (usePairingCode && phoneNumber && !state.creds.registered) {
+        setTimeout(async () => {
+          try {
+            if (this.sock === client && !client.authState?.creds?.registered) {
+              const rawCode = await client.requestPairingCode(phoneNumber);
+              const formatted = rawCode?.match(/.{1,4}/g)?.join("-") || rawCode;
+              this.pairingCode = formatted;
+              this.setStatus("PAIRING_CODE_READY", { error: null });
+              this.isInitializing = false;
+              console.log(`[WhatsApp] [${this.hotelId}] Generated pairing code: ${formatted} for phone ${phoneNumber}`);
+            }
+          } catch (pairErr) {
+            console.error(`[WhatsApp] [${this.hotelId}] Error requesting pairing code:`, pairErr.message);
+            this.setStatus("ERROR", { error: `Failed to request pairing code: ${pairErr.message}` });
+            this.isInitializing = false;
+          }
+        }, 1500);
+      }
+    } catch (err) {
+      if (currentGeneration !== this.generation) return;
+      this.isInitializing = false;
+      this.sock = null;
+      this.setStatus("ERROR", { error: err.message });
+      console.error(`[WhatsApp] [${this.hotelId}] Initialization error:`, err);
+      if (this.allowReconnect && this.hasAuthFiles()) this.scheduleReconnect(8000);
+    }
+  }
+
+  async disconnectWhatsAppClient({ preserveSession = false } = {}) {
+    this.generation += 1;
+    this.isInitializing = false;
+    this.allowReconnect = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.sock) {
+      const socketToClose = this.sock;
+      if (preserveSession) {
+        try { socketToClose.end(undefined); } catch (_) {}
+      } else {
+        try {
+          await socketToClose.logout();
+        } catch (_) {
+          try { socketToClose.end(undefined); } catch (__) {}
+        }
+      }
+      this.sock = null;
+    }
+
+    this.currentQrCodeDataUrl = null;
+    this.currentQrRawString = null;
+    this.pairingCode = null;
+    this.connectedNumber = null;
+    this.connectedPushname = null;
+    this.isInitializing = false;
+
+    if (!preserveSession) {
+      try {
+        fs.rmSync(this.authDir, { recursive: true, force: true });
+      } catch (err) {
+        console.warn(`[WhatsApp] [${this.hotelId}] Could not clear session files:`, err.message);
+      }
+    }
+    this.setStatus("DISCONNECTED", { error: null });
+    return {
+      success: true,
+      message: preserveSession
+        ? "WhatsApp socket stopped; saved session preserved."
+        : "WhatsApp account unlinked and credentials removed.",
+    };
+  }
+
+  async waitUntilConnected(timeoutMs = 30000) {
+    if (this.sock && this.clientStatus === "CONNECTED") return true;
+    if (!this.isInitializing && this.clientStatus !== "CONNECTED") {
+      this.initializeWhatsAppClient().catch(() => {});
+    }
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (this.sock && this.clientStatus === "CONNECTED") return true;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return !!(this.sock && this.clientStatus === "CONNECTED");
+  }
+
+  async resolveRecipientJid(cleanPhone) {
+    if (!this.sock || this.clientStatus !== "CONNECTED") return { jid: null, exists: null };
+    try {
+      const results = await sendWithTimeout(this.sock.onWhatsApp(cleanPhone), 12000);
+      if (Array.isArray(results) && results.length > 0) {
+        const registered = results.find((r) => r && r.exists && r.jid) || results.find((r) => r && r.exists);
+        if (registered) return { jid: registered.jid, exists: true };
+        if (results.every((r) => r && r.exists === false)) return { jid: null, exists: false };
+      }
+    } catch (err) {
+      console.warn(`[WhatsApp] [${this.hotelId}] onWhatsApp lookup notice:`, err.message);
+      return { jid: null, exists: null, error: err.message };
+    }
+    return { jid: null, exists: null };
+  }
+
+  getStatus() {
+    const templates = this.getTemplates();
+    return {
+      hotelId: this.hotelId,
+      status: this.clientStatus,
+      engine: "baileys",
+      isConnected: this.clientStatus === "CONNECTED",
+      isReady: this.clientStatus === "CONNECTED" && !!this.sock,
+      qrCodeDataUrl: this.currentQrCodeDataUrl,
+      qrRawString: this.currentQrRawString,
+      pairingCode: this.pairingCode,
+      hasActiveQr: Boolean(this.currentQrRawString || this.currentQrCodeDataUrl),
+      connectedNumber: this.connectedNumber,
+      connectedPushname: this.connectedPushname,
+      lastStatusChange: this.lastStatusChange,
+      initializationError: this.initializationError,
+      hasPersistedSession: this.hasAuthFiles(),
+      activeTemplatesCount: Object.values(templates).filter((t) => t.enabled).length,
+      totalTemplatesCount: Object.values(templates).length,
+      supportedPlaceholders: SUPPORTED_PLACEHOLDERS,
+    };
   }
 }
 
-secureAuthFiles();
+// Multi-tenant sessions registry
+const sessions = new Map();
 
-function setStatus(next, extra = {}) {
-  clientStatus = next;
-  lastStatusChange = new Date().toISOString();
-  if (extra.error !== undefined) initializationError = extra.error;
-}
-
-function hasAuthFiles() {
-  try {
-    return fs.existsSync(path.join(AUTH_DIR, "creds.json"));
-  } catch (_) {
-    return false;
+function getSession(hotelId = "default") {
+  const sanitized = sanitizeHotelId(hotelId);
+  if (!sessions.has(sanitized)) {
+    sessions.set(sanitized, new HotelWhatsAppSession(sanitized));
   }
+  return sessions.get(sanitized);
 }
 
 function extractPhoneFromJid(jid) {
@@ -110,9 +644,6 @@ function extractPhoneFromJid(jid) {
   return phone || null;
 }
 
-/**
- * Clean & normalize phone number for WhatsApp
- */
 function normalizePhoneNumber(rawPhone) {
   if (!rawPhone || typeof rawPhone !== "string") {
     return null;
@@ -134,140 +665,16 @@ function normalizePhoneNumber(rawPhone) {
   };
 }
 
-function getTemplates() {
-  try {
-    if (fs.existsSync(TEMPLATES_FILE)) {
-      const data = fs.readFileSync(TEMPLATES_FILE, "utf-8");
-      const parsed = JSON.parse(data);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid template data format");
-      return parsed;
-    }
-  } catch (err) {
-    console.error("[WhatsApp] Error reading templates file:", err.message);
-  }
-  saveTemplates(DEFAULT_TEMPLATES);
-  return { ...DEFAULT_TEMPLATES };
-}
-
-function saveTemplates(templates) {
-  try {
-    const tempFile = `${TEMPLATES_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(templates, null, 2), { encoding: "utf-8", mode: 0o600 });
-    fs.renameSync(tempFile, TEMPLATES_FILE);
-    return true;
-  } catch (err) {
-    console.error("[WhatsApp] Error saving templates file:", err.message);
-    return false;
-  }
-}
-
-function getLogs(limit = 50) {
-  try {
-    if (fs.existsSync(LOGS_FILE)) {
-      const data = fs.readFileSync(LOGS_FILE, "utf-8");
-      const logs = JSON.parse(data);
-      if (Array.isArray(logs)) {
-        // Return latest first (descending timestamp)
-        const sorted = [...logs].reverse();
-        return sorted.slice(0, Math.max(1, Math.min(Number(limit) || 50, 200)));
-      }
-      return [];
-    }
-  } catch (err) {
-    console.error("[WhatsApp] Error reading logs file:", err.message);
-  }
-  return [];
-}
-
-function appendLog(logEntry) {
-  try {
-    const existing = getLogs(200);
-    const updated = [
-      ...existing,
-      {
-        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        timestamp: new Date().toISOString(),
-        ...logEntry,
-        errorMessage: logEntry.errorMessage || logEntry.error || null,
-        messageText: logEntry.messageText || logEntry.preview || "",
-      },
-    ];
-    const tempFile = `${LOGS_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(updated.slice(-100), null, 2), { encoding: "utf-8", mode: 0o600 });
-    fs.renameSync(tempFile, LOGS_FILE);
-  } catch (err) {
-    console.error("[WhatsApp] Error appending log:", err.message);
-  }
-}
-
-function updateLogDelivery(messageId, deliveryStatus) {
-  try {
-    const logs = getLogs(1000);
-    const index = logs.findIndex((entry) => entry.messageId === messageId);
-    if (index < 0) return false;
-    const previousStatus = logs[index].deliveryStatus;
-    const rank = { PENDING: 0, DELIVERED: 1, READ: 2 };
-    if ((rank[previousStatus] || 0) > (rank[deliveryStatus] || 0)) return true;
-    logs[index] = {
-      ...logs[index],
-      deliveryStatus,
-      delivered: deliveryStatus === "DELIVERED" || deliveryStatus === "READ",
-      deliveredAt: new Date().toISOString(),
-    };
-    const tempFile = `${LOGS_FILE}.${process.pid}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(logs.slice(-100), null, 2), { mode: 0o600 });
-    fs.renameSync(tempFile, LOGS_FILE);
-    return true;
-  } catch (err) {
-    console.error("[WhatsApp] Could not update delivery receipt:", err.message);
-    return false;
-  }
-}
-
-function recordDeliveryReceipt(messageId, deliveryStatus) {
-  console.log(`[WhatsApp] Recipient receipt ${deliveryStatus} for message ${messageId}`);
-  if (updateLogDelivery(messageId, deliveryStatus)) return;
-  const now = Date.now();
-  for (const [id, receipt] of earlyDeliveryReceipts) {
-    if (now - receipt.timestamp > 5 * 60 * 1000) earlyDeliveryReceipts.delete(id);
-  }
-  const existing = earlyDeliveryReceipts.get(messageId);
-  const rank = { DELIVERED: 1, READ: 2 };
-  if (!existing || (rank[deliveryStatus] || 0) > (rank[existing.status] || 0)) {
-    earlyDeliveryReceipts.set(messageId, { status: deliveryStatus, timestamp: now });
-  }
-  while (earlyDeliveryReceipts.size > 500) {
-    earlyDeliveryReceipts.delete(earlyDeliveryReceipts.keys().next().value);
-  }
-}
-
-function stableMessageKey(input) {
-  return crypto.createHash("sha256").update(input).digest("hex");
-}
-
-function sendWithTimeout(promise, timeoutMs) {
-  let timeout;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timeout = setTimeout(() => reject(new Error("WhatsApp did not confirm acceptance before the timeout. The outcome is unknown; check the chat and logs before retrying.")), timeoutMs);
-    }),
-  ]).finally(() => clearTimeout(timeout));
-}
-
 function interpolateTemplate(templateString, context = {}) {
   let result = templateString || "";
 
-  // Check if room number is assigned
   const rawRoom = context.roomNumber ? String(context.roomNumber).trim() : "";
   const unassignedValues = ["", "unassigned", "pending", "tbd", "n/a", "none", "null", "undefined"];
   const hasRoom = rawRoom !== "" && !unassignedValues.includes(rawRoom.toLowerCase());
 
   if (!hasRoom) {
-    // For reservations and bookings where room has not yet been assigned, omit the room lines
     result = result.replace(/^[ \t]*[🛏️\s•\-\*]*Room:?\s*\{roomNumber\}[^\r\n]*(\r?\n)?/gim, "");
     result = result.replace(/^[ \t]*[🛏️\s•\-\*]*कमरा:?\s*\{roomNumber\}[^\r\n]*(\r?\n)?/gim, "");
-    // Clean up inline room references in other templates if unassigned
     result = result.replace(/\s+in Room\s*\{roomNumber\}/gi, "");
     result = result.replace(/कमरे\s*\{roomNumber\}\s*में\s*/gi, "");
     result = result.replace(/to Room\s*\{roomNumber\}\s*/gi, "");
@@ -301,308 +708,18 @@ function interpolateTemplate(templateString, context = {}) {
   return result;
 }
 
-function scheduleReconnect(delayMs = 3000) {
-  if (!allowReconnect || isInitializing) return;
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    initializeWhatsAppClient().catch((err) => {
-      console.error("[WhatsApp] Reconnect failed:", err.message);
-    });
-  }, delayMs);
+function stableMessageKey(input) {
+  return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-function bindSocketEvents(client, saveCreds) {
-  client.ev.on("creds.update", async () => {
-    if (sock === client && typeof saveCreds === "function") {
-      try {
-        await saveCreds();
-      } catch (err) {
-        console.warn("[WhatsApp] Failed to persist session credentials:", err.message);
-      }
-    }
-  });
-
-  client.ev.on("messages.update", (updates = []) => {
-    for (const item of updates) {
-      const status = item.update?.status;
-      const messageId = item.key?.id;
-      if (!messageId) continue;
-      if (status === 3) recordDeliveryReceipt(messageId, "DELIVERED");
-      else if (status >= 4) recordDeliveryReceipt(messageId, "READ");
-    }
-  });
-
-  client.ev.on("message-receipt.update", (updates = []) => {
-    for (const item of updates) {
-      const messageId = item.key?.id;
-      const receipt = item.receipt || {};
-      if (!messageId) continue;
-      const deliveryStatus = receipt.readTimestamp || receipt.playedTimestamp
-        ? "READ"
-        : receipt.receiptTimestamp
-          ? "DELIVERED"
-          : null;
-      if (deliveryStatus) recordDeliveryReceipt(messageId, deliveryStatus);
-    }
-  });
-
-  // Track all incoming and outgoing messages in store for Signal protocol decryption retry requests
-  client.ev.on("messages.upsert", async ({ messages }) => {
-    for (const msg of messages || []) {
-      if (msg?.key?.id && msg?.message) {
-        cacheMessage(msg.key.id, msg.message);
-      }
-    }
-  });
-
-  client.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update || {};
-    if (sock !== client) return;
-
-    if (qr) {
-      try {
-        // Store raw QR string so native clients (Flutter) can render it directly
-        // without the round-trip PNG encoding delay that causes "Couldn't link device".
-        currentQrRawString = qr;
-        currentQrCodeDataUrl = await qrcodeLib.toDataURL(qr, {
-          margin: 2,
-          scale: 6,
-          color: { dark: "#0F172A", light: "#FFFFFF" },
-        });
-        isInitializing = false;
-        if (sock !== client) return;
-        setStatus("QR_READY", { error: null });
-        console.log("[WhatsApp] QR ready. Scan from the hotel WhatsApp app (Linked devices).");
-      } catch (qrErr) {
-        setStatus("ERROR", { error: `Could not generate WhatsApp QR code: ${qrErr.message}` });
-        console.error("[WhatsApp] Failed to render QR:", qrErr.message);
-      }
-    }
-
-    if (connection === "open") {
-      if (sock !== client) return;
-      isInitializing = false;
-      currentQrCodeDataUrl = null;
-      currentQrRawString = null;
-      initializationError = null;
-      const user = client.user || {};
-      connectedNumber = extractPhoneFromJid(user.id) || extractPhoneFromJid(user.jid);
-      connectedPushname = user.name || user.notify || connectedNumber || "Hotel Reception";
-      setStatus("CONNECTED", { error: null });
-      console.log(`[WhatsApp] Connected as ${connectedPushname} (+${connectedNumber || "unknown"})`);
-    }
-
-    if (connection === "close") {
-      if (sock !== client) return;
-      const statusCode =
-        lastDisconnect?.error?.output?.statusCode ||
-        lastDisconnect?.error?.statusCode ||
-        null;
-      const loggedOut = statusCode === DisconnectReason.loggedOut;
-      const reason = lastDisconnect?.error?.message || `code ${statusCode}`;
-      console.warn(`[WhatsApp] Connection closed (${reason}). loggedOut=${loggedOut}`);
-
-      sock = null;
-      currentQrCodeDataUrl = null;
-      currentQrRawString = null;
-      connectedNumber = null;
-      connectedPushname = null;
-      isInitializing = false;
-
-      if (loggedOut) {
-        allowReconnect = false;
-        try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch (err) {
-          console.warn("[WhatsApp] Could not clear invalid session files:", err.message);
-        }
-        setStatus("DISCONNECTED", { error: "WhatsApp session expired. Scan the QR code again." });
-        return;
-      }
-
-      setStatus("DISCONNECTED", { error: `Connection dropped: ${reason}` });
-      if (allowReconnect) {
-        const delay = statusCode === DisconnectReason.restartRequired ? 1000 : 4000;
-        scheduleReconnect(delay);
-      }
-    }
-  });
-}
-
-async function initializeWhatsAppClient() {
-  if (initializePromise) return initializePromise;
-  initializePromise = initializeWhatsAppClientInternal();
-  try {
-    await initializePromise;
-  } finally {
-    initializePromise = null;
-  }
-}
-
-async function initializeWhatsAppClientInternal() {
-  if (isInitializing) {
-    console.log("[WhatsApp] Initialization already in progress.");
-    return;
-  }
-  if (sock && clientStatus === "CONNECTED") {
-    console.log("[WhatsApp] Client already connected.");
-    return;
-  }
-  if (clientStatus === "QR_READY" && currentQrCodeDataUrl && sock) {
-    console.log("[WhatsApp] QR already waiting for scan.");
-    return;
-  }
-
-  isInitializing = true;
-  const currentGeneration = ++generation;
-  allowReconnect = true;
-  setStatus("INITIALIZING", { error: null });
-  currentQrCodeDataUrl = null;
-
-  try {
-    if (sock) {
-      try {
-        sock.end(undefined);
-      } catch (_) {}
-      sock = null;
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    secureAuthFiles();
-    if (currentGeneration !== generation) return;
-    if (!state.creds.registered && hasAuthFiles()) {
-      fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-      fs.mkdirSync(AUTH_DIR, { recursive: true });
-    }
-
-    if (state.creds.registered) {
-      setStatus("AUTHENTICATED", { error: null });
-    }
-
-    let version = [2, 3000, 1027934701];
-    try {
-      const fetched = await fetchLatestBaileysVersion();
-      if (currentGeneration !== generation) return;
-      if (fetched?.version) version = fetched.version;
-    } catch (verErr) {
-      console.warn("[WhatsApp] Using fallback WA version:", verErr.message);
-    }
-
-    const client = makeWASocket({
-      version,
-      logger,
-      printQRInTerminal: false,
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, logger),
-      },
-      browser: Browsers.ubuntu("Chrome"),
-      markOnlineOnConnect: true,
-      syncFullHistory: false,
-      generateHighQualityLinkPreview: false,
-      connectTimeoutMs: 60_000,
-      keepAliveIntervalMs: 25_000,
-      retryRequestDelayMs: 250,
-      maxMsgRetryCount: 5,
-      defaultQueryTimeoutMs: 60_000,
-      getMessage: async (key) => {
-        if (key && key.id && messageStore.has(key.id)) {
-          return messageStore.get(key.id);
-        }
-        return undefined;
-      },
-    });
-
-    if (currentGeneration !== generation) {
-      try { client.end(undefined); } catch (_) {}
-      return;
-    }
-
-    sock = client;
-    bindSocketEvents(client, async () => {
-      await saveCreds();
-      secureAuthFiles();
-    });
-    console.log(
-      `[WhatsApp] Socket started. Existing session files: ${hasAuthFiles() ? "yes" : "no"}`
-    );
-  } catch (err) {
-    if (currentGeneration !== generation) return;
-    isInitializing = false;
-    sock = null;
-    setStatus("ERROR", { error: err.message });
-    console.error("[WhatsApp] Initialization error:", err);
-    if (allowReconnect && hasAuthFiles()) scheduleReconnect(8000);
-  }
-}
-
-async function disconnectWhatsAppClient({ preserveSession = false } = {}) {
-  generation += 1;
-  isInitializing = false;
-  allowReconnect = false;
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-
-  if (sock) {
-    const socketToClose = sock;
-    if (preserveSession) {
-      try { socketToClose.end(undefined); } catch (_) {}
-    } else {
-      try { await socketToClose.logout(); } catch (_) {
-        try { socketToClose.end(undefined); } catch (__) {}
-      }
-    }
-    sock = null;
-  }
-
-  currentQrCodeDataUrl = null;
-  currentQrRawString = null;
-  connectedNumber = null;
-  connectedPushname = null;
-  isInitializing = false;
-  if (!preserveSession) {
-    try { fs.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch (err) {
-      console.warn("[WhatsApp] Could not clear unlinked session files:", err.message);
-    }
-  }
-  setStatus("DISCONNECTED", { error: null });
-  return { success: true, message: preserveSession ? "WhatsApp socket stopped; saved session preserved." : "WhatsApp account unlinked and credentials removed." };
-}
-
-async function waitUntilConnected(timeoutMs = 30000) {
-  if (sock && clientStatus === "CONNECTED") return true;
-  if (!isInitializing && clientStatus !== "CONNECTED") {
-    initializeWhatsAppClient().catch(() => {});
-  }
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (sock && clientStatus === "CONNECTED") return true;
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  return !!(sock && clientStatus === "CONNECTED");
-}
-
-async function resolveRecipientJid(cleanPhone) {
-  if (!sock || clientStatus !== "CONNECTED") return { jid: null, exists: null };
-
-  try {
-    const results = await sendWithTimeout(sock.onWhatsApp(cleanPhone), 12000);
-    if (Array.isArray(results) && results.length > 0) {
-      const registered = results.find((r) => r && r.exists && r.jid) || results.find((r) => r && r.exists);
-      if (registered) {
-        return { jid: registered.jid, exists: true };
-      }
-      if (results.every((r) => r && r.exists === false)) {
-        return { jid: null, exists: false };
-      }
-    }
-  } catch (err) {
-    console.warn("[WhatsApp] onWhatsApp lookup failed:", err.message);
-    return { jid: null, exists: null, error: err.message };
-  }
-
-  return { jid: null, exists: null };
+function sendWithTimeout(promise, timeoutMs) {
+  let timeout;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("WhatsApp did not confirm acceptance before the timeout. The outcome is unknown; check the chat and logs before retrying.")), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timeout));
 }
 
 function isConfirmedSendResult(sent) {
@@ -613,7 +730,118 @@ function isConfirmedSendResult(sent) {
   return Boolean(key.id);
 }
 
+// Unified Service APIs supporting both single-tenant & multi-tenant invocations
+
+async function initializeWhatsAppClient(hotelId = "default", options = {}) {
+  // Support calling initializeWhatsAppClient(options) directly for backward compatibility
+  if (typeof hotelId === "object" && hotelId !== null) {
+    options = hotelId;
+    hotelId = options.hotelId || "default";
+  }
+  const session = getSession(hotelId);
+  return session.initializeWhatsAppClient(options);
+}
+
+async function requestPairingCode(hotelId = "default", rawPhone) {
+  if (typeof hotelId === "string" && !rawPhone && hotelId.length >= 10 && /^\+?\d+$/.test(hotelId)) {
+    rawPhone = hotelId;
+    hotelId = "default";
+  }
+  const norm = normalizePhoneNumber(rawPhone);
+  if (!norm) {
+    return { success: false, error: "Please enter a valid 10-digit Indian phone number.", code: "INVALID_PHONE" };
+  }
+
+  const session = getSession(hotelId);
+  if (session.sock && session.clientStatus === "CONNECTED") {
+    return {
+      success: true,
+      isConnected: true,
+      connectedNumber: session.connectedNumber,
+      message: "WhatsApp is already connected.",
+    };
+  }
+
+  // If pairing code already available and still valid, return it
+  if (session.pairingCode && session.clientStatus === "PAIRING_CODE_READY") {
+    return {
+      success: true,
+      pairingCode: session.pairingCode,
+      status: "PAIRING_CODE_READY",
+    };
+  }
+
+  await session.initializeWhatsAppClient({ usePairingCode: true, phoneNumber: norm.cleanPhone });
+
+  const start = Date.now();
+  while (Date.now() - start < 12000) {
+    if (session.pairingCode) {
+      return {
+        success: true,
+        pairingCode: session.pairingCode,
+        status: "PAIRING_CODE_READY",
+      };
+    }
+    if (session.clientStatus === "ERROR") {
+      return {
+        success: false,
+        error: session.initializationError || "Failed to generate pairing code",
+        code: "PAIRING_CODE_FAILED",
+      };
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
+  if (session.pairingCode) {
+    return {
+      success: true,
+      pairingCode: session.pairingCode,
+      status: "PAIRING_CODE_READY",
+    };
+  }
+
+  return {
+    success: false,
+    error: "Timed out generating pairing code. Please try again.",
+    code: "TIMEOUT",
+  };
+}
+
+async function disconnectWhatsAppClient(hotelId = "default", options = {}) {
+  if (typeof hotelId === "object" && hotelId !== null) {
+    options = hotelId;
+    hotelId = options.hotelId || "default";
+  }
+  const session = getSession(hotelId);
+  return session.disconnectWhatsAppClient(options);
+}
+
+function getStatus(hotelId = "default") {
+  return getSession(hotelId).getStatus();
+}
+
+function getTemplates(hotelId = "default") {
+  return getSession(hotelId).getTemplates();
+}
+
+function saveTemplates(hotelId = "default", templates) {
+  if (typeof hotelId === "object" && !templates) {
+    templates = hotelId;
+    hotelId = "default";
+  }
+  return getSession(hotelId).saveTemplates(templates);
+}
+
+function getLogs(hotelId = "default", limit = 50) {
+  if (typeof hotelId === "number") {
+    limit = hotelId;
+    hotelId = "default";
+  }
+  return getSession(hotelId).getLogs(limit);
+}
+
 async function sendWhatsAppNotification({
+  hotelId = "default",
   templateId,
   recipientPhone,
   customMessage,
@@ -622,14 +850,15 @@ async function sendWhatsAppNotification({
   stayId,
   document,
 }) {
-  const currentSend = sendQueue.then(() => sendWhatsAppNotificationNow({
+  const session = getSession(hotelId);
+  const currentSend = session.sendQueue.then(() => sendWhatsAppNotificationNow(session, {
     templateId, recipientPhone, customMessage, context, bypassDuplicateCheck, stayId, document,
   }));
-  sendQueue = currentSend.catch(() => {});
+  session.sendQueue = currentSend.catch(() => {});
   return currentSend;
 }
 
-async function sendWhatsAppNotificationNow({
+async function sendWhatsAppNotificationNow(session, {
   templateId,
   recipientPhone,
   customMessage,
@@ -641,7 +870,7 @@ async function sendWhatsAppNotificationNow({
   const norm = normalizePhoneNumber(recipientPhone);
   if (!norm) {
     const errorMsg = `Invalid phone number format: "${recipientPhone}". Needs at least 10 digits.`;
-    appendLog({
+    session.appendLog({
       templateId: templateId || "custom",
       recipientPhone,
       status: "FAILED",
@@ -651,9 +880,9 @@ async function sendWhatsAppNotificationNow({
     });
     return { success: false, delivered: false, error: errorMsg, code: "INVALID_PHONE" };
   }
-  const selfSend = connectedNumber === norm.cleanPhone;
+  const selfSend = session.connectedNumber === norm.cleanPhone;
 
-  const templates = getTemplates();
+  const templates = session.getTemplates();
   let messageBody = customMessage;
 
   if (templateId) {
@@ -688,10 +917,10 @@ async function sendWhatsAppNotificationNow({
   const dedupeKey = stayId
     ? `${stayId}_${templateId || "custom"}`
     : `content_${stableMessageKey(`${norm.cleanPhone}|${templateId || "custom"}|${messageHash}`)}`;
-  if (!bypassDuplicateCheck && duplicateCache.has(dedupeKey)) {
-    const previous = duplicateCache.get(dedupeKey);
+  if (!bypassDuplicateCheck && session.duplicateCache.has(dedupeKey)) {
+    const previous = session.duplicateCache.get(dedupeKey);
     if (Date.now() - previous.timestamp < 300000) {
-      console.warn(`[WhatsApp] Duplicate message suppressed for key: ${dedupeKey}`);
+      console.warn(`[WhatsApp] [${session.hotelId}] Duplicate message suppressed for key: ${dedupeKey}`);
       return {
         success: false,
         delivered: false,
@@ -702,16 +931,16 @@ async function sendWhatsAppNotificationNow({
     }
   }
 
-  if (pendingSends.has(dedupeKey)) {
+  if (session.pendingSends.has(dedupeKey)) {
     return { success: false, accepted: false, delivered: false, suppressed: true, message: "This message is already being submitted. Check the WhatsApp chat before retrying.", code: "SEND_IN_PROGRESS" };
   }
   const sendAttempt = { outcomeUnknown: false };
-  pendingSends.set(dedupeKey, sendAttempt);
+  session.pendingSends.set(dedupeKey, sendAttempt);
 
-  const ready = await waitUntilConnected(30000);
-  if (!ready || !sock || clientStatus !== "CONNECTED") {
-    const errorMsg = "WhatsApp is not connected. Open WhatsApp Automation and scan the QR code.";
-    appendLog({
+  const ready = await session.waitUntilConnected(30000);
+  if (!ready || !session.sock || session.clientStatus !== "CONNECTED") {
+    const errorMsg = "WhatsApp is not connected. Open WhatsApp Automation and link your device.";
+    session.appendLog({
       templateId: templateId || "custom",
       recipientPhone: norm.cleanPhone,
       status: "FAILED",
@@ -720,47 +949,45 @@ async function sendWhatsAppNotificationNow({
       delivered: false,
       context,
     });
-    pendingSends.delete(dedupeKey);
+    session.pendingSends.delete(dedupeKey);
     return { success: false, delivered: false, error: errorMsg, code: "NOT_CONNECTED" };
   }
 
-  if (!bypassDuplicateCheck && duplicateCache.has(dedupeKey)) {
-    const previous = duplicateCache.get(dedupeKey);
+  if (!bypassDuplicateCheck && session.duplicateCache.has(dedupeKey)) {
+    const previous = session.duplicateCache.get(dedupeKey);
     if (Date.now() - previous.timestamp < 300000) {
-      pendingSends.delete(dedupeKey);
+      session.pendingSends.delete(dedupeKey);
       return { success: false, accepted: false, delivered: false, suppressed: true, messageId: previous.messageId, message: "Duplicate message skipped because WhatsApp already accepted it within the last 5 minutes.", code: "DUPLICATE_SUPPRESSED" };
     }
   }
 
-  const resolved = await resolveRecipientJid(norm.cleanPhone);
+  const resolved = await session.resolveRecipientJid(norm.cleanPhone);
   if (!resolved.jid) {
     const errorMsg = resolved.exists === false
       ? `+${norm.cleanPhone} is not registered on WhatsApp.`
       : "Could not verify this number with WhatsApp. Check the country code and try again.";
-    appendLog({ templateId: templateId || "custom", recipientPhone: norm.cleanPhone, status: "FAILED", error: errorMsg, preview: messageBody.slice(0, 100), delivered: false, context });
-    pendingSends.delete(dedupeKey);
+    session.appendLog({ templateId: templateId || "custom", recipientPhone: norm.cleanPhone, status: "FAILED", error: errorMsg, preview: messageBody.slice(0, 100), delivered: false, context });
+    session.pendingSends.delete(dedupeKey);
     return { success: false, delivered: false, error: errorMsg, code: resolved.exists === false ? "NOT_ON_WHATSAPP" : "RECIPIENT_LOOKUP_FAILED" };
   }
+
   try {
-    console.log(`[WhatsApp] Sending to ${resolved.jid}...`);
-    const sendingSocket = sock;
+    console.log(`[WhatsApp] [${session.hotelId}] Sending to ${resolved.jid}...`);
+    const sendingSocket = session.sock;
     let sendPromise;
-    let lateDocPromise = null;
 
     if (document && document.buffer) {
-      // 1. Send the text notification first so the guest immediately receives the message
       if (messageBody && messageBody.trim()) {
         try {
           const textMsg = await sendingSocket.sendMessage(resolved.jid, { text: messageBody });
           if (textMsg?.key?.id && textMsg?.message) {
-            cacheMessage(textMsg.key.id, textMsg.message);
+            session.cacheMessage(textMsg.key.id, textMsg.message);
           }
         } catch (textErr) {
-          console.warn("[WhatsApp] Text notice dispatch note:", textErr.message);
+          console.warn(`[WhatsApp] [${session.hotelId}] Text notice dispatch note:`, textErr.message);
         }
       }
 
-      // 2. Send the PDF Document attachment with a concise caption to avoid media caption limits
       const docPayload = {
         document: document.buffer,
         mimetype: document.mimetype || "application/pdf",
@@ -773,17 +1000,18 @@ async function sendWhatsAppNotificationNow({
     }
     sendAttempt.promise = sendPromise;
     let acceptanceRecorded = false;
+
     const recordAccepted = (acceptedMessage) => {
       if (acceptanceRecorded || !isConfirmedSendResult(acceptedMessage)) return;
       if (acceptedMessage?.key?.id && acceptedMessage?.message) {
-        cacheMessage(acceptedMessage.key.id, acceptedMessage.message);
+        session.cacheMessage(acceptedMessage.key.id, acceptedMessage.message);
       }
       acceptanceRecorded = true;
       const acceptedAt = Date.now();
       const acceptedMessageId = acceptedMessage.key.id;
-      duplicateCache.set(dedupeKey, { timestamp: acceptedAt, messageId: acceptedMessageId });
-      persistAcceptedMessage({ dedupeKey, timestamp: acceptedAt, messageId: acceptedMessageId });
-      appendLog({
+      session.duplicateCache.set(dedupeKey, { timestamp: acceptedAt, messageId: acceptedMessageId });
+      session.persistAcceptedMessage({ dedupeKey, timestamp: acceptedAt, messageId: acceptedMessageId });
+      session.appendLog({
         templateId: templateId || "custom",
         recipientPhone: norm.cleanPhone,
         status: "ACCEPTED",
@@ -795,25 +1023,21 @@ async function sendWhatsAppNotificationNow({
         selfSend,
         context,
       });
-      const deliveryWatch = setTimeout(() => {
-        const latest = getLogs(100).find((entry) => entry.messageId === acceptedMessageId);
-        if (latest?.deliveryStatus === "PENDING") {
-          console.warn(`[WhatsApp] No recipient delivery receipt after 60 seconds for message ${acceptedMessageId}. Delivery remains unconfirmed; not retrying automatically.`);
-        }
-      }, 60_000);
-      deliveryWatch.unref?.();
-      const earlyReceipt = earlyDeliveryReceipts.get(acceptedMessageId);
+
+      const earlyReceipt = session.earlyDeliveryReceipts.get(acceptedMessageId);
       if (earlyReceipt && Date.now() - earlyReceipt.timestamp <= 5 * 60 * 1000) {
-        updateLogDelivery(acceptedMessageId, earlyReceipt.status);
-        earlyDeliveryReceipts.delete(acceptedMessageId);
+        session.updateLogDelivery(acceptedMessageId, earlyReceipt.status);
+        session.earlyDeliveryReceipts.delete(acceptedMessageId);
       }
     };
+
     sendPromise.then((lateResult) => {
       recordAccepted(lateResult);
-      pendingSends.delete(dedupeKey);
+      session.pendingSends.delete(dedupeKey);
     }, () => {
-      pendingSends.delete(dedupeKey);
+      session.pendingSends.delete(dedupeKey);
     });
+
     const sent = await sendWithTimeout(sendPromise, SEND_TIMEOUT_MS);
     if (!isConfirmedSendResult(sent)) {
       throw new Error("WhatsApp did not acknowledge the message. It was not delivered.");
@@ -821,7 +1045,7 @@ async function sendWhatsAppNotificationNow({
 
     const messageId = sent.key.id;
     recordAccepted(sent);
-    console.log(`[WhatsApp] Accepted by WhatsApp for ${norm.cleanPhone}: ${messageId}`);
+    console.log(`[WhatsApp] [${session.hotelId}] Accepted by WhatsApp for ${norm.cleanPhone}: ${messageId}`);
     return {
       success: true,
       accepted: true,
@@ -829,7 +1053,7 @@ async function sendWhatsAppNotificationNow({
       deliveryStatus: "PENDING",
       message: selfSend
         ? "WhatsApp accepted this message to the connected account. Delivery has not been independently confirmed."
-        : "WhatsApp accepted the message for sending. Recipient delivery has not been confirmed yet.",
+        : "WhatsApp accepted the message for sending.",
       messageId,
       recipient: norm.cleanPhone,
       selfSend,
@@ -837,15 +1061,15 @@ async function sendWhatsAppNotificationNow({
   } catch (sendErr) {
     const errMsg = sendErr.message || String(sendErr);
     if (sendErr.message?.includes("outcome is unknown")) sendAttempt.outcomeUnknown = true;
-    if (sendAttempt.outcomeUnknown && duplicateCache.has(dedupeKey)) {
-      const accepted = duplicateCache.get(dedupeKey);
+    if (sendAttempt.outcomeUnknown && session.duplicateCache.has(dedupeKey)) {
+      const accepted = session.duplicateCache.get(dedupeKey);
       if (accepted.messageId) {
         return {
           success: true,
           accepted: true,
           delivered: false,
           deliveryStatus: "PENDING",
-          message: "WhatsApp accepted the message before the response timed out. Recipient delivery is not confirmed yet.",
+          message: "WhatsApp accepted the message before the response timed out.",
           messageId: accepted.messageId,
           recipient: norm.cleanPhone,
         };
@@ -853,11 +1077,11 @@ async function sendWhatsAppNotificationNow({
     }
     if (sendAttempt.outcomeUnknown) {
       const timestamp = Date.now();
-      duplicateCache.set(dedupeKey, { timestamp, messageId: null });
-      persistAcceptedMessage({ dedupeKey, timestamp, messageId: null });
+      session.duplicateCache.set(dedupeKey, { timestamp, messageId: null });
+      session.persistAcceptedMessage({ dedupeKey, timestamp, messageId: null });
     }
-    console.error(`[WhatsApp] Send failed for ${norm.cleanPhone}:`, errMsg);
-    appendLog({
+    console.error(`[WhatsApp] [${session.hotelId}] Send failed for ${norm.cleanPhone}:`, errMsg);
+    session.appendLog({
       templateId: templateId || "custom",
       recipientPhone: norm.cleanPhone,
       status: sendAttempt.outcomeUnknown ? "UNKNOWN" : "FAILED",
@@ -873,71 +1097,43 @@ async function sendWhatsAppNotificationNow({
       code: sendAttempt.outcomeUnknown ? "SEND_OUTCOME_UNKNOWN" : "SEND_FAILED",
     };
   } finally {
-    if (!sendAttempt.outcomeUnknown) pendingSends.delete(dedupeKey);
+    if (!sendAttempt.outcomeUnknown) session.pendingSends.delete(dedupeKey);
   }
 }
 
-function persistAcceptedMessage(entry) {
+/**
+ * Auto-restore all previously saved sessions on startup.
+ */
+async function restoreAllSessions() {
   try {
-    const file = path.join(DATA_DIR, "whatsapp_idempotency.json");
-    let rows = [];
-    if (fs.existsSync(file)) {
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-      if (Array.isArray(parsed)) rows = parsed;
+    const authDir = AUTH_DIR;
+    if (!fs.existsSync(authDir)) return;
+
+    // Check if base auth dir has creds
+    if (fs.existsSync(path.join(authDir, "creds.json"))) {
+      console.log("[WhatsApp] Restoring default session on startup...");
+      initializeWhatsAppClient("default").catch(() => {});
     }
-    rows = rows.filter((row) => row.dedupeKey !== entry.dedupeKey && Date.now() - row.timestamp < 86400000);
-    rows.push(entry);
-    const tempFile = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tempFile, JSON.stringify(rows.slice(-2000)), { mode: 0o600 });
-    fs.renameSync(tempFile, file);
-  } catch (err) {
-    console.error("[WhatsApp] Could not persist duplicate protection:", err.message);
-  }
-}
 
-function loadAcceptedMessages() {
-  try {
-    const file = path.join(DATA_DIR, "whatsapp_idempotency.json");
-    if (!fs.existsSync(file)) return;
-    const rows = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (!Array.isArray(rows)) return;
-    for (const row of rows) {
-      if (row && row.dedupeKey && Number.isFinite(row.timestamp) && Date.now() - row.timestamp < 300000) {
-        duplicateCache.set(row.dedupeKey, row);
+    // Check hotel-specific session subfolders
+    const entries = fs.readdirSync(authDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const hotelCreds = path.join(authDir, entry.name, "creds.json");
+        if (fs.existsSync(hotelCreds)) {
+          console.log(`[WhatsApp] Restoring session for hotel: ${entry.name}`);
+          initializeWhatsAppClient(entry.name).catch(() => {});
+        }
       }
     }
   } catch (err) {
-    console.error("[WhatsApp] Could not load duplicate protection:", err.message);
+    console.warn("[WhatsApp] Session auto-restore error:", err.message);
   }
-}
-
-loadAcceptedMessages();
-
-function getStatus() {
-  const templates = getTemplates();
-  return {
-    status: clientStatus,
-    engine: "baileys",
-    isConnected: clientStatus === "CONNECTED",
-    isReady: clientStatus === "CONNECTED",
-    qrCodeDataUrl: currentQrCodeDataUrl,
-    // Raw QR string so native mobile clients can render it locally with zero
-    // encoding-latency (eliminates "Couldn't link device" caused by expired QR).
-    qrRawString: currentQrRawString,
-    hasActiveQr: Boolean(currentQrRawString || currentQrCodeDataUrl),
-    connectedNumber,
-    connectedPushname,
-    lastStatusChange,
-    initializationError,
-    hasPersistedSession: hasAuthFiles(),
-    activeTemplatesCount: Object.values(templates).filter((t) => t.enabled).length,
-    totalTemplatesCount: Object.values(templates).length,
-    supportedPlaceholders: SUPPORTED_PLACEHOLDERS,
-  };
 }
 
 module.exports = {
   initializeWhatsAppClient,
+  requestPairingCode,
   disconnectWhatsAppClient,
   sendWhatsAppNotification,
   getStatus,
@@ -946,5 +1142,9 @@ module.exports = {
   getLogs,
   interpolateTemplate,
   normalizePhoneNumber,
+  restoreAllSessions,
   SUPPORTED_PLACEHOLDERS,
+  // Export for testing
+  getSession,
+  sessions,
 };

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
+import 'whatsapp_service.dart';
 import '../models/property.dart';
 import 'hotel_store.dart';
 
@@ -59,6 +60,7 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyPropertyId, propertyId);
     await prefs.setString(_keyPropertyName, propertyName);
+    WhatsAppService.currentHotelId = propertyId;
   }
 
   /// Update cached manager profile details when edited in ManagerProfileScreen
@@ -145,8 +147,8 @@ class AuthService {
             upiPayeeName: propName,
           );
 
-          // CRITICAL: Initialize 100% clean account with ZERO demo seed data!
-          store.initCleanAccount(
+          // Load existing property data from local cache / Supabase
+          await store.loadForProperty(
             property: prop,
             managerName: fullName,
             managerEmail: userEmail,
@@ -209,8 +211,8 @@ class AuthService {
           upiPayeeName: cachedPropName ?? 'My Hotel',
         );
 
-        // CRITICAL: Initialize 100% clean account with ZERO demo seed data!
-        store.initCleanAccount(
+        // Load existing property data from local cache / Supabase
+        await store.loadForProperty(
           property: prop,
           managerName: cachedName ?? 'General Manager',
           managerEmail: cachedEmail,
@@ -306,8 +308,8 @@ class AuthService {
             upiPayeeName: activePropName,
           );
 
-          // CRITICAL: Initialize clean account with ZERO demo seed data!
-          store.initCleanAccount(
+          // Load existing property data from local cache / Supabase
+          await store.loadForProperty(
             property: prop,
             managerName: fullName,
             managerEmail: trimmedEmail,
@@ -384,7 +386,7 @@ class AuthService {
         upiPayeeName: cachedPropName,
       );
 
-      store.initCleanAccount(
+      await store.loadForProperty(
         property: prop,
         managerName: cachedName,
         managerEmail: trimmedEmail,
@@ -584,6 +586,7 @@ class AuthService {
     await prefs.remove(_keyUserRole);
     await prefs.remove(_keyPropertyName);
     await prefs.remove(_keyPropertyId);
+    WhatsAppService.currentHotelId = null;
 
     store.logout();
   }
@@ -602,5 +605,6 @@ class AuthService {
     await prefs.setString(_keyUserRole, role);
     await prefs.setString(_keyPropertyName, propertyName);
     await prefs.setString(_keyPropertyId, propertyId);
+    WhatsAppService.currentHotelId = propertyId;
   }
 }

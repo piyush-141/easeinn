@@ -15,6 +15,7 @@ class WhatsAppStatusData {
   // Raw QR string for native rendering (no base64 PNG latency)
   final String? qrRawString;
   final bool hasActiveQr;
+  final String? pairingCode;
   final String? connectedNumber;
   final String? connectedPushname;
   final int activeTemplatesCount;
@@ -29,6 +30,7 @@ class WhatsAppStatusData {
     required this.isReady,
     this.qrCodeDataUrl,
     this.qrRawString,
+    this.pairingCode,
     required this.hasActiveQr,
     this.connectedNumber,
     this.connectedPushname,
@@ -46,6 +48,7 @@ class WhatsAppStatusData {
       isReady: json['isReady'] ?? false,
       qrCodeDataUrl: json['qrCodeDataUrl'],
       qrRawString: json['qrRawString'],
+      pairingCode: json['pairingCode']?.toString(),
       hasActiveQr: json['hasActiveQr'] ?? false,
       connectedNumber: json['connectedNumber'],
       connectedPushname: json['connectedPushname'],
@@ -63,6 +66,7 @@ class WhatsAppStatusData {
       isConnected: false,
       isReady: false,
       qrRawString: null,
+      pairingCode: null,
       hasActiveQr: false,
       activeTemplatesCount: 0,
       totalTemplatesCount: 0,
@@ -189,11 +193,16 @@ class WhatsAppService {
     return _cachedBaseUrl ?? defaultBaseUrl;
   }
 
+  static String? currentHotelId;
+
   static Future<Map<String, String>> _requestHeaders({
     bool json = false,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final hotelId = currentHotelId ?? prefs.getString('easeinn_property_id') ?? 'default';
     return <String, String>{
       if (json) 'Content-Type': 'application/json',
+      'x-hotel-id': hotelId,
     };
   }
 
@@ -301,6 +310,29 @@ class WhatsAppService {
 
   static String? _lastConnectError;
   static String? get lastConnectError => _lastConnectError;
+
+  /// Request 8-digit WhatsApp pairing code for linking via phone number
+  static Future<Map<String, dynamic>> requestPairingCode(String phoneNumber) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/whatsapp/pairing-code');
+      final res = await http
+          .post(
+            uri,
+            headers: await _requestHeaders(json: true),
+            body: jsonEncode({'phoneNumber': phoneNumber.trim()}),
+          )
+          .timeout(const Duration(seconds: 16));
+
+      final data = jsonDecode(res.body);
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
+      return {'success': false, 'error': 'Unexpected response from WhatsApp server'};
+    } catch (e) {
+      debugPrint('[WhatsAppService] Error requesting pairing code: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 
   /// Disconnect / logout session
   static Future<bool> disconnect() async {

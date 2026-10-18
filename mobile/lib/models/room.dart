@@ -101,4 +101,32 @@ class Room {
       currentExpectedCheckOut: clearStay ? null : (currentExpectedCheckOut ?? this.currentExpectedCheckOut),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'property_id': propertyId,
+    'room_number': roomNumber,
+    'floor': floor,
+    'category_name': categoryName,
+    'base_rate': baseRate,
+    'status': status.dbValue,
+    'current_guest_name': currentGuestName,
+    'current_stay_id': currentStayId,
+    'current_check_in_at': currentCheckInAt?.toIso8601String(),
+    'current_expected_checkout': currentExpectedCheckOut?.toIso8601String(),
+  };
+
+  factory Room.fromJson(Map<String, dynamic> json) => Room(
+    id: json['id']?.toString() ?? '',
+    propertyId: json['property_id']?.toString() ?? '',
+    roomNumber: json['room_number']?.toString() ?? '',
+    floor: json['floor'] is int ? json['floor'] : (int.tryParse(json['floor']?.toString() ?? '1') ?? 1),
+    categoryName: json['category_name']?.toString() ?? 'Standard Room',
+    baseRate: (json['base_rate'] is num) ? (json['base_rate'] as num).toDouble() : (double.tryParse(json['base_rate']?.toString() ?? '2000') ?? 2000.0),
+    status: RoomStatusExtension.fromDbValue(json['status']?.toString() ?? 'vacant'),
+    currentGuestName: json['current_guest_name']?.toString(),
+    currentStayId: json['current_stay_id']?.toString(),
+    currentCheckInAt: json['current_check_in_at'] != null ? DateTime.tryParse(json['current_check_in_at'].toString()) : null,
+    currentExpectedCheckOut: json['current_expected_checkout'] != null ? DateTime.tryParse(json['current_expected_checkout'].toString()) : null,
+  );
 }

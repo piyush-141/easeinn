@@ -6,6 +6,9 @@ import '../models/guest.dart';
 import '../models/stay.dart';
 import '../models/bill.dart';
 import 'whatsapp_service.dart';
+import 'local_store_service.dart';
+import 'supabase_sync_service.dart';
+import 'supabase_service.dart';
 
 class HotelStore extends ChangeNotifier {
   // Current active property
@@ -84,14 +87,39 @@ class HotelStore extends ChangeNotifier {
     return true;
   }
 
-  // Cloud & Local Sync simulation
+  // Cloud & Local Sync
   Future<void> syncData() async {
     isSyncing = true;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 1400));
-    lastSyncTime = DateTime.now();
-    isSyncing = false;
-    notifyListeners();
+    try {
+      // 1. Immediately persist full state to local disk
+      saveToLocalStorage();
+
+      // 2. Synchronize with Supabase if client is active and UUID is valid
+      if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+        await SupabaseSyncService.syncProperty(_currentProperty);
+        await SupabaseSyncService.syncRooms(_currentProperty.id, _rooms);
+        for (final g in _guests) {
+          await SupabaseSyncService.syncGuest(g);
+        }
+        for (final s in _stays) {
+          await SupabaseSyncService.syncStay(s);
+        }
+
+        // Pull remote changes if available
+        final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+        if (remote != null) {
+          _applyRemoteData(remote);
+          saveToLocalStorage();
+        }
+      }
+      lastSyncTime = DateTime.now();
+    } catch (e) {
+      debugPrint('[HotelStore] syncData notice: $e');
+    } finally {
+      isSyncing = false;
+      notifyListeners();
+    }
   }
 
   // Update Hotel Business Profile
@@ -133,6 +161,8 @@ class HotelStore extends ChangeNotifier {
         _currentProperty = updated;
       }
       notifyListeners();
+      saveToLocalStorage();
+      SupabaseSyncService.syncProperty(updated);
     }
   }
 
@@ -731,9 +761,10 @@ class HotelStore extends ChangeNotifier {
       throw Exception('Room is already occupied');
     }
 
-    final guestId = 'guest-${DateTime.now().millisecondsSinceEpoch}';
-    final stayId = 'stay-${DateTime.now().millisecondsSinceEpoch}';
-    final billId = 'bill-${DateTime.now().millisecondsSinceEpoch}';
+    final isUuid = SupabaseSyncService.isValidUuid(_currentProperty.id);
+    final guestId = isUuid ? SupabaseSyncService.generateUuid() : 'guest-${DateTime.now().millisecondsSinceEpoch}';
+    final stayId = isUuid ? SupabaseSyncService.generateUuid() : 'stay-${DateTime.now().millisecondsSinceEpoch}';
+    final billId = isUuid ? SupabaseSyncService.generateUuid() : 'bill-${DateTime.now().millisecondsSinceEpoch}';
     final billNumber = 'INV-2026-${(_bills.length + 1).toString().padLeft(4, '0')}';
 
     // Mask ID number
@@ -866,6 +897,10 @@ class HotelStore extends ChangeNotifier {
     );
 
     notifyListeners();
+    saveToLocalStorage();
+    SupabaseSyncService.syncGuest(newGuest);
+    SupabaseSyncService.syncStay(newStay);
+    SupabaseSyncService.updateRoomStatus(_currentProperty.id, targetRoom.roomNumber, RoomStatus.occupied);
 
     // Trigger automated WhatsApp check-in notification (non-blocking)
     if (sendWhatsApp && phone.trim().isNotEmpty) {
@@ -1209,6 +1244,11 @@ class HotelStore extends ChangeNotifier {
     }
 
     notifyListeners();
+    saveToLocalStorage();
+    SupabaseSyncService.syncStay(targetStay);
+    if (roomIndex != -1) {
+      SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.needsCleaning);
+    }
 
     // Trigger automated WhatsApp checkout thank-you notification with straight PDF invoice (non-blocking)
     final guestPhone = targetStay.guest?.phone;
@@ -1244,6 +1284,8 @@ class HotelStore extends ChangeNotifier {
         clearStay: true,
       );
       notifyListeners();
+      saveToLocalStorage();
+      SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[index].roomNumber, RoomStatus.vacant);
     }
   }
 
@@ -1256,6 +1298,8 @@ class HotelStore extends ChangeNotifier {
         clearStay: status == RoomStatus.vacant || status == RoomStatus.needsCleaning,
       );
       notifyListeners();
+      saveToLocalStorage();
+      SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[index].roomNumber, status);
     }
   }
 
@@ -1278,6 +1322,8 @@ class HotelStore extends ChangeNotifier {
         status: status,
       );
       notifyListeners();
+      saveToLocalStorage();
+      SupabaseSyncService.syncRooms(_currentProperty.id, _rooms);
     }
   }
 
@@ -1336,6 +1382,7 @@ class HotelStore extends ChangeNotifier {
   }) {
     _currentProperty = property;
     _properties = [property];
+    WhatsAppService.currentHotelId = property.id;
 
     // Purge ALL demo seed data completely
     _guests.removeWhere((g) => g.propertyId == 'prop-001');
@@ -1356,7 +1403,268 @@ class HotelStore extends ChangeNotifier {
 
     isAuthenticated = true;
     notifyListeners();
+    saveToLocalStorage();
   }
+
+  /// Exports current store state to a JSON-serializable Map
+  Map<String, dynamic> exportState() {
+    return {
+      'property': _currentProperty.toJson(),
+      'rooms': _rooms.map((r) => r.toJson()).toList(),
+      'guests': _guests.map((g) => g.toJson()).toList(),
+      'stays': _stays.map((s) => s.toJson()).toList(),
+      'bills': _bills.map((b) => b.toJson()).toList(),
+      'payments': _payments.map((p) => p.toJson()).toList(),
+      'staffName': staffName,
+      'staffEmail': staffEmail,
+      'staffPhone': staffPhone,
+      'staffRole': staffRole,
+      'staffEmployeeId': staffEmployeeId,
+      'lastSyncTime': lastSyncTime?.toIso8601String(),
+    };
+  }
+
+  /// Restores store state from a JSON Map
+  void _applyState(Map<String, dynamic> map) {
+    if (map['property'] is Map<String, dynamic>) {
+      _currentProperty = Property.fromJson(map['property']);
+      if (!_properties.any((p) => p.id == _currentProperty.id)) {
+        _properties.add(_currentProperty);
+      }
+    }
+
+    if (map['rooms'] is List) {
+      _rooms.clear();
+      for (final r in map['rooms']) {
+        if (r is Map<String, dynamic>) _rooms.add(Room.fromJson(r));
+      }
+    }
+
+    if (map['guests'] is List) {
+      _guests.clear();
+      for (final g in map['guests']) {
+        if (g is Map<String, dynamic>) _guests.add(Guest.fromJson(g));
+      }
+    }
+
+    if (map['stays'] is List) {
+      _stays.clear();
+      for (final s in map['stays']) {
+        if (s is Map<String, dynamic>) _stays.add(Stay.fromJson(s));
+      }
+    }
+
+    if (map['bills'] is List) {
+      _bills.clear();
+      for (final b in map['bills']) {
+        if (b is Map<String, dynamic>) _bills.add(Bill.fromJson(b));
+      }
+    }
+
+    if (map['payments'] is List) {
+      _payments.clear();
+      for (final p in map['payments']) {
+        if (p is Map<String, dynamic>) _payments.add(Payment.fromJson(p));
+      }
+    }
+
+    if (map['staffName'] != null) staffName = map['staffName'].toString();
+    if (map['staffEmail'] != null) staffEmail = map['staffEmail'].toString();
+    if (map['staffPhone'] != null) staffPhone = map['staffPhone'].toString();
+    if (map['staffRole'] != null) staffRole = map['staffRole'].toString();
+    if (map['staffEmployeeId'] != null) staffEmployeeId = map['staffEmployeeId'].toString();
+    if (map['lastSyncTime'] != null) {
+      lastSyncTime = DateTime.tryParse(map['lastSyncTime'].toString());
+    }
+
+    _relinkStayRelations();
+  }
+
+  void _relinkStayRelations() {
+    for (final stay in _stays) {
+      if (stay.guest == null) {
+        final g = _guests.firstWhere(
+          (guest) => guest.id == stay.guestId,
+          orElse: () => stay.guest ?? Guest(
+            id: stay.guestId,
+            propertyId: stay.propertyId,
+            fullName: 'Guest',
+            phone: '',
+            idType: 'other',
+            idNumberMasked: 'XXXX',
+          ),
+        );
+        stay.guest = g;
+      }
+      if (stay.room == null) {
+        final r = _rooms.firstWhere(
+          (room) => room.id == stay.roomId,
+          orElse: () => stay.room ?? Room(
+            id: stay.roomId,
+            propertyId: stay.propertyId,
+            roomNumber: 'Room',
+            floor: 1,
+            categoryName: 'Standard',
+            baseRate: stay.nightlyRate,
+          ),
+        );
+        stay.room = r;
+      }
+    }
+  }
+
+  /// Automatically persists state to disk without blocking the UI
+  void saveToLocalStorage() {
+    LocalStoreService.saveHotelData(_currentProperty.id, exportState());
+  }
+
+  /// Merges remote Supabase records into store
+  void _applyRemoteData(Map<String, dynamic> remote) {
+    final remoteRooms = remote['rooms'] as List<dynamic>? ?? [];
+    final remoteGuests = remote['guests'] as List<dynamic>? ?? [];
+    final remoteStays = remote['stays'] as List<dynamic>? ?? [];
+
+    if (remoteRooms.isNotEmpty) {
+      for (final raw in remoteRooms) {
+        if (raw is! Map<String, dynamic>) continue;
+        final roomNum = raw['room_number']?.toString();
+        final status = RoomStatusExtension.fromDbValue(raw['status']?.toString() ?? 'vacant');
+        final index = _rooms.indexWhere((r) => r.roomNumber == roomNum);
+        if (index != -1) {
+          _rooms[index].status = status;
+        } else {
+          _rooms.add(Room(
+            id: raw['id']?.toString() ?? '',
+            propertyId: _currentProperty.id,
+            roomNumber: roomNum ?? '',
+            floor: raw['floor'] is int ? raw['floor'] : 1,
+            categoryName: 'Standard Room',
+            baseRate: (raw['base_rate'] is num) ? (raw['base_rate'] as num).toDouble() : 2000.0,
+            status: status,
+          ));
+        }
+      }
+    }
+
+    if (remoteGuests.isNotEmpty) {
+      for (final raw in remoteGuests) {
+        if (raw is! Map<String, dynamic>) continue;
+        final guest = Guest.fromJson(raw);
+        final index = _guests.indexWhere((g) => g.id == guest.id);
+        if (index != -1) {
+          _guests[index] = guest;
+        } else {
+          _guests.add(guest);
+        }
+      }
+    }
+
+    if (remoteStays.isNotEmpty) {
+      for (final raw in remoteStays) {
+        if (raw is! Map<String, dynamic>) continue;
+        final stay = Stay.fromJson(raw);
+        final index = _stays.indexWhere((s) => s.id == stay.id);
+        if (index != -1) {
+          _stays[index] = stay;
+        } else {
+          _stays.add(stay);
+        }
+      }
+    }
+
+    _relinkStayRelations();
+  }
+
+  void _backgroundSyncWithSupabase() {
+    if (!SupabaseConfig.isConfigured || !SupabaseSyncService.isValidUuid(_currentProperty.id)) return;
+    Future.microtask(() async {
+      try {
+        final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+        if (remote != null) {
+          _applyRemoteData(remote);
+          saveToLocalStorage();
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('[HotelStore] Background sync notice: $e');
+      }
+    });
+  }
+
+  /// Primary account loader: checks local storage first, then Supabase, preventing accidental resets
+  Future<void> loadForProperty({
+    required Property property,
+    required String managerName,
+    required String managerEmail,
+    required String managerPhone,
+    String? managerRole,
+    bool forceRemote = false,
+  }) async {
+    _currentProperty = property;
+    if (!_properties.any((p) => p.id == property.id)) {
+      _properties.add(property);
+    }
+    WhatsAppService.currentHotelId = property.id;
+
+    staffName = managerName.trim();
+    staffEmail = managerEmail.trim();
+    staffPhone = managerPhone.trim();
+    if (managerRole != null) staffRole = managerRole.trim();
+
+    // 1. Check local storage (instant cache hit)
+    if (!forceRemote) {
+      final localData = await LocalStoreService.loadHotelData(property.id);
+      if (localData != null) {
+        _applyState(localData);
+        isAuthenticated = true;
+        notifyListeners();
+        _backgroundSyncWithSupabase();
+        return;
+      }
+    }
+
+    // 2. Demo account check
+    if (property.id == 'prop-001') {
+      loadDemoAccount();
+      saveToLocalStorage();
+      return;
+    }
+
+    // 3. Check Supabase remote data
+    if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(property.id)) {
+      final remote = await SupabaseSyncService.pullRemoteData(property.id);
+      if (remote != null && (remote['rooms'] as List).isNotEmpty) {
+        _rooms.clear();
+        _guests.clear();
+        _stays.clear();
+        _bills.clear();
+        _payments.clear();
+        _applyRemoteData(remote);
+        isAuthenticated = true;
+        saveToLocalStorage();
+        notifyListeners();
+        return;
+      }
+    }
+
+    // 4. Truly brand new account: initialize clean rooms and persist
+    _rooms.clear();
+    _guests.clear();
+    _stays.clear();
+    _bills.clear();
+    _payments.clear();
+    _initializeRoomsForProperty(property);
+    isAuthenticated = true;
+    notifyListeners();
+    saveToLocalStorage();
+
+    // Push initial rooms and property to Supabase
+    if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(property.id)) {
+      await SupabaseSyncService.syncProperty(property);
+      await SupabaseSyncService.syncRooms(property.id, _rooms);
+    }
+  }
+
 
   /// Load demo account data (ONLY for frontdesk@easeinn.com)
   void loadDemoAccount() {

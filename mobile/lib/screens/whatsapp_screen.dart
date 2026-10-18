@@ -34,6 +34,12 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
   bool _isSavingTemplate = false;
   bool _isSendingTest = false;
 
+  // Connection mode & pairing code state
+  int _connectionModeIndex = 0; // 0: Phone Pairing Code, 1: QR Code
+  final _pairingPhoneController = TextEditingController();
+  bool _isRequestingPairingCode = false;
+  bool _hasRequestedQr = false;
+
   // Selected template editor state
   String _selectedTemplateId = 'checkin_welcome';
   final Map<String, TextEditingController> _templateControllers = {};
@@ -96,6 +102,7 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
     for (final c in _templateControllers.values) {
       c.dispose();
     }
+    _pairingPhoneController.dispose();
     _testPhoneController.dispose();
     _testCustomMsgController.dispose();
     _liveDispatchMsgController.dispose();
@@ -104,6 +111,21 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
 
   Future<void> _initData() async {
     setState(() => _isLoading = true);
+    final store = context.read<HotelStore>();
+    WhatsAppService.currentHotelId = store.currentProperty.id;
+    if (_pairingPhoneController.text.isEmpty &&
+        store.currentProperty.phone.isNotEmpty) {
+      String cleanPhone =
+          store.currentProperty.phone.replaceAll(RegExp(r'\D'), '');
+      if (cleanPhone.length == 12 && cleanPhone.startsWith('91')) {
+        cleanPhone = cleanPhone.substring(2);
+      } else if (cleanPhone.length == 11 && cleanPhone.startsWith('0')) {
+        cleanPhone = cleanPhone.substring(1);
+      }
+      if (cleanPhone.length == 10) {
+        _pairingPhoneController.text = cleanPhone;
+      }
+    }
     await WhatsAppService.loadBaseUrl();
     await Future.wait([
       _fetchStatus(silent: true),
@@ -203,6 +225,67 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
     }
   }
 
+  Future<void> _handleRequestPairingCode() async {
+    String rawDigits =
+        _pairingPhoneController.text.replaceAll(RegExp(r'\D'), '');
+    if (rawDigits.length == 12 && rawDigits.startsWith('91')) {
+      rawDigits = rawDigits.substring(2);
+    } else if (rawDigits.length == 11 && rawDigits.startsWith('0')) {
+      rawDigits = rawDigits.substring(1);
+    }
+
+    if (rawDigits.length != 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid 10-digit mobile number.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    _pairingPhoneController.text = rawDigits;
+    final phone = '+91$rawDigits';
+
+    setState(() => _isRequestingPairingCode = true);
+    try {
+      final res = await WhatsAppService.requestPairingCode(phone);
+      if (mounted) {
+        if (res['success'] == true) {
+          await _fetchStatus(silent: true);
+          if (!mounted) return;
+          final code = res['pairingCode'] ?? _status.pairingCode;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                code != null
+                    ? 'Pairing code generated: $code'
+                    : 'Pairing code requested! Please check WhatsApp.',
+              ),
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          final errorMsg =
+              res['error'] ?? res['message'] ?? 'Failed to request pairing code.';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('WhatsApp error: $errorMsg'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isRequestingPairingCode = false);
+      }
+    }
+  }
+
   Future<void> _handleDisconnect() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -238,7 +321,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
     final ok = await WhatsAppService.disconnect();
     await _fetchStatus(silent: true);
     if (mounted) {
-      setState(() => _isDisconnecting = false);
+      setState(() {
+        _isDisconnecting = false;
+        _hasRequestedQr = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -2020,13 +2106,10 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
   // ── 1. WHATSAPP CONNECTION HERO CARD ──
   Widget _buildConnectionHeroCard() {
     final isReady = _status.isReady;
-    // Prefer the raw QR string for native rendering; fall back to PNG data URL
-    final hasQr = _status.hasActiveQr &&
-        (_status.qrRawString != null || _status.qrCodeDataUrl != null);
 
     if (isReady) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: const Color(0xFFF0FDF4),
           borderRadius: BorderRadius.circular(16),
@@ -2035,16 +2118,16 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: const Color(0xFFDCFCE7),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
-                Icons.verified_rounded,
+                Icons.check_circle_rounded,
                 color: Color(0xFF16A34A),
-                size: 20,
+                size: 22,
               ),
             ),
             const SizedBox(width: 12),
@@ -2053,79 +2136,403 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          _status.connectedPushname?.isNotEmpty == true
-                              ? _status.connectedPushname!
-                              : 'Hotel WhatsApp',
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: const Color(0xFF14532D),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'Active',
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF15803D),
-                          ),
-                        ),
-                      ),
-                    ],
+                  Text(
+                    _status.connectedNumber != null &&
+                            _status.connectedNumber!.isNotEmpty
+                        ? '+${_status.connectedNumber}'
+                        : (_status.connectedPushname?.isNotEmpty == true
+                            ? _status.connectedPushname!
+                            : 'WhatsApp Connected'),
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: const Color(0xFF14532D),
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _status.connectedNumber != null
-                        ? '+${_status.connectedNumber}'
-                        : 'Automated messages active',
+                    'Connected & Active',
                     style: GoogleFonts.inter(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,
                       color: const Color(0xFF15803D),
                     ),
                   ),
-                  Text(
-                    WhatsAppService.baseUrl.replaceFirst(
-                      RegExp(r'https?://'),
-                      '',
-                    ),
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      color: const Color(0xFF86EFAC),
-                    ),
-                  ),
                 ],
               ),
             ),
-            InkWell(
-              onTap: _isDisconnecting ? null : _handleDisconnect,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Text(
-                  _isDisconnecting ? 'Unlinking...' : 'Disconnect',
-                  style: GoogleFonts.inter(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFFDC2626),
+            TextButton(
+              onPressed: _isDisconnecting ? null : _handleDisconnect,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFDC2626),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                _isDisconnecting ? 'Unlinking...' : 'Disconnect',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.slateBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Minimalist segmented switcher
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.all(3),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _connectionModeIndex = 0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _connectionModeIndex == 0
+                            ? Colors.white
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: _connectionModeIndex == 0
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  blurRadius: 4,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Phone Code',
+                        style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          fontWeight: _connectionModeIndex == 0
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: _connectionModeIndex == 0
+                              ? AppTheme.slateDark
+                              : AppTheme.slateMuted,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _connectionModeIndex = 1),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _connectionModeIndex == 1
+                            ? Colors.white
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: _connectionModeIndex == 1
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                  blurRadius: 4,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'QR Code',
+                        style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          fontWeight: _connectionModeIndex == 1
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: _connectionModeIndex == 1
+                              ? AppTheme.slateDark
+                              : AppTheme.slateMuted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_connectionModeIndex == 0)
+            _buildPairingCodeSection()
+          else
+            _buildQrCodeSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPairingCodeSection() {
+    final code = _status.pairingCode;
+    final hasCode = code != null && code.trim().isNotEmpty;
+
+    if (hasCode) {
+      final cleanCode = code.trim();
+      final formatted = cleanCode.length == 8
+          ? '${cleanCode.substring(0, 4)} - ${cleanCode.substring(4)}'
+          : cleanCode;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Enter code in WhatsApp',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: AppTheme.slateDark,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: SelectableText(
+              formatted,
+              style: GoogleFonts.firaCode(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 3,
+                color: const Color(0xFF4ADE80),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: cleanCode));
+                  HapticFeedback.mediumImpact();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Code copied!'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 14),
+                label: const Text('Copy'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.slateDark,
+                  side: const BorderSide(color: AppTheme.slateBorder),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed:
+                    _isRequestingPairingCode ? null : _handleRequestPairingCode,
+                child: Text(
+                  'New Code',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppTheme.brandPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'WhatsApp → Linked Devices → Link with phone number instead',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: AppTheme.slateMuted,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          height: 46,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppTheme.slateBorder),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: const BoxDecoration(
+                  border:
+                      Border(right: BorderSide(color: AppTheme.slateBorder)),
+                ),
+                child: Text(
+                  '+91',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _pairingPhoneController,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.slateDark,
+                  ),
+                  decoration: const InputDecoration(
+                    counterText: '',
+                    hintText: 'Enter 10-digit number',
+                    hintStyle:
+                        TextStyle(fontSize: 13, color: AppTheme.slateMuted),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 44,
+          child: ElevatedButton(
+            onPressed:
+                _isRequestingPairingCode ? null : _handleRequestPairingCode,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: _isRequestingPairingCode
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    'Get 8-Digit Code',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQrCodeSection() {
+    final hasQr = _status.hasActiveQr &&
+        (_status.qrRawString != null || _status.qrCodeDataUrl != null);
+
+    if (!_hasRequestedQr) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 4),
+          Text(
+            'Connect by scanning a QR code with WhatsApp on another device.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              color: AppTheme.slateMuted,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 44,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                setState(() => _hasRequestedQr = true);
+                _handleConnect();
+              },
+              icon: const Icon(Icons.qr_code_rounded, size: 18),
+              label: Text(
+                'Show QR Code',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_isConnecting || _status.status == 'INITIALIZING') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          children: [
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: Color(0xFF25D366),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Generating QR code...',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppTheme.slateMuted,
               ),
             ),
           ],
@@ -2134,278 +2541,81 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
     }
 
     if (hasQr) {
-      return Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFBAE6FD), width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              'Scan WhatsApp QR Code',
-              style: GoogleFonts.outfit(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: AppTheme.slateDark,
-              ),
-            ),
-            const SizedBox(height: 6),
-            // Step-by-step scanning guide
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFBBF7D0)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'How to scan:',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: const Color(0xFF14532D),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '1. On a DIFFERENT device, open WhatsApp\n2. Tap ⋮ Menu (Android) or Settings (iOS)\n3. Tap Linked Devices → Link a Device\n4. Point the camera at the QR code below',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: const Color(0xFF166534),
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Warning about same-device limitation
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.warning_amber_rounded,
-                      color: Color(0xFFD97706), size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'QR codes expire in ~60 seconds. Scan immediately after it appears. Do NOT screenshot and scan later.',
-                      style: GoogleFonts.inter(
-                        fontSize: 10.5,
-                        color: const Color(0xFF92400E),
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.slateBorder, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _renderQrWidget(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              height: 42,
-              child: PressableScale(
-                pressedScale: 0.97,
-                child: ElevatedButton.icon(
-                  onPressed: _isConnecting ? null : _handleConnect,
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: const Text('Refresh QR Code'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.brandPrimary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Actively generating QR code state
-    if (_isConnecting || _status.status == 'INITIALIZING') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 26),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFBAE6FD), width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0284C7).withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            const SizedBox(
-              width: 38,
-              height: 38,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: Color(0xFF25D366),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Generating WhatsApp QR Code...',
-              style: GoogleFonts.outfit(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: AppTheme.slateDark,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Initializing secure session. The QR code will appear here in a few seconds.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppTheme.slateMuted,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Disconnected state
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.slateBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF25D366).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.qr_code_scanner_rounded,
-                  color: Color(0xFF25D366),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Connect WhatsApp',
-                      style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppTheme.slateDark,
-                      ),
-                    ),
-                    Text(
-                      'Link your hotel account to automate guest messages',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        color: AppTheme.slateMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.slateBorder),
+            ),
+            child: _renderQrWidget(),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 46,
-            child: PressableScale(
-              pressedScale: 0.97,
-              child: ElevatedButton.icon(
-                onPressed: _isConnecting ? null : _handleConnect,
-                icon: _isConnecting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.qr_code_rounded, size: 18),
-                label: Text(
-                  _isConnecting
-                      ? 'Initializing Session...'
-                      : 'Connect WhatsApp & Show QR Code',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF25D366),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
+          const SizedBox(height: 10),
+          Text(
+            'Scan from WhatsApp → Linked Devices',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: AppTheme.slateMuted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _isConnecting ? null : _handleConnect,
+            icon: const Icon(Icons.refresh_rounded, size: 14),
+            label: const Text('Refresh QR'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.brandPrimary,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
         ],
-      ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        Text(
+          'Connect by scanning a QR code with WhatsApp on another device.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 11.5,
+            color: AppTheme.slateMuted,
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 44,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              setState(() => _hasRequestedQr = true);
+              _handleConnect();
+            },
+            icon: const Icon(Icons.qr_code_rounded, size: 18),
+            label: Text(
+              'Show QR Code',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -6,6 +6,7 @@ const whatsappController = require("../controllers/whatsapp.controller");
 // Status & Connection Management
 router.get("/status", whatsappController.getStatus);
 router.post("/connect", whatsappController.connect);
+router.post("/pairing-code", whatsappController.requestPairingCode);
 router.post("/disconnect", whatsappController.disconnect);
 
 // Template Management
