@@ -236,7 +236,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             ),
           ),
           actions: [
-            // Shift Staff Badge / Manager Profile Button
+            // Sync icon button
+            _SyncIconButton(store: store),
+            const SizedBox(width: 4),
+            // Manager profile avatar
             InkWell(
               onTap: () {
                 _lastHomeBackPress = null;
@@ -249,31 +252,41 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               borderRadius: BorderRadius.circular(20),
               child: Padding(
                 padding: const EdgeInsets.only(right: 16, left: 4),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: AppTheme.brandPrimary,
-                      child: Text(
-                        store.staffName.isNotEmpty
-                            ? store.staffName.substring(0, 1)
-                            : 'D',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppTheme.brandPrimary,
+                  child: Text(
+                    store.staffName.isNotEmpty
+                        ? store.staffName.substring(0, 1)
+                        : 'D',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ],
         ),
-        body: _SmoothScreenSwitcher(
-          currentIndex: _currentIndex,
-          children: screens,
+        body: Stack(
+          children: [
+            _SmoothScreenSwitcher(
+              currentIndex: _currentIndex,
+              children: screens,
+            ),
+            // Remote-changes banner: shown when another device made changes
+            if (store.hasRemoteChanges)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 80, // above bottom nav bar
+                child: _RemoteChangesBanner(
+                  onSync: () => store.acknowledgeAndSync(),
+                ),
+              ),
+          ],
         ),
         bottomNavigationBar: _buildGlassNavigationBar(store),
       ),
@@ -1019,6 +1032,192 @@ class _SfCheckInIcon extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── SYNC ICON BUTTON (AppBar action) ──────────────────────────────────────────
+class _SyncIconButton extends StatefulWidget {
+  final HotelStore store;
+  const _SyncIconButton({required this.store});
+
+  @override
+  State<_SyncIconButton> createState() => _SyncIconButtonState();
+}
+
+class _SyncIconButtonState extends State<_SyncIconButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _spinCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    widget.store.addListener(_onStoreChange);
+  }
+
+  void _onStoreChange() {
+    if (!mounted) return;
+    if (widget.store.isSyncing) {
+      if (!_spinCtrl.isAnimating) _spinCtrl.repeat();
+    } else {
+      _spinCtrl.stop();
+      _spinCtrl.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(_onStoreChange);
+    _spinCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _spinCtrl,
+      builder: (context, child) {
+        return Transform.rotate(
+          angle: _spinCtrl.value * 2 * 3.14159,
+          child: child,
+        );
+      },
+      child: IconButton(
+        tooltip: 'Sync now',
+        icon: Icon(
+          Icons.sync_rounded,
+          color: widget.store.hasRemoteChanges
+              ? AppTheme.brandPrimary
+              : AppTheme.slateMuted,
+          size: 22,
+        ),
+        onPressed: widget.store.isSyncing
+            ? null
+            : () => widget.store.acknowledgeAndSync(),
+      ),
+    );
+  }
+}
+
+// ── REMOTE CHANGES BANNER ─────────────────────────────────────────────────────
+class _RemoteChangesBanner extends StatefulWidget {
+  final VoidCallback onSync;
+  const _RemoteChangesBanner({required this.onSync});
+
+  @override
+  State<_RemoteChangesBanner> createState() => _RemoteChangesBannerState();
+}
+
+class _RemoteChangesBannerState extends State<_RemoteChangesBanner>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _slideCtrl;
+  late Animation<Offset> _slideAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _slideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 1.5),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutBack));
+    _slideCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _slideCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnim,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Material(
+          elevation: 8,
+          borderRadius: BorderRadius.circular(18),
+          shadowColor: Colors.black.withValues(alpha: 0.18),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.cloud_download_rounded,
+                    color: AppTheme.brandPrimary,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'New changes available',
+                        style: GoogleFonts.outfit(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      Text(
+                        'Another device updated data. Tap to refresh.',
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withValues(alpha: 0.62),
+                          fontSize: 11,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: widget.onSync,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.brandPrimary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Sync',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

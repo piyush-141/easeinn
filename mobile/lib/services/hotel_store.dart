@@ -48,11 +48,17 @@ class HotelStore extends ChangeNotifier {
   bool isSyncing = false;
   bool isAuthenticated = false;
 
+  /// True when Realtime/polling detected remote changes not yet applied locally.
+  /// The UI shows a banner prompting the user to sync.
+  bool hasRemoteChanges = false;
+
   // Continuous auto-sync & Realtime handles
   Timer? _autoSyncTimer;
   Timer? _realtimeDebounceTimer;
+  Timer? _realtimeReconnectTimer;
   RealtimeChannel? _realtimeChannel;
-  bool _isAutoSyncRunning = false;
+  bool _isBgSyncRunning = false;  // background poll lock
+  bool _isManualSyncRunning = false; // manual/full sync lock
 
   // Update Manager / Profile
   void updateStaffProfile({
@@ -97,32 +103,35 @@ class HotelStore extends ChangeNotifier {
   }
 
   // Cloud & Local Sync
-  Future<void> syncData({bool isBackground = false}) async {
-    if (_isAutoSyncRunning) {
-      if (isBackground) return;
+  /// Full authoritative sync — pushes local then pulls remote.
+  /// [isBackground]: if true, runs silently (no spinner, no manual lock).
+  /// [forceNotify]: if true, always notifyListeners even if no data changed.
+  Future<void> syncData({bool isBackground = false, bool forceNotify = false}) async {
+    // Background poll: skip if another bg poll OR manual sync is already in flight
+    if (isBackground) {
+      if (_isBgSyncRunning || _isManualSyncRunning) return;
+      _isBgSyncRunning = true;
+    } else {
+      // Manual sync: wait briefly for bg poll to finish, then take the lock
       int waited = 0;
-      while (_isAutoSyncRunning && waited < 10) {
+      while (_isBgSyncRunning && waited < 15) {
         await Future.delayed(const Duration(milliseconds: 100));
         waited++;
       }
-    }
-
-    if (!isBackground) {
+      if (_isManualSyncRunning) return; // already a manual sync in progress
+      _isManualSyncRunning = true;
       isSyncing = true;
       notifyListeners();
     }
-    _isAutoSyncRunning = true;
 
     try {
       if (!isBackground) {
-        // Immediate local persist for manual sync
         saveToLocalStorage();
       }
 
-      // Synchronize with Supabase if client is active and UUID is valid
       if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(_currentProperty.id)) {
         if (!isBackground) {
-          // Push all local data to Supabase first for manual sync
+          // Full push on manual sync
           await SupabaseSyncService.pushAllData(
             property: _currentProperty,
             rooms: _rooms,
@@ -133,15 +142,17 @@ class HotelStore extends ChangeNotifier {
           );
         }
 
-        // Pull remote changes to merge in any changes from other devices
+        // Always pull remote to get latest state
         final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
         if (remote != null) {
           final changed = _applyRemoteData(remote);
-          if (changed || !isBackground) {
+          if (changed || forceNotify || !isBackground) {
+            // Clear the "remote changes pending" banner since we just applied them
+            hasRemoteChanges = false;
             saveToLocalStorage();
             notifyListeners();
             if (changed) {
-              debugPrint('[HotelStore] Auto-sync reconciled remote changes.');
+              debugPrint('[HotelStore] Sync applied remote changes from another device.');
             }
           }
         }
@@ -150,35 +161,42 @@ class HotelStore extends ChangeNotifier {
     } catch (e) {
       debugPrint('[HotelStore] syncData notice: $e');
     } finally {
-      _isAutoSyncRunning = false;
-      if (!isBackground) {
+      if (isBackground) {
+        _isBgSyncRunning = false;
+      } else {
+        _isManualSyncRunning = false;
         isSyncing = false;
         notifyListeners();
       }
     }
   }
 
-  /// Starts continuous auto-sync: periodic background polling (every 5s)
-  /// + Supabase Realtime channel subscription for instant multi-manager sync.
+  /// Triggered from UI when user taps the sync banner/button.
+  /// Immediately does a full authoritative pull+push and clears banner.
+  Future<void> acknowledgeAndSync() async {
+    hasRemoteChanges = false;
+    notifyListeners();
+    await syncData(isBackground: false, forceNotify: true);
+  }
+
+  /// Starts continuous auto-sync: periodic background polling (every 3s)
+  /// + Supabase Realtime channel subscription for instant multi-device sync.
   void startAutoSync() {
     if (!SupabaseConfig.isConfigured || !SupabaseSyncService.isValidUuid(_currentProperty.id)) {
       return;
     }
 
-    if (_autoSyncTimer != null && _autoSyncTimer!.isActive && _realtimeChannel != null) {
-      return;
-    }
-
+    // Restart if needed (re-entrant safe)
     stopAutoSync();
 
-    // 1. Periodic background sync timer (every 5 seconds)
-    _autoSyncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      syncData(isBackground: true);
+    // 1. Poll every 3 seconds — fast enough for near-realtime without hammering DB
+    _autoSyncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _backgroundPollForChanges();
     });
 
-    // 2. Realtime WebSocket subscription for instant event-driven sync
+    // 2. Realtime WebSocket subscription for instant push-based event driven sync
     _setupRealtimeChannel();
-    debugPrint('[HotelStore] Continuous auto-sync started for ${_currentProperty.name} (${_currentProperty.id})');
+    debugPrint('[HotelStore] Auto-sync started (3s poll + Realtime) for ${_currentProperty.name}');
   }
 
   /// Stops continuous auto-sync timer and unbinds Realtime channel
@@ -187,6 +205,8 @@ class HotelStore extends ChangeNotifier {
     _autoSyncTimer = null;
     _realtimeDebounceTimer?.cancel();
     _realtimeDebounceTimer = null;
+    _realtimeReconnectTimer?.cancel();
+    _realtimeReconnectTimer = null;
     _tearDownRealtimeChannel();
   }
 
@@ -197,12 +217,14 @@ class HotelStore extends ChangeNotifier {
 
       _tearDownRealtimeChannel();
 
-      final channelName = 'prop-realtime-${_currentProperty.id}';
+      final propId = _currentProperty.id;
+      final channelName = 'prop-rt-$propId-${DateTime.now().millisecondsSinceEpoch}';
       final channel = client.channel(channelName);
 
       void handleDbChange(PostgresChangePayload payload) {
-        debugPrint('[HotelStore Realtime] DB change on ${payload.table}: ${payload.eventType}');
-        _triggerDebouncedSync();
+        debugPrint('[HotelStore Realtime] ${payload.eventType.name} on ${payload.table}');
+        // Signal that there are remote changes — UI will show banner
+        _signalRemoteChanges();
       }
 
       for (final table in ['rooms', 'stays', 'guests', 'bills', 'payments', 'expenses']) {
@@ -213,28 +235,96 @@ class HotelStore extends ChangeNotifier {
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'property_id',
-            value: _currentProperty.id,
+            value: propId,
           ),
           callback: handleDbChange,
         );
       }
 
       channel.subscribe((status, error) {
-        if (error != null) {
-          debugPrint('[HotelStore Realtime] Channel subscription status: $status, error: $error');
+        debugPrint('[HotelStore Realtime] Status: $status err: $error');
+        if (status == RealtimeSubscribeStatus.channelError ||
+            status == RealtimeSubscribeStatus.timedOut ||
+            status == RealtimeSubscribeStatus.closed) {
+          // Schedule a reconnect in 5s if auto-sync is still expected to be active
+          _scheduleRealtimeReconnect();
         }
       });
       _realtimeChannel = channel;
     } catch (e) {
       debugPrint('[HotelStore Realtime] Setup notice: $e');
+      _scheduleRealtimeReconnect();
     }
   }
 
-  void _triggerDebouncedSync() {
-    _realtimeDebounceTimer?.cancel();
-    _realtimeDebounceTimer = Timer(const Duration(milliseconds: 350), () {
-      syncData(isBackground: true);
+  void _scheduleRealtimeReconnect() {
+    _realtimeReconnectTimer?.cancel();
+    if (_autoSyncTimer == null || !_autoSyncTimer!.isActive) return; // sync stopped
+    _realtimeReconnectTimer = Timer(const Duration(seconds: 5), () {
+      if (_autoSyncTimer != null && _autoSyncTimer!.isActive) {
+        debugPrint('[HotelStore Realtime] Reconnecting channel...');
+        _setupRealtimeChannel();
+      }
     });
+  }
+
+  /// Called by Realtime on any remote DB event.
+  /// Sets the banner flag and immediately schedules a debounced pull.
+  void _signalRemoteChanges() {
+    // Immediately apply changes silently AND set banner if data actually changed
+    _triggerDebouncedSyncWithBanner();
+  }
+
+  void _triggerDebouncedSyncWithBanner() {
+    _realtimeDebounceTimer?.cancel();
+    _realtimeDebounceTimer = Timer(const Duration(milliseconds: 400), () async {
+      // Don't apply if a manual sync is running
+      if (_isManualSyncRunning) return;
+      _isBgSyncRunning = true;
+      try {
+        if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+          final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+          if (remote != null) {
+            final changed = _applyRemoteData(remote);
+            if (changed) {
+              // Data changed from another device — show banner and update UI
+              hasRemoteChanges = true;
+              lastSyncTime = DateTime.now();
+              saveToLocalStorage();
+              notifyListeners();
+              debugPrint('[HotelStore] Realtime: remote changes detected and applied.');
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[HotelStore] Realtime debounced sync error: $e');
+      } finally {
+        _isBgSyncRunning = false;
+      }
+    });
+  }
+
+  /// Background poll — silently pull and if changed, show banner
+  Future<void> _backgroundPollForChanges() async {
+    if (_isBgSyncRunning || _isManualSyncRunning) return;
+    _isBgSyncRunning = true;
+    try {
+      if (!SupabaseConfig.isConfigured || !SupabaseSyncService.isValidUuid(_currentProperty.id)) return;
+      final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+      if (remote != null) {
+        final changed = _applyRemoteData(remote);
+        if (changed) {
+          hasRemoteChanges = true;
+          lastSyncTime = DateTime.now();
+          saveToLocalStorage();
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('[HotelStore] Background poll notice: $e');
+    } finally {
+      _isBgSyncRunning = false;
+    }
   }
 
   void _tearDownRealtimeChannel() {
