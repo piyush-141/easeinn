@@ -281,7 +281,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: 80, // above bottom nav bar
+                bottom: 84 + math.max(8.0, MediaQuery.of(context).padding.bottom),
                 child: _RemoteChangesBanner(
                   onSync: () => store.acknowledgeAndSync(),
                 ),
