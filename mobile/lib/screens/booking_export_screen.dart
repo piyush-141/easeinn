@@ -226,16 +226,6 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
       'Primary Guest ID Number',
       'Primary Guest Address',
       'Accompanying Guests Count',
-      'All Co-Guests Details',
-      'Co-Guest 1 Name',
-      'Co-Guest 1 Phone',
-      'Co-Guest 1 ID',
-      'Co-Guest 2 Name',
-      'Co-Guest 2 Phone',
-      'Co-Guest 2 ID',
-      'Co-Guest 3 Name',
-      'Co-Guest 3 Phone',
-      'Co-Guest 3 ID',
       'Nightly Tariff (₹)',
       'Total Amount (₹)',
       'Amount Paid (₹)',
@@ -266,36 +256,7 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
           ? 'Checked Out'
           : 'Reserved';
 
-      // Accompanying guests summary
       final coGuests = stay.coGuests;
-      final coGuestsSummary = coGuests
-          .map((cg) {
-            final phone = cg.phone.isNotEmpty ? ' [${cg.phone}]' : '';
-            final id = cg.displayIdNumber.isNotEmpty
-                ? ' (${cg.idType.toUpperCase()}: ${cg.displayIdNumber})'
-                : '';
-            return '${cg.fullName}$phone$id';
-          })
-          .join('; ');
-
-      // Specific co-guest slots
-      final cg1Name = coGuests.isNotEmpty ? coGuests[0].fullName : '';
-      final cg1Phone = coGuests.isNotEmpty ? coGuests[0].phone : '';
-      final cg1Id = coGuests.isNotEmpty
-          ? '${coGuests[0].idType.toUpperCase()}: ${coGuests[0].displayIdNumber}'
-          : '';
-
-      final cg2Name = coGuests.length > 1 ? coGuests[1].fullName : '';
-      final cg2Phone = coGuests.length > 1 ? coGuests[1].phone : '';
-      final cg2Id = coGuests.length > 1
-          ? '${coGuests[1].idType.toUpperCase()}: ${coGuests[1].displayIdNumber}'
-          : '';
-
-      final cg3Name = coGuests.length > 2 ? coGuests[2].fullName : '';
-      final cg3Phone = coGuests.length > 2 ? coGuests[2].phone : '';
-      final cg3Id = coGuests.length > 2
-          ? '${coGuests[2].idType.toUpperCase()}: ${coGuests[2].displayIdNumber}'
-          : '';
 
       final subtotal = bill?.subtotal ?? (stay.nightlyRate * stay.actualNights);
       final amountPaid = bill?.amountPaid ?? 0.0;
@@ -326,16 +287,6 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
         stay.guest?.displayIdNumber ?? 'XXXX',
         stay.guest?.address ?? 'N/A',
         coGuests.length.toString(),
-        coGuestsSummary.isNotEmpty ? coGuestsSummary : 'None',
-        cg1Name,
-        cg1Phone,
-        cg1Id,
-        cg2Name,
-        cg2Phone,
-        cg2Id,
-        cg3Name,
-        cg3Phone,
-        cg3Id,
         stay.nightlyRate.toStringAsFixed(2),
         subtotal.toStringAsFixed(2),
         amountPaid.toStringAsFixed(2),

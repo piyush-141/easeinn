@@ -332,12 +332,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Widget _buildPrimaryGlassPill(HotelStore store, bool isDark) {
     const itemCount = 4;
+    // Premium Apple-like translucent glass tint: allows underlying background colors and motion to show through cleanly
     final baseGlassColor = isDark
-        ? const Color(0xFF1E2430).withValues(alpha: 0.85)
-        : Colors.white.withValues(alpha: 0.82);
+        ? const Color(0xFF161C26).withValues(alpha: 0.72)
+        : Colors.white.withValues(alpha: 0.65);
     final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.16)
-        : Colors.white;
+        ? Colors.white.withValues(alpha: 0.18)
+        : Colors.white.withValues(alpha: 0.60);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -347,39 +348,43 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             color: baseGlassColor,
             borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: borderColor, width: isDark ? 0.8 : 1.2),
+            border: Border.all(color: borderColor, width: isDark ? 0.8 : 1.0),
             boxShadow: [
               BoxShadow(
                 color: isDark
-                    ? Colors.black.withValues(alpha: 0.35)
+                    ? Colors.black.withValues(alpha: 0.32)
                     : const Color(0xFF0F172A).withValues(alpha: 0.08),
-                blurRadius: 24,
-                offset: const Offset(0, 6),
+                blurRadius: 20,
+                spreadRadius: 0,
+                offset: const Offset(0, 8),
               ),
               if (!isDark)
                 BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.88),
-                  blurRadius: 3,
-                  offset: const Offset(0, -1),
+                  color: Colors.white.withValues(alpha: 0.95),
+                  blurRadius: 2,
+                  spreadRadius: 1,
+                  offset: const Offset(0, -0.5),
                 ),
             ],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(32),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
               child: Stack(
                 children: [
-                  // Top specular sheen highlight
+                  // Multi-layered Apple specular sheen: crisp top rim + smooth vertical gradient
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
+                          stops: const [0.0, 0.35, 1.0],
                           colors: [
-                            Colors.white.withValues(alpha: isDark ? 0.12 : 0.45),
-                            Colors.white.withValues(alpha: isDark ? 0.02 : 0.08),
+                            Colors.white.withValues(alpha: isDark ? 0.20 : 0.55),
+                            Colors.white.withValues(alpha: isDark ? 0.05 : 0.18),
+                            Colors.white.withValues(alpha: isDark ? 0.0 : 0.04),
                           ],
                         ),
                       ),
@@ -536,11 +541,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget _buildCheckInActionButton(bool isDark) {
     final isSelected = _currentIndex == 2;
     final baseGlassColor = isDark
-        ? const Color(0xFF1E2430).withValues(alpha: 0.85)
-        : Colors.white.withValues(alpha: 0.82);
+        ? const Color(0xFF161C26).withValues(alpha: 0.72)
+        : Colors.white.withValues(alpha: 0.65);
     final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.16)
-        : Colors.white;
+        ? Colors.white.withValues(alpha: 0.18)
+        : Colors.white.withValues(alpha: 0.60);
 
     return _PressableGlassItem(
       tooltip: 'Check-In',
@@ -571,29 +576,29 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                     : null,
                 border: Border.all(
                   color: isSelected ? Colors.white : borderColor,
-                  width: isDark ? 0.8 : 1.2,
+                  width: isDark ? 0.8 : 1.0,
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: isSelected
                         ? AppTheme.brandPrimary.withValues(alpha: 0.40)
                         : (isDark
-                            ? Colors.black.withValues(alpha: 0.35)
+                            ? Colors.black.withValues(alpha: 0.32)
                             : const Color(0xFF0F172A).withValues(alpha: 0.08)),
                     blurRadius: isSelected ? 12 : 16,
                     offset: const Offset(0, 4),
                   ),
                   if (!isDark && !isSelected)
                     BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.88),
-                      blurRadius: 3,
-                      offset: const Offset(0, -1),
+                      color: Colors.white.withValues(alpha: 0.95),
+                      blurRadius: 2,
+                      offset: const Offset(0, -0.5),
                     ),
                 ],
               ),
               child: ClipOval(
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                   child: Center(
                     child: _BouncingTabIcon(
                       isSelected: isSelected,
