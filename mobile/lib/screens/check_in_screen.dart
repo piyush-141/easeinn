@@ -636,6 +636,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
       _extraGuests.clear();
       _numAdults = 1;
       _numKids = 0;
+      _isCustomPricing = false;
+      _customTotalAmount = null;
+      _customNightlyRate = null;
+      _hasManualAdvance = false;
       final now = DateTime.now();
       _checkInDate = DateTime(now.year, now.month, now.day);
       _expectedCheckOut = (_bookingMode == BookingMode.checkIn && now.hour < 12)
@@ -4946,8 +4950,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
         : defaultTotal;
     final initialRate = initialTotal / nights;
 
-    final totalCtrl = TextEditingController(text: initialTotal.toInt().toString());
-    final rateCtrl = TextEditingController(text: initialRate.toInt().toString());
+    double agreedRate = initialRate;
+    bool isEditingExact = false;
+    final exactRateCtrl = TextEditingController(text: agreedRate.round().toString());
 
     showModalBottomSheet(
       context: context,
@@ -4959,8 +4964,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            final currentTotal = double.tryParse(totalCtrl.text.replaceAll(',', '').trim()) ?? defaultTotal;
-            final diff = currentTotal - defaultTotal;
+            final currentTotal = agreedRate * nights;
 
             return Padding(
               padding: EdgeInsets.only(
@@ -4985,398 +4989,308 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
 
-                      // Header
+                      // Header with close button
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.brandLight,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.handshake_outlined,
-                              size: 20,
-                              color: AppTheme.brandPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Flexible Stay Pricing',
+                                  'Agreed Price',
                                   style: GoogleFonts.outfit(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                     color: AppTheme.slateDark,
-                                  ),
-                                ),
-                                Text(
-                                  'Adjust total stay or nightly rate for bargaining & deals',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    color: AppTheme.slateMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Standard Room Rate Reference Card
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppTheme.slateBorder),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'DEFAULT ROOM RATE',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.slateMuted,
-                                    letterSpacing: 0.4,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Room ${selectedRoom?.roomNumber ?? "—"} (${selectedRoom?.categoryName ?? "Standard"})',
+                                  selectedRoom != null
+                                      ? 'Room ${selectedRoom.roomNumber} · ${selectedRoom.categoryName}'
+                                      : 'Room Rate Adjustment',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.slateDark,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '₹${baseRate.toInt()}/n × $nights n',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
                                     color: AppTheme.slateMuted,
-                                  ),
-                                ),
-                                Text(
-                                  '₹${defaultTotal.toInt()}',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.slateDark,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Synchronized Inputs: Total & Nightly Rate
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Total Estimated Stay Input
-                          Expanded(
-                            flex: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Total Agreed Stay (₹)',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.slateDark,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                TextField(
-                                  controller: totalCtrl,
-                                  keyboardType: TextInputType.number,
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.slateDark,
-                                  ),
-                                  onChanged: (text) {
-                                    final val = double.tryParse(text.replaceAll(',', '').trim()) ?? 0;
-                                    if (val > 0) {
-                                      final r = (val / nights).round();
-                                      final rStr = r.toString();
-                                      if (rateCtrl.text != rStr) {
-                                        rateCtrl.value = TextEditingValue(
-                                          text: rStr,
-                                          selection: TextSelection.collapsed(offset: rStr.length),
-                                        );
-                                      }
-                                    }
-                                    setSheetState(() {});
-                                  },
-                                  decoration: InputDecoration(
-                                    prefixText: '₹ ',
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(color: AppTheme.slateBorder),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.8),
-                                    ),
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(width: 10),
-
-                          // Nightly Rate Input
-                          Expanded(
-                            flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Per Night (₹)',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.slateDark,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                TextField(
-                                  controller: rateCtrl,
-                                  keyboardType: TextInputType.number,
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.slateDark,
-                                  ),
-                                  onChanged: (text) {
-                                    final val = double.tryParse(text.replaceAll(',', '').trim()) ?? 0;
-                                    if (val > 0) {
-                                      final tot = (val * nights).round();
-                                      final totStr = tot.toString();
-                                      if (totalCtrl.text != totStr) {
-                                        totalCtrl.value = TextEditingValue(
-                                          text: totStr,
-                                          selection: TextSelection.collapsed(offset: totStr.length),
-                                        );
-                                      }
-                                    }
-                                    setSheetState(() {});
-                                  },
-                                  decoration: InputDecoration(
-                                    prefixText: '₹ ',
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(color: AppTheme.slateBorder),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.8),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.slateMuted),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => Navigator.pop(sheetContext),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Difference indicator badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: diff < -0.5
-                              ? const Color(0xFFDCFCE7)
-                              : diff > 0.5
-                              ? const Color(0xFFEEF2FF)
-                              : const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: diff < -0.5
-                                ? const Color(0xFF86EFAC)
-                                : diff > 0.5
-                                ? const Color(0xFFC7D2FE)
-                                : AppTheme.slateBorder,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              diff < -0.5
-                                  ? Icons.arrow_downward_rounded
-                                  : diff > 0.5
-                                  ? Icons.arrow_upward_rounded
-                                  : Icons.check_circle_outline_rounded,
-                              size: 15,
-                              color: diff < -0.5
-                                  ? const Color(0xFF15803D)
-                                  : diff > 0.5
-                                  ? const Color(0xFF4338CA)
-                                  : AppTheme.slateDark,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                diff < -0.5
-                                    ? 'Discount: ₹${(-diff).toInt()} off standard (${((-diff) / defaultTotal * 100).toStringAsFixed(0)}% savings)'
-                                    : diff > 0.5
-                                    ? 'Custom premium: +₹${diff.toInt()} above standard rate'
-                                    : 'Default room rate applied',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: diff < -0.5
-                                      ? const Color(0xFF15803D)
-                                      : diff > 0.5
-                                      ? const Color(0xFF4338CA)
-                                      : AppTheme.slateDark,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Quick suggestion chips
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          ActionChip(
-                            avatar: const Icon(Icons.refresh_rounded, size: 14),
-                            label: Text('Standard (₹${defaultTotal.toInt()})'),
-                            labelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
-                            onPressed: () {
-                              totalCtrl.text = defaultTotal.toInt().toString();
-                              rateCtrl.text = baseRate.toInt().toString();
-                              setSheetState(() {});
-                            },
-                          ),
-                          if (baseRate > 500)
-                            ActionChip(
-                              avatar: const Icon(Icons.remove_circle_outline, size: 14),
-                              label: Text('-₹200/n (₹${(baseRate - 200).toInt()})'),
-                              labelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
-                              onPressed: () {
-                                final newRate = baseRate - 200;
-                                final newTotal = newRate * nights;
-                                rateCtrl.text = newRate.toInt().toString();
-                                totalCtrl.text = newTotal.toInt().toString();
-                                setSheetState(() {});
-                              },
-                            ),
-                          if (nights > 1 && defaultTotal > 500)
-                            ActionChip(
-                              avatar: const Icon(Icons.discount_outlined, size: 14),
-                              label: const Text('-₹500 Flat'),
-                              labelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
-                              onPressed: () {
-                                final newTotal = (defaultTotal - 500).clamp(100.0, 9999999.0);
-                                final newRate = (newTotal / nights).round();
-                                totalCtrl.text = newTotal.toInt().toString();
-                                rateCtrl.text = newRate.toString();
-                                setSheetState(() {});
-                              },
-                            ),
                         ],
                       ),
                       const SizedBox(height: 18),
 
-                      // Action buttons
+                      // Price Display Center Block
+                      Center(
+                        child: Column(
+                          children: [
+                            Text(
+                              'Price per night',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppTheme.slateMuted,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            if (!isEditingExact)
+                              InkWell(
+                                onTap: () {
+                                  exactRateCtrl.text = agreedRate.round().toString();
+                                  setSheetState(() => isEditingExact = true);
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        '₹${agreedRate.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppTheme.slateDark,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Icon(
+                                        Icons.edit_outlined,
+                                        size: 16,
+                                        color: AppTheme.brandPrimary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else
+                              SizedBox(
+                                width: 170,
+                                child: TextField(
+                                  controller: exactRateCtrl,
+                                  keyboardType: TextInputType.number,
+                                  autofocus: true,
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                  decoration: InputDecoration(
+                                    prefixText: '₹ ',
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    isDense: true,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(color: AppTheme.brandPrimary),
+                                    ),
+                                  ),
+                                  onSubmitted: (val) {
+                                    final parsed = double.tryParse(val.replaceAll(',', '').trim());
+                                    if (parsed != null && parsed >= 0) {
+                                      agreedRate = parsed;
+                                    }
+                                    setSheetState(() => isEditingExact = false);
+                                  },
+                                ),
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              isEditingExact ? 'Press enter to set price' : 'Tap amount to enter exact price',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: AppTheme.slateMuted,
+                              ),
+                            ),
+                            if (nights > 1) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Total stay: ₹${currentTotal.round()} ($nights nights)',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.brandPrimary,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // 3-column × 2-row grid of adjustments
+                      // Row 1: Decrease controls
                       Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(sheetContext),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 13),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                side: const BorderSide(color: AppTheme.slateBorder),
-                              ),
-                              child: Text(
-                                'Cancel',
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.slateDark,
-                                ),
-                              ),
+                            child: _buildAdjustmentPill(
+                              label: '− ₹500',
+                              textColor: const Color(0xFFC94C4C),
+                              bgColor: const Color(0xFFFFF4F4),
+                              borderColor: const Color(0xFFF0DADA),
+                              onTap: () {
+                                setSheetState(() {
+                                  agreedRate = (agreedRate - 500).clamp(0.0, 999999.0);
+                                  exactRateCtrl.text = agreedRate.round().toString();
+                                  isEditingExact = false;
+                                });
+                              },
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 8),
                           Expanded(
-                            flex: 2,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                final chosenTotal = double.tryParse(totalCtrl.text.replaceAll(',', '').trim()) ?? defaultTotal;
-                                Navigator.pop(sheetContext);
-                                setState(() {
-                                  if ((chosenTotal - defaultTotal).abs() < 0.5) {
-                                    _isCustomPricing = false;
-                                    _customTotalAmount = null;
-                                    _customNightlyRate = null;
-                                  } else {
-                                    _isCustomPricing = true;
-                                    _customTotalAmount = chosenTotal;
-                                    _customNightlyRate = chosenTotal / nights;
-                                    if (!_hasManualAdvance) {
-                                      _advanceController.text = (chosenTotal / nights).toInt().toString();
-                                    }
-                                  }
+                            child: _buildAdjustmentPill(
+                              label: '− ₹200',
+                              textColor: const Color(0xFFC94C4C),
+                              bgColor: const Color(0xFFFFF4F4),
+                              borderColor: const Color(0xFFF0DADA),
+                              onTap: () {
+                                setSheetState(() {
+                                  agreedRate = (agreedRate - 200).clamp(0.0, 999999.0);
+                                  exactRateCtrl.text = agreedRate.round().toString();
+                                  isEditingExact = false;
                                 });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      _isCustomPricing
-                                          ? 'Agreed pricing set: ₹${chosenTotal.toInt()} (₹${(chosenTotal / nights).toInt()}/night)'
-                                          : 'Standard rate applied: ₹${defaultTotal.toInt()}',
-                                    ),
-                                    backgroundColor: AppTheme.slateDark,
-                                    behavior: SnackBarBehavior.floating,
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
                               },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.brandPrimary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 13),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              child: Text(
-                                'Apply Agreed Price (₹${currentTotal.toInt()})',
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildAdjustmentPill(
+                              label: '− ₹100',
+                              textColor: const Color(0xFFC94C4C),
+                              bgColor: const Color(0xFFFFF4F4),
+                              borderColor: const Color(0xFFF0DADA),
+                              onTap: () {
+                                setSheetState(() {
+                                  agreedRate = (agreedRate - 100).clamp(0.0, 999999.0);
+                                  exactRateCtrl.text = agreedRate.round().toString();
+                                  isEditingExact = false;
+                                });
+                              },
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Row 2: Increase controls
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildAdjustmentPill(
+                              label: '+ ₹100',
+                              textColor: const Color(0xFF278653),
+                              bgColor: const Color(0xFFF1F8F3),
+                              borderColor: const Color(0xFFD6E9DC),
+                              onTap: () {
+                                setSheetState(() {
+                                  agreedRate = (agreedRate + 100).clamp(0.0, 999999.0);
+                                  exactRateCtrl.text = agreedRate.round().toString();
+                                  isEditingExact = false;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildAdjustmentPill(
+                              label: '+ ₹200',
+                              textColor: const Color(0xFF278653),
+                              bgColor: const Color(0xFFF1F8F3),
+                              borderColor: const Color(0xFFD6E9DC),
+                              onTap: () {
+                                setSheetState(() {
+                                  agreedRate = (agreedRate + 200).clamp(0.0, 999999.0);
+                                  exactRateCtrl.text = agreedRate.round().toString();
+                                  isEditingExact = false;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildAdjustmentPill(
+                              label: '+ ₹500',
+                              textColor: const Color(0xFF278653),
+                              bgColor: const Color(0xFFF1F8F3),
+                              borderColor: const Color(0xFFD6E9DC),
+                              onTap: () {
+                                setSheetState(() {
+                                  agreedRate = (agreedRate + 500).clamp(0.0, 999999.0);
+                                  exactRateCtrl.text = agreedRate.round().toString();
+                                  isEditingExact = false;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Apply button
+                      ElevatedButton(
+                        onPressed: () {
+                          if (isEditingExact) {
+                            final parsed = double.tryParse(exactRateCtrl.text.replaceAll(',', '').trim());
+                            if (parsed != null && parsed >= 0) {
+                              agreedRate = parsed;
+                            }
+                          }
+                          final chosenTotal = agreedRate * nights;
+                          Navigator.pop(sheetContext);
+                          setState(() {
+                            if ((agreedRate - baseRate).abs() < 0.5) {
+                              _isCustomPricing = false;
+                              _customTotalAmount = null;
+                              _customNightlyRate = null;
+                            } else {
+                              _isCustomPricing = true;
+                              _customTotalAmount = chosenTotal;
+                              _customNightlyRate = agreedRate;
+                              if (!_hasManualAdvance) {
+                                _advanceController.text = agreedRate.round().toString();
+                              }
+                            }
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                _isCustomPricing
+                                    ? 'Agreed price applied: ₹${agreedRate.round()}/night (Total: ₹${chosenTotal.round()})'
+                                    : 'Standard room rate applied (₹${baseRate.round()}/night)',
+                              ),
+                              backgroundColor: AppTheme.slateDark,
+                              behavior: SnackBarBehavior.floating,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.brandPrimary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Apply ₹${agreedRate.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},')}/night',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -5387,6 +5301,36 @@ class _CheckInScreenState extends State<CheckInScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildAdjustmentPill({
+    required String label,
+    required Color textColor,
+    required Color bgColor,
+    required Color borderColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        height: 38,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor, width: 1.2),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: textColor,
+          ),
+        ),
+      ),
     );
   }
 
