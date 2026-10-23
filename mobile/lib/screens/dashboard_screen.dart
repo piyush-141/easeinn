@@ -476,17 +476,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     final staffFirstName = store.staffName.split(' ').first;
     final now = DateTime.now();
     final formattedDate = DateFormat('EEEE, d MMMM').format(now);
-    final hour = now.hour;
-    final IconData timeIcon;
-    if (hour < 5 || hour >= 21) {
-      timeIcon = Icons.nightlight_round;
-    } else if (hour < 12) {
-      timeIcon = Icons.wb_sunny_rounded;
-    } else if (hour < 17) {
-      timeIcon = Icons.wb_sunny_rounded;
-    } else {
-      timeIcon = Icons.wb_twilight_rounded;
-    }
 
     return Container(
       decoration: BoxDecoration(
@@ -532,49 +521,26 @@ class _DashboardScreenState extends State<DashboardScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Greeting Row with a restrained time-of-day accent.
-                      Row(
+                      // Greeting Header
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.66),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.92),
-                              ),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              timeIcon,
-                              color: const Color(0xFF475569),
-                              size: 23,
+                          Text(
+                            '${_getTimeGreeting()}, $staffFirstName',
+                            style: GoogleFonts.outfit(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.slateDark,
+                              letterSpacing: -0.3,
                             ),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${_getTimeGreeting()}, $staffFirstName',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.slateDark,
-                                    letterSpacing: -0.3,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '$formattedDate · Today\'s overview',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppTheme.slateMuted,
-                                  ),
-                                ),
-                              ],
+                          const SizedBox(height: 2),
+                          Text(
+                            '$formattedDate · Today\'s overview',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.slateMuted,
                             ),
                           ),
                         ],
