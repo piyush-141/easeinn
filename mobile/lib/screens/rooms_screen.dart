@@ -29,9 +29,12 @@ class _RoomsScreenState extends State<RoomsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
+        child: RefreshIndicator(
+          onRefresh: () => store.syncData(),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Screen Header
@@ -233,6 +236,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -359,18 +363,23 @@ class _RoomsScreenState extends State<RoomsScreen> {
                     const Icon(Icons.edit_note_rounded, size: 14, color: AppTheme.slateMuted),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: badgeBg,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    room.status.label,
-                    style: GoogleFonts.inter(
-                      color: badgeColor,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      room.status.label,
+                      style: GoogleFonts.inter(
+                        color: badgeColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
@@ -480,12 +489,16 @@ class _RoomsScreenState extends State<RoomsScreen> {
                   children: [
                     const Icon(Icons.cleaning_services_rounded, size: 12, color: AppTheme.statusCleaning),
                     const SizedBox(width: 4),
-                    Text(
-                      'Turnover required',
-                      style: GoogleFonts.inter(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.statusCleaning,
+                    Expanded(
+                      child: Text(
+                        'Turnover required',
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.statusCleaning,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -554,12 +567,16 @@ class _RoomsScreenState extends State<RoomsScreen> {
                   children: [
                     const Icon(Icons.check_circle_outline_rounded, size: 11, color: AppTheme.statusVacant),
                     const SizedBox(width: 4),
-                    Text(
-                      'Ready for guest',
-                      style: GoogleFonts.inter(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.statusVacant,
+                    Expanded(
+                      child: Text(
+                        'Ready for guest',
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.statusVacant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],

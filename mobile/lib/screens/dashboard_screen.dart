@@ -95,7 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: RefreshIndicator(
           onRefresh: () async {
             _fetchWhatsAppStatus();
-            await Future.delayed(const Duration(milliseconds: 300));
+            await store.syncData();
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),

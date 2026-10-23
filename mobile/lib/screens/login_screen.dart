@@ -373,8 +373,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.white10),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Icon(Icons.add_business_rounded, color: Color(0xFF10B981), size: 18),
                           const SizedBox(width: 8),

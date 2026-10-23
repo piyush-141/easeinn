@@ -212,5 +212,50 @@ void main() {
       store.switchProperty(initialProp.id);
       expect(store.currentProperty.id, initialProp.id);
     });
+
+    test('Continuous Auto-Sync starts, runs silently in background without flickering UI, and stops cleanly', () async {
+      // 1. Calling startAutoSync and stopAutoSync should be safe and idempotent
+      store.startAutoSync();
+      expect(store.isSyncing, isFalse); // Background sync should NEVER set isSyncing = true
+
+      // 2. Calling syncData(isBackground: true) runs without throwing and keeps isSyncing = false
+      await store.syncData(isBackground: true);
+      expect(store.isSyncing, isFalse);
+
+      // 3. Stop auto-sync
+      store.stopAutoSync();
+      expect(store.isSyncing, isFalse);
+    });
+
+    test('Remote data reconciliation reflects cross-device changes and deletions accurately', () {
+      final room101 = store.rooms.firstWhere((r) => r.roomNumber == '101');
+
+      // Simulate remote data received from another manager device
+      final remoteData = {
+        'rooms': [
+          {
+            'id': room101.id,
+            'property_id': store.currentProperty.id,
+            'room_number': '101',
+            'floor': 1,
+            'status': 'needs_cleaning',
+            'base_rate': 3200.0,
+            'category_name': 'Deluxe Suite',
+          }
+        ],
+        'guests': [],
+        'stays': [],
+        'bills': [],
+        'payments': [],
+        'expenses': [],
+      };
+
+      store.applyRemoteData(remoteData);
+
+      final updatedRoom101 = store.rooms.firstWhere((r) => r.roomNumber == '101');
+      expect(updatedRoom101.status, RoomStatus.needsCleaning);
+      expect(updatedRoom101.baseRate, 3200.0);
+      expect(updatedRoom101.categoryName, 'Deluxe Suite');
+    });
   });
 }

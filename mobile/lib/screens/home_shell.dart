@@ -22,7 +22,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late int _currentIndex;
   String? _preselectedRoomId;
   BookingMode _initialBookingMode = BookingMode.checkIn;
@@ -32,7 +32,30 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentIndex = widget.initialIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final store = context.read<HotelStore>();
+        store.startAutoSync();
+        store.syncData(isBackground: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      final store = context.read<HotelStore>();
+      store.startAutoSync();
+      store.syncData(isBackground: true);
+    }
   }
 
   void _onTabSelected(
