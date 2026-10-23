@@ -591,26 +591,20 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'WhatsApp Automation Guidelines',
-                        style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: AppTheme.slateDark,
-                        ),
-                      ),
-                      Text(
-                        'Best practices for hotel guest messaging',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppTheme.slateMuted,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'WhatsApp Automation Guidelines',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: AppTheme.slateDark,
+                    ),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
                 ),
               ],
             ),
@@ -764,25 +758,13 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Message Templates',
-                                    style: GoogleFonts.outfit(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 17,
-                                      color: AppTheme.slateDark,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Customize automated guest notifications',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      color: AppTheme.slateMuted,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                'Message Templates',
+                                style: GoogleFonts.outfit(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 17,
+                                  color: AppTheme.slateDark,
+                                ),
                               ),
                             ),
                             TextButton(
@@ -1322,25 +1304,13 @@ class _WhatsAppScreenState extends State<WhatsAppScreen>
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Live WhatsApp Dispatcher',
-                                      style: GoogleFonts.outfit(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 17,
-                                        color: AppTheme.slateDark,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Send a test message and see acceptance and recipient receipts',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: AppTheme.slateMuted,
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  'Live WhatsApp Dispatcher',
+                                  style: GoogleFonts.outfit(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 17,
+                                    color: AppTheme.slateDark,
+                                  ),
                                 ),
                               ),
                               IconButton(

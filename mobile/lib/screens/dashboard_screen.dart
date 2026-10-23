@@ -1377,43 +1377,19 @@ class _DashboardScreenState extends State<DashboardScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Today\'s Expected Arrivals',
-                      style: GoogleFonts.outfit(
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.slateDark,
-                      ),
-                    ),
-                    Text(
-                      '${arrivals.length} check-in${arrivals.length == 1 ? '' : 's'} scheduled for today',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppTheme.slateMuted,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Today\'s Expected Arrivals',
+                  style: GoogleFonts.outfit(
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.slateDark,
+                  ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${arrivals.length}',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF2563EB),
-                      fontSize: 14,
-                    ),
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
                 ),
               ],
             ),
@@ -1614,43 +1590,19 @@ class _DashboardScreenState extends State<DashboardScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Today\'s Expected Departures',
-                      style: GoogleFonts.outfit(
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.slateDark,
-                      ),
-                    ),
-                    Text(
-                      '${departures.length} check-out${departures.length == 1 ? '' : 's'} scheduled for today',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppTheme.slateMuted,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Today\'s Expected Departures',
+                  style: GoogleFonts.outfit(
+                    fontSize: 19,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.slateDark,
+                  ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7ED),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${departures.length}',
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFFFF9500),
-                      fontSize: 14,
-                    ),
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
                 ),
               ],
             ),
@@ -1857,43 +1809,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Room Occupancy Directory',
-                            style: GoogleFonts.outfit(
-                              fontSize: 19,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.slateDark,
-                            ),
-                          ),
-                          Text(
-                            '${bookedRooms.length} Booked • ${freeRooms.length} Free • ${cleaningRooms.length} Cleaning',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: AppTheme.slateMuted,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Room Occupancy Directory',
+                        style: GoogleFonts.outfit(
+                          fontSize: 19,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.slateDark,
+                        ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.brandLight,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${store.occupancyRate}%',
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.brandPrimary,
-                            fontSize: 15,
-                          ),
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
                   ),

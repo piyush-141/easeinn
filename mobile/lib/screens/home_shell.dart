@@ -153,14 +153,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       },
       child: Scaffold(
         extendBody: true,
-        appBar: AppBar(
-          titleSpacing: 16,
-          title: InkWell(
-            onTap: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const HotelsScreen()));
-            },
+        appBar: _currentIndex == 0
+            ? AppBar(
+                titleSpacing: 16,
+                title: InkWell(
+                  onTap: () {
+                    Navigator.of(
+                      context,
+                    ).push(MaterialPageRoute(builder: (_) => const HotelsScreen()));
+                  },
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -269,7 +270,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               ),
             ),
           ],
-        ),
+        )
+      : null,
         body: Stack(
           children: [
             _SmoothScreenSwitcher(

@@ -1665,13 +1665,7 @@ class _RecordPaymentSheetState extends State<_RecordPaymentSheet> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Row(
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Record Payment', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
-                      Text(widget.bill.billNumber, style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B))),
-                    ],
-                  ),
+                  Text('Record Payment', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
                   const Spacer(),
                   IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
                 ],

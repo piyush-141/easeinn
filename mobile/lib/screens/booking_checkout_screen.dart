@@ -60,21 +60,24 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              Text(
-                'Add Remark',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.slateDark,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Leave a note for housekeeping or management',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: AppTheme.slateMuted,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Add Remark',
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.slateDark,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
               TextField(
@@ -325,25 +328,13 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Tax Invoice & Guest Folio',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.slateDark,
-                                ),
-                              ),
-                              Text(
-                                '${property.name} • Official GST Bill',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: AppTheme.slateMuted,
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            'Tax Invoice & Guest Folio',
+                            style: GoogleFonts.outfit(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.slateDark,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -1179,21 +1170,24 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Confirm Check-Out',
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.slateDark,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Select payment method for balance due',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppTheme.slateMuted,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Confirm Check-Out',
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             // Payment method selector

@@ -602,23 +602,26 @@ ${prop.gstNumber.isNotEmpty ? '🧾 *GSTIN:* ${prop.gstNumber}\n' : ''}
               ),
             ),
             const SizedBox(height: 18),
-            Text(
-              'Desk Payment QR Code',
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.slateDark,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Desk Payment QR Code',
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.slateDark,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              prop.name,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppTheme.slateMuted,
-              ),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

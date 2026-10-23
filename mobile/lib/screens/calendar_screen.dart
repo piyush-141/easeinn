@@ -1172,14 +1172,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Room ${room.roomNumber} — ${DateFormat('EEE, d MMM yyyy').format(date)}',
-              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${room.categoryName} • ₹${room.baseRate.toInt()}/night • Floor ${room.floor}',
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Room ${room.roomNumber} — ${DateFormat('EEE, d MMM yyyy').format(date)}',
+                    style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
             ),
             const SizedBox(height: 18),
             if (DateTime(date.year, date.month, date.day).isAfter(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))) ...[
@@ -1440,46 +1448,53 @@ class _AvailabilityCalendarSheetState extends State<_AvailabilityCalendarSheet> 
                   'Room Availability',
                   style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
                 ),
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  padding: const EdgeInsets.all(2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: ['Week', 'Month', 'Year'].map((scale) {
-                      final isSel = _timeScale == scale;
-                      return GestureDetector(
-                        onTap: () => setState(() => _timeScale = scale),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: isSel ? Colors.white : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: isSel ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)] : null,
-                          ),
-                          child: Text(
-                            scale,
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                              color: isSel ? AppTheme.slateDark : AppTheme.slateMuted,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.all(2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: ['Week', 'Month', 'Year'].map((scale) {
+                          final isSel = _timeScale == scale;
+                          return GestureDetector(
+                            onTap: () => setState(() => _timeScale = scale),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: isSel ? Colors.white : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: isSel ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)] : null,
+                              ),
+                              child: Text(
+                                scale,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+                                  color: isSel ? AppTheme.slateDark : AppTheme.slateMuted,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Color indicates room occupancy: Green (vacant), Yellow (partially booked), Red (fully booked)',
-              style: GoogleFonts.inter(fontSize: 11, color: AppTheme.slateMuted),
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
 
             // Color Heatmap Legend
             Row(
@@ -1746,10 +1761,20 @@ class _AvailabilityCalendarSheetState extends State<_AvailabilityCalendarSheet> 
                   decoration: BoxDecoration(color: AppTheme.slateBorder, borderRadius: BorderRadius.circular(2)),
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                DateFormat('EEEE, d MMMM yyyy').format(date),
-                style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    DateFormat('EEEE, d MMMM yyyy').format(date),
+                    style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
 
@@ -1883,20 +1908,13 @@ class _TodaysActivitySheet extends StatelessWidget {
                   "Today's Activity",
                   style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: AppTheme.brandLight, borderRadius: BorderRadius.circular(10)),
-                  child: Text(
-                    DateFormat('d MMM yyyy').format(now),
-                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary),
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(context),
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${arrivals.length} Arrival${arrivals.length != 1 ? "s" : ""} • ${departures.length} Departure${departures.length != 1 ? "s" : ""} scheduled for today',
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
             ),
             const SizedBox(height: 18),
 
@@ -2030,40 +2048,47 @@ class _UpcomingStaysSheetState extends State<_UpcomingStaysSheet> {
                   'Upcoming Stays',
                   style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
                 ),
-                Container(
-                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.all(2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [7, 15, 30].map((days) {
-                      final isSel = _rangeDays == days;
-                      return GestureDetector(
-                        onTap: () => setState(() => _rangeDays = days),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: isSel ? AppTheme.brandPrimary : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '$days d',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                              color: isSel ? Colors.white : AppTheme.slateDark,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.all(2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [7, 15, 30].map((days) {
+                          final isSel = _rangeDays == days;
+                          return GestureDetector(
+                            onTap: () => setState(() => _rangeDays = days),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: isSel ? AppTheme.brandPrimary : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '$days d',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+                                  color: isSel ? Colors.white : AppTheme.slateDark,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Bookings arriving over the next $_rangeDays days (ordered by arrival date)',
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
             ),
             const SizedBox(height: 16),
 
@@ -2203,15 +2228,20 @@ class _DateInsightsSheetState extends State<_DateInsightsSheet> {
                 decoration: BoxDecoration(color: AppTheme.slateBorder, borderRadius: BorderRadius.circular(2)),
               ),
             ),
-            const SizedBox(height: 14),
-            Text(
-              'Date Insights',
-              style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Live schedule summary for selected date. Updates dynamically as date changes.',
-              style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Date Insights',
+                  style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
             const SizedBox(height: 14),
 

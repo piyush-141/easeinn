@@ -2129,19 +2129,19 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ],
                       ),
 
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 10),
 
-                      // WhatsApp notification on success toggle
+                      // WhatsApp notification minimal row
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
+                          horizontal: 10,
+                          vertical: 6,
                         ),
                         decoration: BoxDecoration(
                           color: _sendWhatsAppMessage
                               ? const Color(0xFFF0FDF4)
                               : const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: _sendWhatsAppMessage
                                 ? const Color(0xFFBBF7D0)
@@ -2150,56 +2150,38 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                         child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(7),
-                              decoration: BoxDecoration(
-                                color: _sendWhatsAppMessage
-                                    ? const Color(0xFFDCFCE7)
-                                    : const Color(0xFFE2E8F0),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(
-                                Icons.chat_rounded,
-                                size: 18,
-                                color: _sendWhatsAppMessage
-                                    ? const Color(0xFF16A34A)
-                                    : AppTheme.slateMuted,
-                              ),
+                            Icon(
+                              Icons.chat_rounded,
+                              size: 15,
+                              color: _sendWhatsAppMessage
+                                  ? const Color(0xFF16A34A)
+                                  : AppTheme.slateMuted,
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 8),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _bookingMode == BookingMode.reservation
-                                        ? 'Send WhatsApp Reservation Confirmation'
-                                        : 'Send WhatsApp Check-in Welcome',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppTheme.slateDark,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    _sendWhatsAppMessage
-                                        ? 'Automatic confirmation will be sent to guest on success'
-                                        : 'No automated message will be sent for this booking',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      color: AppTheme.slateMuted,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                _bookingMode == BookingMode.reservation
+                                    ? 'Send WhatsApp Reservation'
+                                    : 'Send WhatsApp Check-in',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.slateDark,
+                                ),
                               ),
                             ),
-                            Switch.adaptive(
-                              value: _sendWhatsAppMessage,
-                              activeTrackColor: const Color(0xFF16A34A),
-                              activeThumbColor: Colors.white,
-                              onChanged: (val) =>
-                                  setState(() => _sendWhatsAppMessage = val),
+                            SizedBox(
+                              height: 28,
+                              child: FittedBox(
+                                fit: BoxFit.contain,
+                                child: Switch.adaptive(
+                                  value: _sendWhatsAppMessage,
+                                  activeTrackColor: const Color(0xFF16A34A),
+                                  activeThumbColor: Colors.white,
+                                  onChanged: (val) =>
+                                      setState(() => _sendWhatsAppMessage = val),
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -4481,16 +4463,24 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  title,
-                  style: GoogleFonts.outfit(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.slateDark,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.slateDark,
+                    ),
                   ),
-                ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(sheetContext),
+                  ),
+                ],
               ),
               CalendarDatePicker(
                 initialDate: initialDate.isBefore(firstDate)
@@ -4996,29 +4986,13 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Agreed Price',
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.slateDark,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  selectedRoom != null
-                                      ? 'Room ${selectedRoom.roomNumber} · ${selectedRoom.categoryName}'
-                                      : 'Room Rate Adjustment',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    color: AppTheme.slateMuted,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              'Agreed Price',
+                              style: GoogleFonts.outfit(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.slateDark,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -5075,7 +5049,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   ),
                                 ),
                               )
-                            else
+                            else ...[
                               SizedBox(
                                 width: 170,
                                 child: TextField(
@@ -5099,21 +5073,84 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   ),
                                   onSubmitted: (val) {
                                     final parsed = double.tryParse(val.replaceAll(',', '').trim());
-                                    if (parsed != null && parsed >= 0) {
-                                      agreedRate = parsed;
-                                    }
-                                    setSheetState(() => isEditingExact = false);
+                                    final finalVal = (parsed != null && parsed >= 0) ? parsed : agreedRate;
+                                    final chosenTotal = finalVal * nights;
+                                    Navigator.pop(sheetContext);
+                                    setState(() {
+                                      if ((finalVal - baseRate).abs() < 0.5) {
+                                        _isCustomPricing = false;
+                                        _customTotalAmount = null;
+                                        _customNightlyRate = null;
+                                      } else {
+                                        _isCustomPricing = true;
+                                        _customTotalAmount = chosenTotal;
+                                        _customNightlyRate = finalVal;
+                                        if (!_hasManualAdvance) {
+                                          _advanceController.text = finalVal.round().toString();
+                                        }
+                                      }
+                                    });
                                   },
                                 ),
                               ),
-                            const SizedBox(height: 4),
-                            Text(
-                              isEditingExact ? 'Press enter to set price' : 'Tap amount to enter exact price',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: AppTheme.slateMuted,
+                              const SizedBox(height: 8),
+                              InkWell(
+                                onTap: () {
+                                  final parsed = double.tryParse(exactRateCtrl.text.replaceAll(',', '').trim());
+                                  final finalVal = (parsed != null && parsed >= 0) ? parsed : agreedRate;
+                                  final chosenTotal = finalVal * nights;
+                                  Navigator.pop(sheetContext);
+                                  setState(() {
+                                    if ((finalVal - baseRate).abs() < 0.5) {
+                                      _isCustomPricing = false;
+                                      _customTotalAmount = null;
+                                      _customNightlyRate = null;
+                                    } else {
+                                      _isCustomPricing = true;
+                                      _customTotalAmount = chosenTotal;
+                                      _customNightlyRate = finalVal;
+                                      if (!_hasManualAdvance) {
+                                        _advanceController.text = finalVal.round().toString();
+                                      }
+                                    }
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        _isCustomPricing
+                                            ? 'Agreed price applied: ₹${finalVal.round()}/night (Total: ₹${chosenTotal.round()})'
+                                            : 'Standard room rate applied (₹${baseRate.round()}/night)',
+                                      ),
+                                      backgroundColor: AppTheme.slateDark,
+                                      behavior: SnackBarBehavior.floating,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(6),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  child: Text(
+                                    'Done editing',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
+                            if (!isEditingExact) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Tap amount to enter exact price',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: AppTheme.slateMuted,
+                                ),
+                              ),
+                            ],
                             if (nights > 1) ...[
                               const SizedBox(height: 4),
                               Text(
@@ -5136,13 +5173,13 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         children: [
                           Expanded(
                             child: _buildAdjustmentPill(
-                              label: '− ₹500',
+                              label: '− ₹100',
                               textColor: const Color(0xFFC94C4C),
                               bgColor: const Color(0xFFFFF4F4),
                               borderColor: const Color(0xFFF0DADA),
                               onTap: () {
                                 setSheetState(() {
-                                  agreedRate = (agreedRate - 500).clamp(0.0, 999999.0);
+                                  agreedRate = (agreedRate - 100).clamp(0.0, 999999.0);
                                   exactRateCtrl.text = agreedRate.round().toString();
                                   isEditingExact = false;
                                 });
@@ -5168,13 +5205,13 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: _buildAdjustmentPill(
-                              label: '− ₹100',
+                              label: '− ₹500',
                               textColor: const Color(0xFFC94C4C),
                               bgColor: const Color(0xFFFFF4F4),
                               borderColor: const Color(0xFFF0DADA),
                               onTap: () {
                                 setSheetState(() {
-                                  agreedRate = (agreedRate - 100).clamp(0.0, 999999.0);
+                                  agreedRate = (agreedRate - 500).clamp(0.0, 999999.0);
                                   exactRateCtrl.text = agreedRate.round().toString();
                                   isEditingExact = false;
                                 });
@@ -5538,8 +5575,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
   }) {
     final double advanceAmt =
         double.tryParse(_advanceController.text) ?? totalEstimatedAmount;
-    final baseRate = selectedRoom?.baseRate ?? 2200.0;
-    final defaultTotal = nights * baseRate;
 
     return Container(
       decoration: const BoxDecoration(
@@ -5575,55 +5610,23 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (_isCustomPricing) ...[
-                            Text(
-                              '₹${defaultTotal.toInt()}',
-                              style: GoogleFonts.outfit(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                decoration: TextDecoration.lineThrough,
-                                color: AppTheme.slateMuted,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                          Text(
-                            '₹${totalEstimatedAmount.toInt()}',
-                            style: GoogleFonts.outfit(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: _isCustomPricing ? const Color(0xFF0F766E) : AppTheme.slateDark,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _isCustomPricing
-                                  ? const Color(0xFFCCFBF1)
-                                  : const Color(0xFFDCFCE7),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
+                          Flexible(
                             child: Text(
-                              _isCustomPricing ? 'AGREED' : 'TOTAL',
-                              style: GoogleFonts.inter(
-                                fontSize: 9,
+                              '₹${totalEstimatedAmount.toInt()}',
+                              style: GoogleFonts.outfit(
+                                fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                                color: _isCustomPricing
-                                    ? const Color(0xFF0F766E)
-                                    : const Color(0xFF16A34A),
+                                color: _isCustomPricing ? const Color(0xFF0F766E) : AppTheme.slateDark,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 4),
                           Icon(
                             Icons.edit_outlined,
-                            size: 13,
+                            size: 14,
                             color: _isCustomPricing ? const Color(0xFF0F766E) : AppTheme.slateMuted,
                           ),
                         ],

@@ -1125,26 +1125,20 @@ Stay: $stayData
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Export ${guestsToExport.length} Guest Records',
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.slateDark,
-                        ),
-                      ),
-                      Text(
-                        'Includes full ID records, DOB, address, room & check-in details',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: AppTheme.slateMuted,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'Export ${guestsToExport.length} Guest Records',
+                    style: GoogleFonts.outfit(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.slateDark,
+                    ),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
                 ),
               ],
             ),
@@ -2140,32 +2134,42 @@ Stay: $stayData
                       color: AppTheme.slateDark,
                     ),
                   ),
-                  if (_filter != 'all' ||
-                      _roomFilter != 'all' ||
-                      _idTypeFilter != 'all' ||
-                      _dateFilter != GuestDateFilter.all ||
-                      _searchController.text.isNotEmpty)
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _filter = 'all';
-                          _roomFilter = 'all';
-                          _idTypeFilter = 'all';
-                          _dateFilter = GuestDateFilter.all;
-                          _customDateRange = null;
-                          _searchController.clear();
-                        });
-                        Navigator.pop(ctx);
-                      },
-                      child: Text(
-                        'Reset All',
-                        style: GoogleFonts.inter(
-                          color: AppTheme.brandPrimary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                  Row(
+                    children: [
+                      if (_filter != 'all' ||
+                          _roomFilter != 'all' ||
+                          _idTypeFilter != 'all' ||
+                          _dateFilter != GuestDateFilter.all ||
+                          _searchController.text.isNotEmpty)
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _filter = 'all';
+                              _roomFilter = 'all';
+                              _idTypeFilter = 'all';
+                              _dateFilter = GuestDateFilter.all;
+                              _customDateRange = null;
+                              _searchController.clear();
+                            });
+                            Navigator.pop(ctx);
+                          },
+                          child: Text(
+                            'Reset All',
+                            style: GoogleFonts.inter(
+                              color: AppTheme.brandPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => Navigator.pop(ctx),
                       ),
-                    ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 12),

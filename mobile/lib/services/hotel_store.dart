@@ -1813,6 +1813,40 @@ class HotelStore extends ChangeNotifier {
     }
   }
 
+  /// Bulk update base nightly rates for a given set of room IDs.
+  /// Updates room default rates only; never changes prices of confirmed bookings.
+  Future<bool> updateBulkRoomRates({
+    required Set<String> targetRoomIds,
+    required double newRate,
+  }) async {
+    if (targetRoomIds.isEmpty || newRate < 0) return false;
+
+    for (int i = 0; i < _rooms.length; i++) {
+      if (targetRoomIds.contains(_rooms[i].id)) {
+        _rooms[i] = _rooms[i].copyWith(baseRate: newRate);
+      }
+    }
+    notifyListeners();
+    saveToLocalStorage();
+
+    try {
+      if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+        final idMap = await SupabaseSyncService.syncRooms(_currentProperty.id, _rooms);
+        for (int i = 0; i < _rooms.length; i++) {
+          final mappedId = idMap[_rooms[i].roomNumber];
+          if (mappedId != null && _rooms[i].id != mappedId) {
+            _rooms[i] = _rooms[i].copyWith(id: mappedId);
+          }
+        }
+        saveToLocalStorage();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[HotelStore] Bulk room rate sync error: $e');
+      return true; // Local storage already preserved
+    }
+  }
+
   // 5. Add New Hotel Property
   Property addNewProperty({
     required String name,

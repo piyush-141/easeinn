@@ -403,26 +403,20 @@ class _BookingExportScreenState extends State<BookingExportScreen> {
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Export ${filteredStays.length} Bookings',
-                        style: GoogleFonts.outfit(
-                          fontSize: 19,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.slateDark,
-                        ),
-                      ),
-                      Text(
-                        'Formatted Excel workbook with your selected filters',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppTheme.slateMuted,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'Export ${filteredStays.length} Bookings',
+                    style: GoogleFonts.outfit(
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.slateDark,
+                    ),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.slateMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(ctx),
                 ),
               ],
             ),

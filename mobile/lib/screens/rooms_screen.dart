@@ -781,11 +781,6 @@ class _RoomsScreenState extends State<RoomsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Manage floors, add/delete rooms, and configure default check-in/out times',
-                style: GoogleFonts.inter(fontSize: 12, color: AppTheme.slateMuted),
-              ),
               const SizedBox(height: 18),
 
               // ── 1. Default Hotel Timings ──
@@ -922,6 +917,11 @@ class _RoomsScreenState extends State<RoomsScreen> {
                   ),
                 );
               }),
+
+              const SizedBox(height: 18),
+
+              // ── 2b. Bulk Price Edit Section ──
+              _BulkPriceEditSection(store: store),
 
               const SizedBox(height: 18),
 
@@ -1141,6 +1141,457 @@ class _RoomsScreenState extends State<RoomsScreen> {
               child: const Text('Create Room'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _BulkScope { allRooms, category, floor, selectRooms }
+
+class _BulkPriceEditSection extends StatefulWidget {
+  final HotelStore store;
+
+  const _BulkPriceEditSection({required this.store});
+
+  @override
+  State<_BulkPriceEditSection> createState() => _BulkPriceEditSectionState();
+}
+
+class _BulkPriceEditSectionState extends State<_BulkPriceEditSection> {
+  _BulkScope _scope = _BulkScope.allRooms;
+  String? _selectedCategory;
+  int? _selectedFloor;
+  final Set<String> _selectedRoomIds = {};
+  final TextEditingController _priceCtrl = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final categories = widget.store.rooms.map((r) => r.categoryName).toSet().toList();
+    if (categories.isNotEmpty) {
+      _selectedCategory = categories.first;
+    }
+    if (widget.store.floors.isNotEmpty) {
+      _selectedFloor = widget.store.floors.first;
+    }
+  }
+
+  @override
+  void dispose() {
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  List<Room> _getAffectedRooms() {
+    final all = widget.store.rooms;
+    switch (_scope) {
+      case _BulkScope.allRooms:
+        return all;
+      case _BulkScope.category:
+        return all.where((r) => r.categoryName == _selectedCategory).toList();
+      case _BulkScope.floor:
+        return all.where((r) => r.floor == _selectedFloor).toList();
+      case _BulkScope.selectRooms:
+        return all.where((r) => _selectedRoomIds.contains(r.id)).toList();
+    }
+  }
+
+  Future<void> _applyBulkPrice() async {
+    final rate = double.tryParse(_priceCtrl.text.replaceAll(',', '').trim());
+    if (rate == null || rate < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid nightly price'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final affected = _getAffectedRooms();
+    if (affected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No rooms match the chosen scope'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    final targetIds = affected.map((r) => r.id).toSet();
+    final success = await widget.store.updateBulkRoomRates(
+      targetRoomIds: targetIds,
+      newRate: rate,
+    );
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+
+    if (success) {
+      final scopeName = switch (_scope) {
+        _BulkScope.allRooms => 'All ${affected.length} rooms',
+        _BulkScope.category => '${affected.length} $_selectedCategory rooms',
+        _BulkScope.floor => '${affected.length} Floor $_selectedFloor rooms',
+        _BulkScope.selectRooms => '${affected.length} selected rooms',
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Updated $scopeName to ₹${rate.toInt()}/night'),
+          backgroundColor: AppTheme.slateDark,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allRooms = widget.store.rooms;
+    final categories = allRooms.map((r) => r.categoryName).toSet().toList();
+    final floors = widget.store.floors;
+    final affectedRooms = _getAffectedRooms();
+    final count = affectedRooms.length;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.slateBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: AppTheme.brandLight,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Center(
+                  child: Text(
+                    '₹',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.brandPrimary,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Bulk Price Edit',
+                style: GoogleFonts.outfit(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.slateDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          Text(
+            'Apply to',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.slateMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // 2x2 Scope Options Grid
+          Row(
+            children: [
+              Expanded(
+                child: _buildScopePill(
+                  label: 'All rooms',
+                  isSelected: _scope == _BulkScope.allRooms,
+                  onTap: () => setState(() => _scope = _BulkScope.allRooms),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildScopePill(
+                  label: 'Room category',
+                  isSelected: _scope == _BulkScope.category,
+                  onTap: () {
+                    setState(() {
+                      _scope = _BulkScope.category;
+                      if (_selectedCategory == null && categories.isNotEmpty) {
+                        _selectedCategory = categories.first;
+                      }
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildScopePill(
+                  label: 'Floor',
+                  isSelected: _scope == _BulkScope.floor,
+                  onTap: () {
+                    setState(() {
+                      _scope = _BulkScope.floor;
+                      if (_selectedFloor == null && floors.isNotEmpty) {
+                        _selectedFloor = floors.first;
+                      }
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildScopePill(
+                  label: 'Select rooms',
+                  isSelected: _scope == _BulkScope.selectRooms,
+                  onTap: () => setState(() => _scope = _BulkScope.selectRooms),
+                ),
+              ),
+            ],
+          ),
+
+          // Contextual Selector
+          if (_scope == _BulkScope.category) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.slateBorder),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: categories.contains(_selectedCategory) ? _selectedCategory : (categories.isNotEmpty ? categories.first : null),
+                  isExpanded: true,
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                  items: categories.map((c) {
+                    final cCount = allRooms.where((r) => r.categoryName == c).length;
+                    return DropdownMenuItem(
+                      value: c,
+                      child: Text('$c ($cCount rooms)'),
+                    );
+                  }).toList(),
+                  onChanged: (val) => setState(() => _selectedCategory = val),
+                ),
+              ),
+            ),
+          ] else if (_scope == _BulkScope.floor) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.slateBorder),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: floors.contains(_selectedFloor) ? _selectedFloor : (floors.isNotEmpty ? floors.first : null),
+                  isExpanded: true,
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.slateDark),
+                  items: floors.map((f) {
+                    final fCount = allRooms.where((r) => r.floor == f).length;
+                    return DropdownMenuItem(
+                      value: f,
+                      child: Text('Floor $f ($fCount rooms)'),
+                    );
+                  }).toList(),
+                  onChanged: (val) => setState(() => _selectedFloor = val),
+                ),
+              ),
+            ),
+          ] else if (_scope == _BulkScope.selectRooms) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.slateBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${_selectedRoomIds.length} of ${allRooms.length} selected',
+                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.slateDark),
+                      ),
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            if (_selectedRoomIds.length == allRooms.length) {
+                              _selectedRoomIds.clear();
+                            } else {
+                              _selectedRoomIds.addAll(allRooms.map((r) => r.id));
+                            }
+                          });
+                        },
+                        child: Text(
+                          _selectedRoomIds.length == allRooms.length ? 'Deselect all' : 'Select all',
+                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.brandPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: allRooms.map((r) {
+                      final isSel = _selectedRoomIds.contains(r.id);
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            if (isSel) {
+                              _selectedRoomIds.remove(r.id);
+                            } else {
+                              _selectedRoomIds.add(r.id);
+                            }
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isSel ? AppTheme.brandPrimary : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            r.roomNumber,
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: isSel ? Colors.white : AppTheme.slateDark,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 12),
+
+          Text(
+            'New price per night',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.slateMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // Price Input
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.slateBorder),
+            ),
+            child: TextField(
+              controller: _priceCtrl,
+              keyboardType: TextInputType.number,
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.slateDark,
+              ),
+              decoration: const InputDecoration(
+                prefixText: '₹ ',
+                prefixStyle: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.slateDark,
+                ),
+                hintText: '2500',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Apply Button with compact confirmation label
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _applyBulkPrice,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.brandPrimary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(
+                      'Apply Price to $count Room${count != 1 ? "s" : ""}',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopePill({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 38,
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.brandLight : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+            width: isSelected ? 1.5 : 1.0,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? AppTheme.brandPrimary : AppTheme.slateDark,
+          ),
         ),
       ),
     );
