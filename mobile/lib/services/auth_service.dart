@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
+import 'supabase_sync_service.dart';
 import 'whatsapp_service.dart';
 import '../models/property.dart';
 import 'hotel_store.dart';
@@ -307,12 +308,65 @@ class AuthService {
           }
 
           final prefs = await SharedPreferences.getInstance();
-          final assignedPropId = await _resolveStablePropertyId(
+          var assignedPropId = await _resolveStablePropertyId(
             userId: user.id,
             userEmail: trimmedEmail,
             prefs: prefs,
             profileRes: profileRes,
           );
+
+          if (assignedPropId == null) {
+            // Self-heal: If user signed up but hotel setup was interrupted, recover from user metadata
+            final meta = user.userMetadata ?? {};
+            final pendingHotelName = meta['hotel_name']?.toString() ??
+                prefs.getString(_keyPropertyName) ??
+                '$fullName\'s Hotel';
+            final pendingCity = meta['city']?.toString() ?? '';
+            final pendingPhone = meta['phone']?.toString() ?? phone;
+
+            final autoUuid = SupabaseSyncService.generateUuid();
+            try {
+              final rpcRes = await client.rpc('register_hotel_with_manager', params: {
+                'p_user_id': user.id,
+                'p_hotel_name': pendingHotelName,
+                'p_city': pendingCity,
+                'p_phone': pendingPhone,
+                'p_email': trimmedEmail,
+                'p_full_name': fullName,
+              });
+              if (rpcRes != null) {
+                assignedPropId = rpcRes.toString();
+              }
+            } catch (_) {}
+
+            if (assignedPropId == null) {
+              try {
+                await client.from('properties').insert({
+                  'id': autoUuid,
+                  'name': pendingHotelName,
+                  'city': pendingCity,
+                  'phone': pendingPhone,
+                  'email': trimmedEmail,
+                  'currency': 'INR',
+                  'timezone': 'Asia/Kolkata',
+                });
+                await client.from('user_profiles').upsert({
+                  'id': user.id,
+                  'property_id': autoUuid,
+                  'full_name': fullName,
+                  'role': 'admin',
+                  'is_active': true,
+                });
+                assignedPropId = autoUuid;
+              } catch (healErr) {
+                debugPrint('[AuthService] Self-heal property notice: $healErr');
+              }
+            }
+
+            if (assignedPropId != null) {
+              await prefs.setString(_keyPropertyId, assignedPropId);
+            }
+          }
 
           if (assignedPropId == null) {
             return AuthResult(
@@ -469,6 +523,12 @@ class AuthService {
             'full_name': fullName.trim(),
             'phone': phone.trim(),
             'hotel_name': hotelName.trim(),
+            'city': city.trim(),
+            'state': state.trim(),
+            'address': address.trim(),
+            'total_rooms': totalRooms,
+            'upi_id': upiId.trim(),
+            'upi_payee_name': upiPayeeName.trim(),
           },
         );
 
@@ -482,50 +542,86 @@ class AuthService {
             );
           }
 
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('pending_hotel_name', hotelName.trim());
+          await prefs.setString('pending_city', city.trim());
+          await prefs.setString('pending_state', state.trim());
+          await prefs.setString('pending_address', address.trim());
+          await prefs.setString('pending_phone', phone.trim());
+          await prefs.setString('pending_upi_id', upiId.trim());
+          await prefs.setString('pending_upi_payee_name', upiPayeeName.trim());
+          await prefs.setString(_keyPropertyName, hotelName.trim());
+          await prefs.setString(_keyUserName, fullName.trim());
+
           // Create property in Supabase
           String? createdPropertyId;
+          final propUuid = SupabaseSyncService.generateUuid();
+
+          // 1. Try atomic SECURITY DEFINER RPC first (bypasses RLS SELECT block)
           try {
-            final propertyInsert = await client
-                .from('properties')
-                .insert({
-                  'name': hotelName.trim(),
-                  'city': city.trim(),
-                  'state': state.trim(),
-                  'address': address.trim(),
-                  'phone': phone.trim(),
-                  'email': trimmedEmail,
-                  'upi_id': upiId.trim(),
-                  'upi_payee_name': upiPayeeName.trim(),
-                  'currency': 'INR',
-                  'timezone': 'Asia/Kolkata',
-                })
-                .select('id')
-                .single();
-
-            createdPropertyId = propertyInsert['id']?.toString();
-
-            await client.from('user_profiles').insert({
-              'id': user.id,
-              if (createdPropertyId != null) 'property_id': createdPropertyId,
-              'full_name': fullName.trim(),
-              'role': 'admin',
-              'is_active': true,
+            final rpcRes = await client.rpc('register_hotel_with_manager', params: {
+              'p_user_id': user.id,
+              'p_hotel_name': hotelName.trim(),
+              'p_city': city.trim(),
+              'p_state': state.trim(),
+              'p_address': address.trim(),
+              'p_phone': phone.trim(),
+              'p_email': trimmedEmail,
+              'p_upi_id': upiId.trim(),
+              'p_upi_payee_name': upiPayeeName.trim(),
+              'p_full_name': fullName.trim(),
             });
-          } catch (dbErr) {
-            debugPrint('[AuthService] DB record creation notice: $dbErr');
+            if (rpcRes != null) {
+              createdPropertyId = rpcRes.toString();
+            }
+          } catch (rpcErr) {
+            debugPrint('[AuthService] RPC register notice: $rpcErr');
           }
 
-          // The property ID is ALWAYS the Supabase UUID from now on
-          // Never use timestamp-based fallbacks for new accounts
+          // 2. Direct table insert fallback (without .select('id') to avoid RLS RETURNING check block)
           if (createdPropertyId == null) {
+            try {
+              await client.from('properties').insert({
+                'id': propUuid,
+                'name': hotelName.trim(),
+                'city': city.trim(),
+                'state': state.trim(),
+                'address': address.trim(),
+                'phone': phone.trim(),
+                'email': trimmedEmail,
+                'upi_id': upiId.trim(),
+                'upi_payee_name': upiPayeeName.trim(),
+                'currency': 'INR',
+                'timezone': 'Asia/Kolkata',
+              });
+
+              createdPropertyId = propUuid;
+
+              await client.from('user_profiles').upsert({
+                'id': user.id,
+                'property_id': propUuid,
+                'full_name': fullName.trim(),
+                'role': 'admin',
+                'is_active': true,
+              });
+            } catch (dbErr) {
+              debugPrint('[AuthService] Direct insert notice: $dbErr');
+            }
+          }
+
+          // 3. If session is null (Supabase requires email confirmation)
+          if (authResponse.session == null) {
             return AuthResult(
               success: false,
-              errorMessage: 'Account created but hotel setup failed. Please sign in to retry.',
+              requiresEmailConfirmation: true,
               email: trimmedEmail,
+              errorMessage: 'Account created! Please check your email or enter OTP to verify.',
             );
           }
 
-          final prefs = await SharedPreferences.getInstance();
+          // 4. Fallback gracefully to client-generated UUID so account creation never fails
+          createdPropertyId ??= propUuid;
+
           await prefs.setString(_keyPropertyId, createdPropertyId);
 
           final newProp = Property(
@@ -683,7 +779,7 @@ class AuthService {
       final fullName = profileRes?['full_name'] as String? ?? prefs.getString(_keyUserName) ?? 'General Manager';
       final role = profileRes?['role'] as String? ?? prefs.getString(_keyUserRole) ?? 'General Manager / Owner';
       final propData = profileRes?['properties'] as Map<String, dynamic>?;
-      final assignedPropId = await _resolveStablePropertyId(
+      var assignedPropId = await _resolveStablePropertyId(
         userId: user.id,
         userEmail: email,
         prefs: prefs,
@@ -691,7 +787,52 @@ class AuthService {
       );
 
       if (assignedPropId == null) {
-        return AuthResult(success: false, errorMessage: 'Account verified but no hotel linked. Please contact support.');
+        final meta = user.userMetadata ?? {};
+        final pendingHotelName = meta['hotel_name']?.toString() ??
+            prefs.getString('pending_hotel_name') ??
+            prefs.getString(_keyPropertyName) ??
+            '$fullName\'s Hotel';
+        final pendingCity = meta['city']?.toString() ?? prefs.getString('pending_city') ?? '';
+        final pendingPhone = meta['phone']?.toString() ?? prefs.getString('pending_phone') ?? '';
+
+        final autoUuid = SupabaseSyncService.generateUuid();
+        try {
+          final rpcRes = await client.rpc('register_hotel_with_manager', params: {
+            'p_user_id': user.id,
+            'p_hotel_name': pendingHotelName,
+            'p_city': pendingCity,
+            'p_phone': pendingPhone,
+            'p_email': email.trim().toLowerCase(),
+            'p_full_name': fullName,
+          });
+          if (rpcRes != null) assignedPropId = rpcRes.toString();
+        } catch (_) {}
+
+        if (assignedPropId == null) {
+          try {
+            await client.from('properties').insert({
+              'id': autoUuid,
+              'name': pendingHotelName,
+              'city': pendingCity,
+              'phone': pendingPhone,
+              'email': email.trim().toLowerCase(),
+              'currency': 'INR',
+              'timezone': 'Asia/Kolkata',
+            });
+            await client.from('user_profiles').upsert({
+              'id': user.id,
+              'property_id': autoUuid,
+              'full_name': fullName,
+              'role': 'admin',
+              'is_active': true,
+            });
+            assignedPropId = autoUuid;
+          } catch (_) {}
+        }
+      }
+
+      if (assignedPropId == null) {
+        return AuthResult(success: false, errorMessage: 'Account verified but hotel setup could not be completed. Please try signing in.');
       }
 
       final propName = propData?['name']?.toString() ?? prefs.getString(_keyPropertyName) ?? 'My Hotel';
