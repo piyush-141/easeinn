@@ -31,7 +31,9 @@ class BillLineItem {
 }
 
 class Payment {
-  final String id;
+  String id;
+  String? propertyId;
+  String? billId;
   final double amount;
   final String method; // 'cash', 'upi', 'card'
   final String paymentType; // 'advance', 'full'
@@ -40,6 +42,8 @@ class Payment {
 
   Payment({
     required this.id,
+    this.propertyId,
+    this.billId,
     required this.amount,
     required this.method,
     required this.paymentType,
@@ -47,8 +51,32 @@ class Payment {
     DateTime? recordedAt,
   }) : recordedAt = recordedAt ?? DateTime.now();
 
+  Payment copyWith({
+    String? id,
+    String? propertyId,
+    String? billId,
+    double? amount,
+    String? method,
+    String? paymentType,
+    String? reference,
+    DateTime? recordedAt,
+  }) {
+    return Payment(
+      id: id ?? this.id,
+      propertyId: propertyId ?? this.propertyId,
+      billId: billId ?? this.billId,
+      amount: amount ?? this.amount,
+      method: method ?? this.method,
+      paymentType: paymentType ?? this.paymentType,
+      reference: reference ?? this.reference,
+      recordedAt: recordedAt ?? this.recordedAt,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
+    if (propertyId != null) 'property_id': propertyId,
+    if (billId != null) 'bill_id': billId,
     'amount': amount,
     'method': method,
     'payment_type': paymentType,
@@ -58,6 +86,8 @@ class Payment {
 
   factory Payment.fromJson(Map<String, dynamic> json) => Payment(
     id: json['id']?.toString() ?? '',
+    propertyId: json['property_id']?.toString(),
+    billId: json['bill_id']?.toString(),
     amount: (json['amount'] is num) ? (json['amount'] as num).toDouble() : (double.tryParse(json['amount']?.toString() ?? '0') ?? 0.0),
     method: json['method']?.toString() ?? 'cash',
     paymentType: json['payment_type']?.toString() ?? 'advance',
@@ -67,19 +97,21 @@ class Payment {
 }
 
 class Bill {
-  final String id;
+  String id;
+  String propertyId;
   final String stayId;
   final String billNumber;
   double subtotal;
   double amountPaid;
   double outstanding;
-  String status; // 'draft', 'finalized'
+  String status; // 'draft', 'finalized', 'reserved'
   final List<BillLineItem> lineItems;
   final List<Payment> payments;
   final DateTime createdAt;
 
   Bill({
     required this.id,
+    this.propertyId = '',
     required this.stayId,
     required this.billNumber,
     required this.subtotal,
@@ -93,8 +125,37 @@ class Bill {
         payments = payments ?? [],
         createdAt = createdAt ?? DateTime.now();
 
+  Bill copyWith({
+    String? id,
+    String? propertyId,
+    String? stayId,
+    String? billNumber,
+    double? subtotal,
+    double? amountPaid,
+    double? outstanding,
+    String? status,
+    List<BillLineItem>? lineItems,
+    List<Payment>? payments,
+    DateTime? createdAt,
+  }) {
+    return Bill(
+      id: id ?? this.id,
+      propertyId: propertyId ?? this.propertyId,
+      stayId: stayId ?? this.stayId,
+      billNumber: billNumber ?? this.billNumber,
+      subtotal: subtotal ?? this.subtotal,
+      amountPaid: amountPaid ?? this.amountPaid,
+      outstanding: outstanding ?? this.outstanding,
+      status: status ?? this.status,
+      lineItems: lineItems ?? this.lineItems,
+      payments: payments ?? this.payments,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
+    'property_id': propertyId,
     'stay_id': stayId,
     'bill_number': billNumber,
     'subtotal': subtotal,
@@ -129,6 +190,7 @@ class Bill {
 
     return Bill(
       id: json['id']?.toString() ?? '',
+      propertyId: json['property_id']?.toString() ?? '',
       stayId: json['stay_id']?.toString() ?? '',
       billNumber: json['bill_number']?.toString() ?? 'INV-001',
       subtotal: (json['subtotal'] is num) ? (json['subtotal'] as num).toDouble() : (double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0),

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui' show ImageFilter;
@@ -247,67 +248,93 @@ class _HomeShellState extends State<HomeShell> {
             ),
           ],
         ),
-        body: IndexedStack(index: _currentIndex, children: screens),
+        body: _SmoothScreenSwitcher(
+          currentIndex: _currentIndex,
+          children: screens,
+        ),
         bottomNavigationBar: _buildGlassNavigationBar(store),
       ),
     );
   }
 
   int get _selectedNavigationSlot => switch (_currentIndex) {
-    0 => 0,
-    1 => 1,
-    3 => 2,
-    4 => 3,
-    2 => 0,
+    0 => 0, // Home
+    1 => 1, // Rooms
+    3 => 2, // Check-Out
+    4 => 3, // Guests
     _ => 0,
   };
 
   Widget _buildGlassNavigationBar(HotelStore store) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-        child: Row(
-          children: [
-            Expanded(child: _buildPrimaryGlassPill(store)),
-            const SizedBox(width: 10),
-            _buildCheckInActionButton(),
-          ],
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+
+    return AnimatedSlide(
+      offset: keyboardVisible ? const Offset(0, 1.8) : Offset.zero,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOutCubic,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            4,
+            16,
+            math.max(8, MediaQuery.of(context).padding.bottom),
+          ),
+          child: Row(
+            children: [
+              Expanded(child: _buildPrimaryGlassPill(store, isDark)),
+              const SizedBox(width: 10),
+              _buildCheckInActionButton(isDark),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildPrimaryGlassPill(HotelStore store) {
+  Widget _buildPrimaryGlassPill(HotelStore store, bool isDark) {
     const itemCount = 4;
+    final baseGlassColor = isDark
+        ? const Color(0xFF1E2430).withValues(alpha: 0.85)
+        : Colors.white.withValues(alpha: 0.82);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.16)
+        : Colors.white;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final itemWidth = constraints.maxWidth / itemCount;
         return Container(
           height: 64,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.28),
-            borderRadius: BorderRadius.circular(34),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.84)),
+            color: baseGlassColor,
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: borderColor, width: isDark ? 0.8 : 1.2),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF334155).withValues(alpha: 0.13),
-                blurRadius: 22,
-                offset: const Offset(0, 7),
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.35)
+                    : const Color(0xFF0F172A).withValues(alpha: 0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 6),
               ),
-              BoxShadow(
-                color: Colors.white.withValues(alpha: 0.60),
-                blurRadius: 7,
-                offset: const Offset(-2, -2),
-              ),
+              if (!isDark)
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  blurRadius: 3,
+                  offset: const Offset(0, -1),
+                ),
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(34),
+            borderRadius: BorderRadius.circular(32),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
               child: Stack(
                 children: [
+                  // Top specular sheen highlight
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -315,88 +342,59 @@ class _HomeShellState extends State<HomeShell> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.white.withValues(alpha: 0.58),
-                            Colors.white.withValues(alpha: 0.34),
+                            Colors.white.withValues(alpha: isDark ? 0.12 : 0.45),
+                            Colors.white.withValues(alpha: isDark ? 0.02 : 0.08),
                           ],
                         ),
                       ),
                     ),
                   ),
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 420),
-                    curve: Curves.easeInOutCubic,
-                    left: itemWidth * _selectedNavigationSlot + 4,
-                    top: 4,
-                    bottom: 4,
-                    width: itemWidth - 8,
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 180),
-                      opacity: _currentIndex == 2 ? 0 : 1,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white.withValues(alpha: 0.98),
-                              Colors.white.withValues(alpha: 0.72),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.96),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(
-                                0xFF334155,
-                              ).withValues(alpha: 0.10),
-                              blurRadius: 12,
-                              offset: const Offset(0, 3),
-                            ),
-                            BoxShadow(
-                              color: Colors.white.withValues(alpha: 0.88),
-                              blurRadius: 3,
-                              offset: const Offset(0, -1),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+
+                  // Fluid spring sliding indicator with directional stretch
+                  _FluidGlassIndicator(
+                    selectedSlot: _selectedNavigationSlot,
+                    itemWidth: itemWidth,
+                    isVisible: _currentIndex != 2,
                   ),
+
+                  // 4 Primary Navigation Destinations with Icon + Text below
                   Row(
                     children: [
                       _buildPillTabItem(
                         index: 0,
-                        icon: Icons.home_outlined,
                         activeIcon: Icons.home_rounded,
+                        inactiveIcon: Icons.home_outlined,
                         label: 'Home',
+                        isDark: isDark,
                       ),
                       _buildPillTabItem(
                         index: 1,
-                        icon: Icons.meeting_room_outlined,
-                        activeIcon: Icons.meeting_room_rounded,
+                        activeIcon: Icons.bed_rounded,
+                        inactiveIcon: Icons.bed_outlined,
                         label: 'Rooms',
                         badgeCount: store.cleaningRooms > 0
                             ? store.cleaningRooms
                             : null,
                         badgeColor: AppTheme.statusCleaning,
+                        isDark: isDark,
                       ),
                       _buildPillTabItem(
                         index: 3,
-                        icon: Icons.logout_rounded,
                         activeIcon: Icons.logout_rounded,
+                        inactiveIcon: Icons.logout_rounded,
                         label: 'Check-Out',
                         badgeCount: store.occupiedRooms > 0
                             ? store.occupiedRooms
                             : null,
-                        badgeColor: AppTheme.brandPrimary,
+                        badgeColor: isDark ? AppTheme.brandAccent : const Color(0xFF0284C7),
+                        isDark: isDark,
                       ),
                       _buildPillTabItem(
                         index: 4,
-                        icon: Icons.people_outline_rounded,
                         activeIcon: Icons.people_rounded,
+                        inactiveIcon: Icons.people_outline_rounded,
                         label: 'Guests',
+                        isDark: isDark,
                       ),
                     ],
                   ),
@@ -411,182 +409,593 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _buildPillTabItem({
     required int index,
-    required IconData icon,
     required IconData activeIcon,
+    required IconData inactiveIcon,
     required String label,
+    required bool isDark,
     int? badgeCount,
     Color? badgeColor,
   }) {
     final isSelected = _currentIndex == index;
+    final inactiveColor = isDark
+        ? const Color(0xFF94A3B8)
+        : const Color(0xFF475569);
+    final iconColor = isSelected ? Colors.white : inactiveColor;
 
     return Expanded(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: () => _onTabSelected(index),
-          splashColor: Colors.black.withValues(alpha: 0.04),
-          highlightColor: Colors.black.withValues(alpha: 0.02),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    AnimatedScale(
-                      scale: isSelected ? 1.04 : 1.0,
-                      duration: const Duration(milliseconds: 160),
-                      curve: Curves.easeOutCubic,
-                      child: Icon(
-                        isSelected ? activeIcon : icon,
-                        size: 21,
-                        color: isSelected
-                            ? const Color(0xFF0F172A)
-                            : const Color(0xFF334155),
-                      ),
+      child: _PressableGlassItem(
+        tooltip: label,
+        onTap: () => _onTabSelected(index),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  _BouncingTabIcon(
+                    isSelected: isSelected,
+                    child: TweenAnimationBuilder<Color?>(
+                      duration: const Duration(milliseconds: 200),
+                      tween: ColorTween(end: iconColor),
+                      builder: (context, color, _) {
+                        return Icon(
+                          isSelected ? activeIcon : inactiveIcon,
+                          size: 21,
+                          color: color,
+                        );
+                      },
                     ),
-                    if (badgeCount != null && badgeCount > 0)
-                      Positioned(
-                        top: -3,
-                        right: -7,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: badgeColor ?? const Color(0xFF0F172A),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  if (badgeCount != null && badgeCount > 0)
+                    Positioned(
+                      top: -2,
+                      right: -5,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: badgeColor ?? AppTheme.statusCleaning,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 1.2,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (badgeColor ?? AppTheme.statusCleaning)
+                                  .withValues(alpha: 0.6),
+                              blurRadius: 4,
+                            ),
+                          ],
                         ),
                       ),
-                  ],
+                    ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                style: GoogleFonts.inter(
+                  fontSize: 9.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  color: isSelected ? Colors.white : inactiveColor,
+                  letterSpacing: -0.2,
                 ),
-                const SizedBox(height: 2),
-                AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 160),
-                  style: GoogleFonts.inter(
-                    fontSize: 9.5,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected
-                        ? const Color(0xFF0F172A)
-                        : const Color(0xFF64748B),
-                    letterSpacing: -0.2,
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildCheckInActionButton() {
+  Widget _buildCheckInActionButton(bool isDark) {
     final isSelected = _currentIndex == 2;
-    return SizedBox(
-      width: 66,
-      height: 64,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _onTabSelected(2),
-          borderRadius: BorderRadius.circular(30),
-          splashColor: Colors.black.withValues(alpha: 0.05),
-          highlightColor: Colors.black.withValues(alpha: 0.03),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: 0.96)
-                      : Colors.white.withValues(alpha: 0.42),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(
-                      alpha: isSelected ? 0.98 : 0.78,
-                    ),
-                    width: 1.1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(
-                        0xFF334155,
-                      ).withValues(alpha: isSelected ? 0.14 : 0.08),
-                      blurRadius: isSelected ? 12 : 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
+    final baseGlassColor = isDark
+        ? const Color(0xFF1E2430).withValues(alpha: 0.85)
+        : Colors.white.withValues(alpha: 0.82);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.16)
+        : Colors.white;
+
+    return _PressableGlassItem(
+      tooltip: 'Check-In',
+      onTap: () => _onTabSelected(2),
+      child: SizedBox(
+        width: 62,
+        height: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: isSelected ? null : baseGlassColor,
+                shape: BoxShape.circle,
+                gradient: isSelected
+                    ? const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppTheme.brandAccent,
+                          AppTheme.brandPrimary,
+                        ],
+                      )
+                    : null,
+                border: Border.all(
+                  color: isSelected ? Colors.white : borderColor,
+                  width: isDark ? 0.8 : 1.2,
                 ),
-                child: ClipOval(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                    child: Center(
-                      child: AnimatedScale(
-                        scale: isSelected ? 1.08 : 1,
-                        duration: const Duration(milliseconds: 260),
-                        curve: Curves.easeOutBack,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Icon(
-                              isSelected
-                                  ? Icons.how_to_reg_rounded
-                                  : Icons.how_to_reg_outlined,
-                              size: 22,
-                              color: const Color(0xFF0F172A),
-                            ),
-                            Positioned(
-                              top: 2,
-                              right: 1,
-                              child: Container(
-                                padding: const EdgeInsets.all(1),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF0F172A),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.add,
-                                  size: 7,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                boxShadow: [
+                  BoxShadow(
+                    color: isSelected
+                        ? AppTheme.brandPrimary.withValues(alpha: 0.40)
+                        : (isDark
+                            ? Colors.black.withValues(alpha: 0.35)
+                            : const Color(0xFF0F172A).withValues(alpha: 0.08)),
+                    blurRadius: isSelected ? 12 : 16,
+                    offset: const Offset(0, 4),
+                  ),
+                  if (!isDark && !isSelected)
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.88),
+                      blurRadius: 3,
+                      offset: const Offset(0, -1),
+                    ),
+                ],
+              ),
+              child: ClipOval(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                  child: Center(
+                    child: _BouncingTabIcon(
+                      isSelected: isSelected,
+                      child: _SfCheckInIcon(
+                        isSelected: isSelected,
+                        color: isSelected
+                            ? Colors.white
+                            : (isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF334155)),
                       ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 2),
-              AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 220),
-                style: GoogleFonts.inter(
-                  fontSize: 9.5,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected
-                      ? const Color(0xFF0F172A)
-                      : const Color(0xFF64748B),
-                  letterSpacing: -0.2,
-                ),
-                child: const Text('Check-In'),
+            ),
+            const SizedBox(height: 3),
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              style: GoogleFonts.inter(
+                fontSize: 9.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                color: isSelected
+                    ? AppTheme.brandPrimary
+                    : (isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF475569)),
+                letterSpacing: -0.2,
               ),
-            ],
-          ),
+              child: const Text(
+                'Check-In',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// Fluid, spring-based sliding tab indicator that subtly stretches along the travel direction
+class _FluidGlassIndicator extends StatefulWidget {
+  final int selectedSlot;
+  final double itemWidth;
+  final bool isVisible;
+
+  const _FluidGlassIndicator({
+    required this.selectedSlot,
+    required this.itemWidth,
+    required this.isVisible,
+  });
+
+  @override
+  State<_FluidGlassIndicator> createState() => _FluidGlassIndicatorState();
+}
+
+class _FluidGlassIndicatorState extends State<_FluidGlassIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final CurvedAnimation _headCurve;
+  late final CurvedAnimation _tailCurve;
+
+  double _fromSlot = 0.0;
+  double _toSlot = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fromSlot = widget.selectedSlot.toDouble();
+    _toSlot = widget.selectedSlot.toDouble();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+
+    // Leading edge accelerates rapidly
+    _headCurve = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.0, 0.82, curve: Curves.easeOutCubic),
+    );
+
+    // Trailing edge lags slightly and finishes with an elastic spring overshoot
+    _tailCurve = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.10, 1.0, curve: Curves.easeOutBack),
+    );
+
+    _controller.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant _FluidGlassIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedSlot != oldWidget.selectedSlot) {
+      _fromSlot = _calculateCurrentVisualSlot();
+      _toSlot = widget.selectedSlot.toDouble();
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  double _calculateCurrentVisualSlot() {
+    if (_controller.isCompleted) return _toSlot;
+    final tailVal = _tailCurve.value;
+    return _fromSlot + (_toSlot - _fromSlot) * tailVal;
+  }
+
+  @override
+  void dispose() {
+    _headCurve.dispose();
+    _tailCurve.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final double dist = _toSlot - _fromSlot;
+        final double targetW = widget.itemWidth - 8;
+        final double startLeft = _fromSlot * widget.itemWidth + 4;
+        final double endLeft = _toSlot * widget.itemWidth + 4;
+
+        double left;
+        double width;
+
+        if (dist.abs() < 0.001) {
+          left = _toSlot * widget.itemWidth + 4;
+          width = targetW;
+        } else if (dist > 0) {
+          // Navigating to the RIGHT:
+          // Right edge (leading) moves first, left edge (trailing) follows with spring
+          final double headVal = _headCurve.value;
+          final double tailVal = _tailCurve.value;
+          final double delta = endLeft - startLeft;
+
+          // Subtle fluid stretch along travel direction (clamped to max 32% stretch)
+          final double stretch =
+              ((headVal - tailVal) * delta).clamp(0.0, targetW * 0.32);
+
+          left = startLeft + delta * tailVal;
+          width = targetW + stretch;
+        } else {
+          // Navigating to the LEFT:
+          // Left edge (leading) moves first, right edge (trailing) follows with spring
+          final double headVal = _headCurve.value;
+          final double tailVal = _tailCurve.value;
+          final double delta = startLeft - endLeft;
+
+          final double stretch =
+              ((headVal - tailVal) * delta).clamp(0.0, targetW * 0.32);
+
+          // Right edge position
+          final double rightEdge =
+              (startLeft + targetW) + (endLeft - startLeft) * tailVal;
+          width = targetW + stretch;
+          left = rightEdge - width;
+        }
+
+        return Positioned(
+          left: left,
+          top: 4,
+          bottom: 4,
+          width: width,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: widget.isVisible ? 1.0 : 0.0,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppTheme.brandAccent,
+                    AppTheme.brandPrimary,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Subtle 200–300ms fade-and-slide screen transition while preserving routes & state
+class _SmoothScreenSwitcher extends StatefulWidget {
+  final int currentIndex;
+  final List<Widget> children;
+
+  const _SmoothScreenSwitcher({
+    required this.currentIndex,
+    required this.children,
+  });
+
+  @override
+  State<_SmoothScreenSwitcher> createState() => _SmoothScreenSwitcherState();
+}
+
+class _SmoothScreenSwitcherState extends State<_SmoothScreenSwitcher>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.015),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+    _controller.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant _SmoothScreenSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.currentIndex != oldWidget.currentIndex) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: IndexedStack(
+          index: widget.currentIndex,
+          children: widget.children,
+        ),
+      ),
+    );
+  }
+}
+
+/// Spring bounce animation: selected icon scales 1.0 → 1.15 → 1.0 on tab selection
+class _BouncingTabIcon extends StatefulWidget {
+  final bool isSelected;
+  final Widget child;
+
+  const _BouncingTabIcon({
+    required this.isSelected,
+    required this.child,
+  });
+
+  @override
+  State<_BouncingTabIcon> createState() => _BouncingTabIconState();
+}
+
+class _BouncingTabIconState extends State<_BouncingTabIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.15)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 45,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.15, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 55,
+      ),
+    ]).animate(_controller);
+  }
+
+  @override
+  void didUpdateWidget(covariant _BouncingTabIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isSelected && !oldWidget.isSelected) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: widget.child,
+    );
+  }
+}
+
+/// Tactile press feedback: scales down to 0.94 on tap down, springs back to 1.0
+class _PressableGlassItem extends StatefulWidget {
+  final VoidCallback onTap;
+  final Widget child;
+  final String? tooltip;
+
+  const _PressableGlassItem({
+    required this.onTap,
+    required this.child,
+    this.tooltip,
+  });
+
+  @override
+  State<_PressableGlassItem> createState() => _PressableGlassItemState();
+}
+
+class _PressableGlassItemState extends State<_PressableGlassItem> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget content = AnimatedScale(
+      scale: _isPressed ? 0.94 : 1.0,
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutBack,
+      child: widget.child,
+    );
+
+    if (widget.tooltip != null) {
+      content = Tooltip(
+        message: widget.tooltip!,
+        waitDuration: const Duration(milliseconds: 500),
+        child: content,
+      );
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) {
+        setState(() => _isPressed = true);
+      },
+      onTapUp: (_) {
+        setState(() => _isPressed = false);
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      onTapCancel: () {
+        setState(() => _isPressed = false);
+      },
+      child: content,
+    );
+  }
+}
+
+/// SF Symbols-inspired `person.crop.circle.badge.checkmark`
+class _SfCheckInIcon extends StatelessWidget {
+  final bool isSelected;
+  final Color color;
+
+  const _SfCheckInIcon({
+    required this.isSelected,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(
+            isSelected
+                ? Icons.account_circle_rounded
+                : Icons.account_circle_outlined,
+            size: 24,
+            color: color,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(1.5),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : AppTheme.brandPrimary,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? AppTheme.brandPrimary : Colors.white,
+                  width: 1.0,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.check_rounded,
+                size: 8,
+                color: isSelected ? AppTheme.brandPrimary : Colors.white,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

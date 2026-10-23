@@ -13,6 +13,8 @@ import 'booking_checkout_screen.dart';
 import 'check_in_screen.dart';
 import 'booking_export_screen.dart';
 import 'whatsapp_screen.dart';
+import 'finance_screen.dart';
+import '../services/whatsapp_service.dart';
 import '../widgets/pressable_scale.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -39,11 +41,27 @@ class _DashboardScreenState extends State<DashboardScreen>
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchWhatsAppStatus();
+    });
+  }
+
+  void _fetchWhatsAppStatus() {
+    try {
+      final store = context.read<HotelStore>();
+      if (store.currentProperty.id.isNotEmpty) {
+        WhatsAppService.currentHotelId = store.currentProperty.id;
+      }
+      WhatsAppService.getStatus().catchError((_) => WhatsAppStatusData.initial());
+    } catch (_) {}
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) setState(() {});
+    if (state == AppLifecycleState.resumed && mounted) {
+      setState(() {});
+      _fetchWhatsAppStatus();
+    }
   }
 
   @override
@@ -76,6 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
+            _fetchWhatsAppStatus();
             await Future.delayed(const Duration(milliseconds: 300));
           },
           child: SingleChildScrollView(
@@ -87,9 +106,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 // ── 1. GREETING & TODAY'S OVERVIEW INFO (NO BG CARD - MATCHING IMAGE 1) ──
                 _buildGreetingOverview(context, store),
 
-                const SizedBox(height: 20),
-
-                // ── 2. QUICK ACTIONS (KEPT EXACTLY AS IT IS) ──
+                // ── 2. QUICK ACTIONS (KEPT EXACTLY AS IT WAS) ──
                 Text(
                   'Quick Actions',
                   style: GoogleFonts.outfit(
@@ -103,11 +120,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                 // 2x2 Gradient Quick Action Cards
                 Row(
                   children: [
-                    // Top Left: Reservation (Teal/Cyan Gradient)
+                    // Top Left: New Reservation
                     Expanded(
                       child: _buildGradientQuickCard(
-                        title: 'Reservation',
-                        icon: Icons.event_available_rounded,
+                        title: 'New Reservation',
+                        icon: Icons.edit_calendar_rounded,
                         gradientColors: const [
                           Color(0xFF00C9A7),
                           Color(0xFF00B4D8),
@@ -119,10 +136,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Top Right: Quick Check-in (Magenta/Pink Gradient)
+                    // Top Right: Guest Check-in
                     Expanded(
                       child: _buildGradientQuickCard(
-                        title: 'Quick Check-in',
+                        title: 'Guest Check-in',
                         icon: Icons.person_add_alt_1_rounded,
                         gradientColors: const [
                           Color(0xFFFF3366),
@@ -139,11 +156,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    // Bottom Left: Booking Register (Orange/Amber Gradient)
+                    // Bottom Left: Booking Records
                     Expanded(
                       child: _buildGradientQuickCard(
-                        title: 'Booking Register',
-                        icon: Icons.table_chart_rounded,
+                        title: 'Booking Records',
+                        icon: Icons.assignment_outlined,
                         gradientColors: const [
                           Color(0xFFFF9F1C),
                           Color(0xFFFF6B35),
@@ -158,11 +175,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Bottom Right: Dynamic Room Timeline (Blue Gradient)
+                    // Bottom Right: Activity Timeline
                     Expanded(
                       child: _buildGradientQuickCard(
-                        title: 'Timeline',
-                        icon: Icons.calendar_month_rounded,
+                        title: 'Activity Timeline',
+                        icon: Icons.history_rounded,
                         gradientColors: const [
                           Color(0xFF0369A1),
                           Color(0xFF1E3A8A),
@@ -179,9 +196,25 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ],
                 ),
 
-                const SizedBox(height: 18),
+                const SizedBox(height: 22),
 
-                // ── 3. QUICK LINKS ──
+                // ── 3. OVERVIEW SECTION TITLE ──
+                Text(
+                  'Overview',
+                  style: GoogleFonts.outfit(
+                    color: AppTheme.slateDark,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // ── 1x2 ROOM STATUS & TODAY'S COLLECTION WIDGETS ──
+                _buildDualSummaryCards(context, store, currencyFormat),
+
+                const SizedBox(height: 16),
+
+                // ── 3. WHATSAPP AUTOMATION QUICK LINK ──
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -195,30 +228,23 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ],
                   ),
-                  child: Column(
-                    children: [
-                      PressableScale(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const WhatsAppScreen(),
-                            ),
-                          );
-                        },
-                        child: _buildDashboardShortcutRow(
-                          icon: Icons.chat_rounded,
-                          title: 'WhatsApp Automation',
-                          subtitle: 'Pair QR code, edit templates & view logs',
+                  child: PressableScale(
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const WhatsAppScreen(),
                         ),
-                      ),
-                    ],
+                      );
+                      _fetchWhatsAppStatus();
+                    },
+                    child: ValueListenableBuilder<WhatsAppStatusData?>(
+                      valueListenable: WhatsAppService.statusNotifier,
+                      builder: (context, status, _) {
+                        return _buildWhatsAppShortcutRow(status);
+                      },
+                    ),
                   ),
                 ),
-
-                const SizedBox(height: 18),
-
-                // ── 4. 2x2 STATUS CARDS (CLEAN & MINIMAL WHITE CARDS) ──
-                _buildStatusCardsGrid(context, store, currencyFormat),
 
                 const SizedBox(height: 24),
 
@@ -436,7 +462,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     },
                   ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 84),
               ],
             ),
           ),
@@ -677,11 +703,46 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildDashboardShortcutRow({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
+  String _formatWhatsAppNumber(String raw) {
+    var clean = raw.trim();
+    if (clean.contains('@')) {
+      clean = clean.split('@').first;
+    }
+    if (clean.contains(':')) {
+      clean = clean.split(':').first;
+    }
+    if (clean.startsWith('+')) {
+      clean = clean.substring(1);
+    }
+    clean = clean.replaceAll(RegExp(r'\D'), '');
+    if (clean.length == 12 && clean.startsWith('91')) {
+      return '+91 ${clean.substring(2, 7)} ${clean.substring(7)}';
+    } else if (clean.length == 10) {
+      return '+91 ${clean.substring(0, 5)} ${clean.substring(5)}';
+    } else if (clean.isNotEmpty) {
+      return '+$clean';
+    }
+    return raw.trim();
+  }
+
+  Widget _buildWhatsAppShortcutRow(WhatsAppStatusData? status) {
+    final isConnected = status != null &&
+        (status.isReady || status.isConnected || status.status == 'CONNECTED');
+
+    final rawNumber = status?.connectedNumber?.trim() ?? '';
+    final pushName = status?.connectedPushname?.trim() ?? '';
+
+    String displayNumber = '';
+    if (isConnected) {
+      if (rawNumber.isNotEmpty) {
+        displayNumber = _formatWhatsAppNumber(rawNumber);
+      } else if (pushName.isNotEmpty) {
+        displayNumber = pushName;
+      } else {
+        displayNumber = 'WhatsApp Connected';
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
@@ -690,34 +751,97 @@ class _DashboardScreenState extends State<DashboardScreen>
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFFF1F3F5),
+              color: isConnected ? const Color(0xFFDCFCE7) : const Color(0xFFF1F3F5),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, color: AppTheme.slateDark, size: 22),
+            child: Icon(
+              Icons.chat_rounded,
+              color: isConnected ? const Color(0xFF16A34A) : AppTheme.slateDark,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  title,
+                  'WhatsApp Automation',
                   style: GoogleFonts.outfit(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.slateDark,
                   ),
                 ),
+                const SizedBox(height: 4),
+                // Status / Connected Number Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: isConnected ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isConnected ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: isConnected ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          isConnected ? displayNumber : 'Not connected',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: isConnected ? FontWeight.w600 : FontWeight.w500,
+                            color: isConnected
+                                ? const Color(0xFF15803D)
+                                : const Color(0xFF64748B), // Simple neutral grey - no red or yellow!
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isConnected) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '• Active',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF16A34A),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 3),
                 Text(
-                  subtitle,
+                  isConnected
+                      ? 'Automated guest alerts, templates & logs'
+                      : 'Pair QR code, edit templates & view logs',
                   style: GoogleFonts.inter(
-                    fontSize: 11,
+                    fontSize: 10.5,
                     color: AppTheme.slateMuted,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           const Icon(
             Icons.arrow_forward_ios_rounded,
             size: 14,
@@ -755,32 +879,29 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ],
         ),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Top Right Translucent Icon Badge
-            Align(
-              alignment: Alignment.topRight,
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.25),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(child: Icon(icon, color: Colors.white, size: 18)),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.25),
+                shape: BoxShape.circle,
               ),
+              child: Center(child: Icon(icon, color: Colors.white, size: 22)),
             ),
-
-            // Bottom Left Bold Label
             Text(
               title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.outfit(
                 color: Colors.white,
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
+                height: 1.15,
               ),
             ),
           ],
@@ -789,151 +910,465 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  // ── 4. 2x2 STATUS CARDS (CLEAN & MINIMAL WHITE CARDS) ──
-  Widget _buildStatusCardsGrid(
+  // ── 1x2 DUAL SUMMARY CARDS (ROOM STATUS & TODAY'S COLLECTION) ──
+  Widget _buildDualSummaryCards(
     BuildContext context,
     HotelStore store,
     NumberFormat currencyFormat,
   ) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            // Card 1: Occupied
-            Expanded(
-              child: _buildMinimalStatusCard(
-                icon: Icons.bed_rounded,
-                iconColor: const Color(0xFF3B82F6), // Blue
-                title: 'Occupied',
-                subtitle: 'Current rooms in use',
-                metric: store.occupiedRooms == 1
-                    ? '1 room'
-                    : '${store.occupiedRooms} rooms',
-                onTap: () => _showOccupancyDrawer(
-                  context,
-                  store,
-                  initialFilter: 'booked',
-                ),
-              ),
+    // 1. Pending dues & count of distinct guests with outstanding balances
+    double pendingDues = 0.0;
+    final pendingGuestIds = <String>{};
+    for (final bill in store.bills) {
+      if (bill.outstanding > 0) {
+        pendingDues += bill.outstanding;
+        final stay = store.stays.where((s) => s.id == bill.stayId).firstOrNull;
+        if (stay != null && stay.guestId.isNotEmpty) {
+          pendingGuestIds.add(stay.guestId);
+        } else {
+          pendingGuestIds.add(bill.id);
+        }
+      }
+    }
+    final pendingGuestsCount = pendingGuestIds.length;
+
+    // 2. Today's bookings count
+    final now = DateTime.now();
+    final todayBookingsCount = store.stays.where((s) {
+      return s.checkInAt.year == now.year &&
+          s.checkInAt.month == now.month &&
+          s.checkInAt.day == now.day;
+    }).length;
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── LEFT: Room Status ──
+          Expanded(
+            child: _buildRoomStatusWidget(context, store),
+          ),
+          const SizedBox(width: 12),
+          // ── RIGHT: Today's Collection ──
+          Expanded(
+            child: _buildCollectionSummaryWidget(
+              context,
+              store,
+              currencyFormat,
+              pendingDues: pendingDues,
+              pendingGuestsCount: pendingGuestsCount,
+              todayBookingsCount: todayBookingsCount,
             ),
-            const SizedBox(width: 10),
-            // Card 2: Vacant
-            Expanded(
-              child: _buildMinimalStatusCard(
-                icon: Icons.check_circle_outline_rounded,
-                iconColor: const Color(0xFF10B981), // Green
-                title: 'Vacant',
-                subtitle: 'Ready to sell',
-                metric: store.vacantRooms == 1
-                    ? '1 room'
-                    : '${store.vacantRooms} rooms',
-                onTap: () =>
-                    _showOccupancyDrawer(context, store, initialFilter: 'free'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            // Card 3: Needs Cleaning
-            Expanded(
-              child: _buildMinimalStatusCard(
-                icon: Icons.cleaning_services_outlined,
-                iconColor: const Color(0xFFF59E0B), // Orange / Amber
-                title: 'Needs Cleaning',
-                subtitle: 'Housekeeping status',
-                metric: store.cleaningRooms == 1
-                    ? '1 room'
-                    : '${store.cleaningRooms} rooms',
-                onTap: () => _showOccupancyDrawer(
-                  context,
-                  store,
-                  initialFilter: 'cleaning',
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            // Card 4: Today's Collection
-            Expanded(
-              child: _buildMinimalStatusCard(
-                icon: Icons.account_balance_wallet_outlined,
-                iconColor: const Color(0xFFA855F7), // Purple
-                title: 'Today\'s Collection',
-                subtitle: 'Payments recorded today',
-                metric: currencyFormat.format(store.revenueToday),
-                onTap: () => _showCollectionDrawer(context, store),
-              ),
-            ),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildMinimalStatusCard({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required String metric,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildRoomStatusWidget(BuildContext context, HotelStore store) {
     return PressableScale(
-      onTap: onTap,
-      pressedScale: 0.95,
+      onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'all'),
+      pressedScale: 0.97,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppTheme.slateBorder),
+          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.02),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
+              color: const Color(0xFF334155).withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, color: iconColor, size: 21),
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: const Icon(
+                        Icons.bed_rounded,
+                        color: Color(0xFF2563EB),
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Room Status',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.slateDark,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Occupancy Rate
                 Text(
-                  metric,
+                  '${store.occupancyRate}%',
                   style: GoogleFonts.outfit(
-                    color: AppTheme.slateDark,
-                    fontSize: 13,
+                    fontSize: 24,
                     fontWeight: FontWeight.bold,
+                    color: const Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // Progress bar
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: store.totalRooms > 0
+                        ? (store.occupiedRooms / store.totalRooms).clamp(0.0, 1.0)
+                        : 0.0,
+                    minHeight: 5,
+                    backgroundColor: const Color(0xFFDBEAFE).withValues(alpha: 0.7),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${store.occupiedRooms} of ${store.totalRooms} rooms occupied',
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    color: AppTheme.slateMuted,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+
+                const SizedBox(height: 10),
+                const Divider(height: 1, thickness: 0.6, color: Color(0xFFF1F5F9)),
+                const SizedBox(height: 10),
+
+                // Status rows (Clean, no icons, neutral numbers)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'free'),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Vacant & ready',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF1E293B),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        '${store.vacantRooms}',
+                        style: GoogleFonts.outfit(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1E293B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'cleaning'),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Needs cleaning',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF1E293B),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        '${store.cleaningRooms}',
+                        style: GoogleFonts.outfit(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1E293B),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              style: GoogleFonts.outfit(
-                color: AppTheme.slateDark,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.2,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: GoogleFonts.inter(
-                color: AppTheme.slateMuted,
-                fontSize: 11,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+
+            // Bottom Redirection Button (Same styling)
+            _buildCardRedirectAction(
+              label: 'View room status',
+              onTap: () => _showOccupancyDrawer(context, store, initialFilter: 'all'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollectionSummaryWidget(
+    BuildContext context,
+    HotelStore store,
+    NumberFormat currencyFormat, {
+    required double pendingDues,
+    required int pendingGuestsCount,
+    required int todayBookingsCount,
+  }) {
+    return PressableScale(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const FinanceScreen()),
+        );
+      },
+      pressedScale: 0.97,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF334155).withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: const Icon(
+                        Icons.account_balance_wallet_rounded,
+                        color: Color(0xFF2563EB),
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          "Today's Collection",
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.slateDark,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Revenue Metric
+                Text(
+                  currencyFormat.format(store.revenueToday),
+                  style: GoogleFonts.outfit(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // Height matching container bar
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    height: 5,
+                    color: const Color(0xFFEFF6FF),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Payments received today',
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    color: AppTheme.slateMuted,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+
+                const SizedBox(height: 10),
+                const Divider(height: 1, thickness: 0.6, color: Color(0xFFF1F5F9)),
+                const SizedBox(height: 10),
+
+                // Row 1: Pending Dues (Clean, no icons, neutral numbers)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const FinanceScreen(initialTab: 2),
+                      ),
+                    );
+                  },
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Pending dues',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF1E293B),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        currencyFormat.format(pendingDues),
+                        style: GoogleFonts.outfit(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1E293B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Row 2: Today's Bookings (Clean, no icons, neutral numbers)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "Today's bookings",
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF1E293B),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      '$todayBookingsCount',
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF1E293B),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            // Bottom Redirection Button (Same styling)
+            _buildCardRedirectAction(
+              label: 'View money status',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const FinanceScreen()),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── UNIFIED CARD REDIRECTION ACTION (IDENTICAL STYLING) ──
+  Widget _buildCardRedirectAction({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SizedBox(
+        width: double.infinity,
+        height: 34,
+        child: ElevatedButton(
+          onPressed: onTap,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2563EB),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    letterSpacing: -0.1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.arrow_forward_rounded,
+                size: 13,
+                color: Colors.white,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1397,6 +1832,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     HotelStore store, {
     String initialFilter = 'all',
   }) {
+    String activeFilter = initialFilter;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1404,7 +1840,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
-            String activeFilter = initialFilter;
 
             final rooms = store.rooms;
             final bookedRooms = rooms
@@ -1867,175 +2302,6 @@ class _DashboardScreenState extends State<DashboardScreen>
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
             color: isSelected ? Colors.white : AppTheme.slateMuted,
           ),
-        ),
-      ),
-    );
-  }
-
-  // ── TODAY'S COLLECTION DRAWER ──
-  void _showCollectionDrawer(BuildContext context, HotelStore store) {
-    final currencyFormat = NumberFormat.currency(
-      locale: 'en_IN',
-      symbol: '₹',
-      decimalDigits: 0,
-    );
-    final now = DateTime.now();
-    final todayPayments = store.payments.where((p) {
-      return p.recordedAt.year == now.year &&
-          p.recordedAt.month == now.month &&
-          p.recordedAt.day == now.day;
-    }).toList();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        height: MediaQuery.of(ctx).size.height * 0.65,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppTheme.slateBorder,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Today\'s Payment Receipts',
-                      style: GoogleFonts.outfit(
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.slateDark,
-                      ),
-                    ),
-                    Text(
-                      'Total Collected: ${currencyFormat.format(store.revenueToday)}',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppTheme.slateMuted,
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F9ED),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    currencyFormat.format(store.revenueToday),
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF34C759),
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: todayPayments.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.receipt_long_outlined,
-                            size: 48,
-                            color: Colors.grey.shade300,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'No Payments Recorded Today',
-                            style: GoogleFonts.outfit(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: AppTheme.slateDark,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Payments from advance check-ins or checkout settlements appear here.',
-                            style: GoogleFonts.inter(
-                              color: AppTheme.slateMuted,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: todayPayments.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, i) {
-                        final p = todayPayments[i];
-                        return Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppTheme.slateBorder),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${p.method.toUpperCase()} • ${p.paymentType.toUpperCase()}',
-                                    style: GoogleFonts.inter(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                      color: AppTheme.slateDark,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Recorded: ${DateFormat('hh:mm a').format(p.recordedAt)} ${p.reference != null ? '• Ref: ${p.reference}' : ''}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10.5,
-                                      color: AppTheme.slateMuted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Text(
-                                currencyFormat.format(p.amount),
-                                style: GoogleFonts.outfit(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: const Color(0xFF059669),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
         ),
       ),
     );

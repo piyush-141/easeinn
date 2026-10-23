@@ -5,6 +5,7 @@ import '../models/room.dart';
 import '../models/guest.dart';
 import '../models/stay.dart';
 import '../models/bill.dart';
+import '../models/expense.dart';
 import 'whatsapp_service.dart';
 import 'local_store_service.dart';
 import 'supabase_sync_service.dart';
@@ -97,16 +98,17 @@ class HotelStore extends ChangeNotifier {
 
       // 2. Synchronize with Supabase if client is active and UUID is valid
       if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(_currentProperty.id)) {
-        await SupabaseSyncService.syncProperty(_currentProperty);
-        await SupabaseSyncService.syncRooms(_currentProperty.id, _rooms);
-        for (final g in _guests) {
-          await SupabaseSyncService.syncGuest(g);
-        }
-        for (final s in _stays) {
-          await SupabaseSyncService.syncStay(s);
-        }
+        // Push all local data to Supabase first (handles offline edits)
+        await SupabaseSyncService.pushAllData(
+          property: _currentProperty,
+          rooms: _rooms,
+          guests: _guests,
+          stays: _stays,
+          expenses: _expenses,
+          bills: _bills,
+        );
 
-        // Pull remote changes if available
+        // Pull remote changes to merge in any changes from other devices
         final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
         if (remote != null) {
           _applyRemoteData(remote);
@@ -172,6 +174,117 @@ class HotelStore extends ChangeNotifier {
   final List<Stay> _stays = [];
   final List<Bill> _bills = [];
   final List<Payment> _payments = [];
+  final List<Expense> _expenses = [];
+
+  List<Expense> get expenses => List.unmodifiable(
+      _expenses.where((e) => e.propertyId == _currentProperty.id).toList()
+        ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt)));
+
+  /// Add a new expense and persist to local cache + Supabase
+  Future<void> addExpense({
+    required double amount,
+    required String category,
+    required String paymentMethod,
+    String? reference,
+    String? notes,
+    DateTime? recordedAt,
+  }) async {
+    final isUuid = SupabaseSyncService.isValidUuid(_currentProperty.id);
+    final id = isUuid
+        ? SupabaseSyncService.generateUuid()
+        : 'exp-${DateTime.now().millisecondsSinceEpoch}';
+    final expense = Expense(
+      id: id,
+      propertyId: _currentProperty.id,
+      amount: amount,
+      category: category,
+      paymentMethod: paymentMethod,
+      reference: reference,
+      notes: notes,
+      addedBy: staffName,
+      recordedAt: recordedAt ?? DateTime.now(),
+    );
+    _expenses.insert(0, expense);
+    notifyListeners();
+    saveToLocalStorage();
+    await SupabaseSyncService.syncExpense(expense);
+  }
+
+  /// Delete an expense by ID
+  Future<void> deleteExpense(String expenseId) async {
+    _expenses.removeWhere((e) => e.id == expenseId);
+    notifyListeners();
+    saveToLocalStorage();
+    await SupabaseSyncService.deleteExpense(expenseId);
+  }
+
+  /// Record a payment towards a bill (advance or partial)
+  void recordPartialPayment({
+    required String billId,
+    required double amount,
+    required String method,
+    String? reference,
+  }) {
+    final billIndex = _bills.indexWhere((b) => b.id == billId);
+    if (billIndex == -1) return;
+
+    final isUuid = SupabaseSyncService.isValidUuid(_currentProperty.id);
+    final bill = _bills[billIndex];
+    final payment = Payment(
+      id: isUuid ? SupabaseSyncService.generateUuid() : 'pay-${DateTime.now().millisecondsSinceEpoch}',
+      propertyId: _currentProperty.id,
+      billId: bill.id,
+      amount: amount,
+      method: method,
+      paymentType: bill.amountPaid > 0 ? 'partial' : 'advance',
+      reference: reference,
+      recordedAt: DateTime.now(),
+    );
+    bill.payments.add(payment);
+    _payments.insert(0, payment);
+
+    bill.amountPaid += amount;
+    bill.outstanding = (bill.subtotal - bill.amountPaid).clamp(0.0, bill.subtotal);
+    if (bill.outstanding <= 0.01) {
+      bill.outstanding = 0.0;
+    }
+
+    notifyListeners();
+    saveToLocalStorage();
+    Future.microtask(() async {
+      await SupabaseSyncService.syncBill(bill, _currentProperty.id);
+      await SupabaseSyncService.syncPayment(payment);
+      final stay = _stays.where((s) => s.id == bill.stayId).firstOrNull;
+      if (stay != null) {
+        await SupabaseSyncService.syncStay(stay, knownRooms: _rooms);
+      }
+    });
+  }
+
+  /// Merge remote expenses fetched from Supabase
+  void mergeRemoteExpenses(List<Map<String, dynamic>> remoteList) {
+    bool changed = false;
+    for (final raw in remoteList) {
+      try {
+        final exp = Expense.fromJson(raw);
+        final idx = _expenses.indexWhere((e) => e.id == exp.id);
+        if (idx == -1) {
+          _expenses.add(exp);
+          changed = true;
+        } else {
+          _expenses[idx] = exp;
+          changed = true;
+        }
+      } catch (e) {
+        debugPrint('[HotelStore] Expense parse notice: $e');
+      }
+    }
+    _expenses.sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+    if (changed) {
+      notifyListeners();
+      saveToLocalStorage();
+    }
+  }
 
   HotelStore() {
     _properties = [_currentProperty];
@@ -188,6 +301,7 @@ class HotelStore extends ChangeNotifier {
     final count = prop.totalRooms > 0 ? prop.totalRooms : 12;
     final half = (count / 2).ceil();
     final List<Room> propRooms = [];
+    final isUuid = SupabaseSyncService.isValidUuid(prop.id);
 
     // Floor 1
     for (int i = 1; i <= half && propRooms.length < count; i++) {
@@ -202,7 +316,7 @@ class HotelStore extends ChangeNotifier {
         rate = 5500.0;
       }
       propRooms.add(Room(
-        id: 'r-${prop.id}-$numStr',
+        id: isUuid ? SupabaseSyncService.generateUuid() : 'r-${prop.id}-$numStr',
         propertyId: prop.id,
         roomNumber: numStr,
         floor: 1,
@@ -225,7 +339,7 @@ class HotelStore extends ChangeNotifier {
         rate = 5500.0;
       }
       propRooms.add(Room(
-        id: 'r-${prop.id}-$numStr',
+        id: isUuid ? SupabaseSyncService.generateUuid() : 'r-${prop.id}-$numStr',
         propertyId: prop.id,
         roomNumber: numStr,
         floor: 2,
@@ -303,6 +417,7 @@ class HotelStore extends ChangeNotifier {
   void addFloor(int floorNumber) {
     _customFloors.add(floorNumber);
     notifyListeners();
+    saveToLocalStorage();
   }
 
   bool deleteFloor(int floorNumber) {
@@ -311,6 +426,7 @@ class HotelStore extends ChangeNotifier {
     _rooms.removeWhere((r) => r.floor == floorNumber);
     _customFloors.remove(floorNumber);
     notifyListeners();
+    saveToLocalStorage();
     return true;
   }
 
@@ -320,8 +436,9 @@ class HotelStore extends ChangeNotifier {
     required String categoryName,
     required double baseRate,
   }) {
+    final isUuid = SupabaseSyncService.isValidUuid(_currentProperty.id);
     final newRoom = Room(
-      id: 'r-${DateTime.now().millisecondsSinceEpoch}',
+      id: isUuid ? SupabaseSyncService.generateUuid() : 'r-${DateTime.now().millisecondsSinceEpoch}',
       propertyId: _currentProperty.id,
       roomNumber: roomNumber.trim(),
       floor: floor,
@@ -335,6 +452,18 @@ class HotelStore extends ChangeNotifier {
       return a.roomNumber.compareTo(b.roomNumber);
     });
     notifyListeners();
+    saveToLocalStorage();
+    Future.microtask(() async {
+      final mapping = await SupabaseSyncService.syncRooms(_currentProperty.id, _rooms);
+      final assignedId = mapping[roomNumber.trim()];
+      if (assignedId != null) {
+        final idx = _rooms.indexWhere((r) => r.roomNumber == roomNumber.trim());
+        if (idx != -1) {
+          _rooms[idx] = _rooms[idx].copyWith(id: assignedId);
+          saveToLocalStorage();
+        }
+      }
+    });
   }
 
   bool deleteRoom(String roomId) {
@@ -342,6 +471,10 @@ class HotelStore extends ChangeNotifier {
     if (hasActiveStay) return false;
     _rooms.removeWhere((r) => r.id == roomId);
     notifyListeners();
+    saveToLocalStorage();
+    Future.microtask(() async {
+      await SupabaseSyncService.deleteRoom(_currentProperty.id, roomId);
+    });
     return true;
   }
 
@@ -352,19 +485,19 @@ class HotelStore extends ChangeNotifier {
     if (_stays.any((s) => s.propertyId == 'prop-001')) return;
     final now = DateTime.now();
 
-    // Guest 1: Ethan Harper (Room 101) - Checked in 2 days ago at 12:00 PM, checking out tomorrow at 11:00 AM
+    // Guest 1: Rahul Sharma (Room 101) - Checked in 2 days ago at 12:00 PM, checking out tomorrow at 11:00 AM
     final g1 = Guest(
       id: 'g-ethan',
       propertyId: 'prop-001',
-      fullName: 'Ethan Harper',
+      fullName: 'Rahul Sharma',
       phone: '+91 98451 23456',
-      email: 'ethan.h@example.com',
+      email: 'rahul.s@example.com',
       idType: 'passport',
       idNumberMasked: 'Z****482',
       idNumber: 'Z8471482',
       dateOfBirth: '1992-05-14',
       gender: 'Male',
-      fatherName: 'William Harper',
+      fatherName: 'William Sharma',
       address: 'Flat 4B, Kensington Court, Richmond Road, Bengaluru',
       pincode: '560025',
       notes: 'Frequent business traveler, prefers upper floor',
@@ -402,28 +535,39 @@ class HotelStore extends ChangeNotifier {
       final bill1 = Bill(
         id: 'bill-101',
         stayId: stay1.id,
-        billNumber: 'INV-2026-101',
-        subtotal: 6600.0,
-        amountPaid: 2200.0,
+        billNumber: 'BK-1042',
+        subtotal: 6400.0,
+        amountPaid: 2000.0,
         outstanding: 4400.0,
         status: 'pending',
       );
+      final pay1 = Payment(
+        id: 'pay-101',
+        propertyId: 'prop-001',
+        billId: bill1.id,
+        amount: 2000.0,
+        method: 'upi',
+        paymentType: 'advance',
+        recordedAt: DateTime(now.year, now.month, now.day, 10, 42),
+      );
+      bill1.payments.add(pay1);
+      _payments.add(pay1);
       _bills.add(bill1);
     }
 
-    // Guest 2: Priya Sharma (with co-guest) (Room 104) - Checked in yesterday at 2:30 PM, checkout in 3 days at 11:00 AM
+    // Guest 2: Priya Deshmukh (with co-guest) (Room 104) - Checked in yesterday at 2:30 PM, checkout in 3 days at 11:00 AM
     final g2 = Guest(
       id: 'g-priya',
       propertyId: 'prop-001',
-      fullName: 'Priya Sharma',
+      fullName: 'Priya Deshmukh',
       phone: '+91 97412 88990',
-      email: 'priya.s@example.com',
+      email: 'priya.d@example.com',
       idType: 'aadhaar',
       idNumberMasked: 'XXXX-XXXX-9182',
       idNumber: '9182-5501-9182',
       dateOfBirth: '1995-11-22',
       gender: 'Female',
-      fatherName: 'Rameshwar Sharma',
+      fatherName: 'Rameshwar Deshmukh',
       address: 'House 14, Sector 7, HSR Layout, Bengaluru',
       pincode: '560102',
       notes: 'Anniversary stay',
@@ -432,14 +576,14 @@ class HotelStore extends ChangeNotifier {
     final g2Co = Guest(
       id: 'g-rajesh',
       propertyId: 'prop-001',
-      fullName: 'Rajesh Sharma',
+      fullName: 'Rajesh Deshmukh',
       phone: '+91 97412 88991',
       idType: 'aadhaar',
       idNumberMasked: 'XXXX-XXXX-4321',
       idNumber: '4321-9988-4321',
       dateOfBirth: '1993-08-19',
       gender: 'Male',
-      fatherName: 'Rameshwar Sharma',
+      fatherName: 'Rameshwar Deshmukh',
       address: 'House 14, Sector 7, HSR Layout, Bengaluru',
       pincode: '560102',
       staysCount: 1,
@@ -477,12 +621,23 @@ class HotelStore extends ChangeNotifier {
       final bill2 = Bill(
         id: 'bill-104',
         stayId: stay2.id,
-        billNumber: 'INV-2026-104',
-        subtotal: 14000.0,
-        amountPaid: 7000.0,
+        billNumber: 'BK-1045',
+        subtotal: 8500.0,
+        amountPaid: 1500.0,
         outstanding: 7000.0,
         status: 'pending',
       );
+      final pay2 = Payment(
+        id: 'pay-104',
+        propertyId: 'prop-001',
+        billId: bill2.id,
+        amount: 1500.0,
+        method: 'upi',
+        paymentType: 'advance',
+        recordedAt: DateTime(now.year, now.month, now.day - 1, 14, 30),
+      );
+      bill2.payments.add(pay2);
+      _payments.add(pay2);
       _bills.add(bill2);
     }
 
@@ -603,6 +758,30 @@ class HotelStore extends ChangeNotifier {
         room: _rooms[r105Index],
       );
       _stays.add(stay5);
+    }
+
+    // Seed demo expenses for prop-001
+    if (_expenses.where((e) => e.propertyId == 'prop-001').isEmpty) {
+      _expenses.addAll([
+        Expense(
+          id: 'exp-demo-01',
+          propertyId: 'prop-001',
+          amount: 650.0,
+          category: 'housekeeping',
+          paymentMethod: 'cash',
+          notes: 'Laundry Services',
+          recordedAt: DateTime(now.year, now.month, now.day, 9, 15),
+        ),
+        Expense(
+          id: 'exp-demo-02',
+          propertyId: 'prop-001',
+          amount: 2300.0,
+          category: 'utilities',
+          paymentMethod: 'bank_transfer',
+          notes: 'Electricity Bill',
+          recordedAt: DateTime(now.year, now.month, now.day - 1, 16, 45),
+        ),
+      ]);
     }
   }
 
@@ -802,7 +981,7 @@ class HotelStore extends ChangeNotifier {
             ? 'XXXX-XXXX-${cgIdNum.substring(cgIdNum.length - 4)}'
             : cgIdNum;
         final newCg = Guest(
-          id: 'guest-${DateTime.now().millisecondsSinceEpoch}-${i + 1}',
+          id: isUuid ? SupabaseSyncService.generateUuid() : 'guest-${DateTime.now().millisecondsSinceEpoch}-${i + 1}',
           propertyId: _currentProperty.id,
           fullName: cgName,
           phone: (cg['phone'] as String?)?.trim() ?? '',
@@ -856,6 +1035,7 @@ class HotelStore extends ChangeNotifier {
     // 3. Create Bill & Line Item
     final newBill = Bill(
       id: billId,
+      propertyId: _currentProperty.id,
       stayId: stayId,
       billNumber: billNumber,
       subtotal: totalStayAmount,
@@ -864,7 +1044,7 @@ class HotelStore extends ChangeNotifier {
       status: 'draft',
       lineItems: [
         BillLineItem(
-          id: 'li-${DateTime.now().millisecondsSinceEpoch}',
+          id: isUuid ? SupabaseSyncService.generateUuid() : 'li-${DateTime.now().millisecondsSinceEpoch}',
           description: 'Room Stay ($nights night${nights > 1 ? 's' : ''})',
           quantity: nights,
           unitPrice: nightlyRate,
@@ -876,7 +1056,9 @@ class HotelStore extends ChangeNotifier {
     // 4. Record advance payment if paid
     if (advanceAmount > 0) {
       final payment = Payment(
-        id: 'pay-${DateTime.now().millisecondsSinceEpoch}',
+        id: isUuid ? SupabaseSyncService.generateUuid() : 'pay-${DateTime.now().millisecondsSinceEpoch}',
+        propertyId: _currentProperty.id,
+        billId: billId,
         amount: advanceAmount,
         method: paymentMethod,
         paymentType: 'advance',
@@ -898,9 +1080,15 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
     saveToLocalStorage();
-    SupabaseSyncService.syncGuest(newGuest);
-    SupabaseSyncService.syncStay(newStay);
-    SupabaseSyncService.updateRoomStatus(_currentProperty.id, targetRoom.roomNumber, RoomStatus.occupied);
+    Future.microtask(() async {
+      await SupabaseSyncService.syncGuest(newGuest);
+      for (final cg in registeredCoGuests) {
+        await SupabaseSyncService.syncGuest(cg);
+      }
+      await SupabaseSyncService.syncStay(newStay, knownRooms: _rooms);
+      await SupabaseSyncService.syncBill(newBill, _currentProperty.id);
+      await SupabaseSyncService.updateRoomStatus(_currentProperty.id, targetRoom.roomNumber, RoomStatus.occupied);
+    });
 
     // Trigger automated WhatsApp check-in notification (non-blocking)
     if (sendWhatsApp && phone.trim().isNotEmpty) {
@@ -991,9 +1179,10 @@ class HotelStore extends ChangeNotifier {
     }
 
     final targetRoom = _rooms[roomIndex];
-    final guestId = 'guest-${DateTime.now().millisecondsSinceEpoch}';
-    final stayId = 'res-${DateTime.now().millisecondsSinceEpoch}';
-    final billId = 'bill-${DateTime.now().millisecondsSinceEpoch}';
+    final isUuid = SupabaseSyncService.isValidUuid(_currentProperty.id);
+    final guestId = isUuid ? SupabaseSyncService.generateUuid() : 'guest-${DateTime.now().millisecondsSinceEpoch}';
+    final stayId = isUuid ? SupabaseSyncService.generateUuid() : 'res-${DateTime.now().millisecondsSinceEpoch}';
+    final billId = isUuid ? SupabaseSyncService.generateUuid() : 'bill-${DateTime.now().millisecondsSinceEpoch}';
     final billNumber = 'RES-2026-${(_bills.length + 1).toString().padLeft(4, '0')}';
 
     final maskedId = idNumber.length > 4
@@ -1079,6 +1268,7 @@ class HotelStore extends ChangeNotifier {
 
     final newBill = Bill(
       id: billId,
+      propertyId: _currentProperty.id,
       stayId: stayId,
       billNumber: billNumber,
       subtotal: totalStayAmount,
@@ -1087,7 +1277,7 @@ class HotelStore extends ChangeNotifier {
       status: 'reserved',
       lineItems: [
         BillLineItem(
-          id: 'li-${DateTime.now().millisecondsSinceEpoch}',
+          id: isUuid ? SupabaseSyncService.generateUuid() : 'li-${DateTime.now().millisecondsSinceEpoch}',
           description: 'Advance Booking Reservation ($nights night${nights > 1 ? 's' : ''})',
           quantity: nights,
           unitPrice: nightlyRate,
@@ -1098,7 +1288,9 @@ class HotelStore extends ChangeNotifier {
 
     if (advanceAmount > 0) {
       final payment = Payment(
-        id: 'pay-${DateTime.now().millisecondsSinceEpoch}',
+        id: isUuid ? SupabaseSyncService.generateUuid() : 'pay-${DateTime.now().millisecondsSinceEpoch}',
+        propertyId: _currentProperty.id,
+        billId: billId,
         amount: advanceAmount,
         method: paymentMethod,
         paymentType: 'advance',
@@ -1119,6 +1311,18 @@ class HotelStore extends ChangeNotifier {
     }
 
     notifyListeners();
+    saveToLocalStorage();
+    Future.microtask(() async {
+      await SupabaseSyncService.syncGuest(newGuest);
+      for (final cg in registeredCoGuests) {
+        await SupabaseSyncService.syncGuest(cg);
+      }
+      await SupabaseSyncService.syncStay(newStay, knownRooms: _rooms);
+      await SupabaseSyncService.syncBill(newBill, _currentProperty.id);
+      if (targetRoom.status == RoomStatus.reserved) {
+        await SupabaseSyncService.updateRoomStatus(_currentProperty.id, targetRoom.roomNumber, RoomStatus.reserved);
+      }
+    });
 
     // Trigger automated WhatsApp booking confirmation notification (non-blocking)
     if (sendWhatsApp && phone.trim().isNotEmpty) {
@@ -1153,10 +1357,11 @@ class HotelStore extends ChangeNotifier {
     final stayIndex = _stays.indexWhere((s) => s.id == stayId);
     if (stayIndex == -1) throw Exception('Reservation not found');
     final targetStay = _stays[stayIndex];
-    final roomIndex = _rooms.indexWhere((r) => r.id == targetStay.roomId);
+    final roomIndex = _rooms.indexWhere((r) => r.id == targetStay.roomId || r.roomNumber == targetStay.room?.roomNumber);
 
     targetStay.status = StayStatus.active;
     if (roomIndex != -1) {
+      targetStay.roomId = _rooms[roomIndex].id;
       _rooms[roomIndex] = _rooms[roomIndex].copyWith(
         status: RoomStatus.occupied,
         currentGuestName: targetStay.guest?.fullName,
@@ -1166,6 +1371,13 @@ class HotelStore extends ChangeNotifier {
       );
     }
     notifyListeners();
+    saveToLocalStorage();
+    Future.microtask(() async {
+      await SupabaseSyncService.syncStay(targetStay, knownRooms: _rooms);
+      if (roomIndex != -1) {
+        await SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.occupied);
+      }
+    });
   }
 
   // 1e. Cancel Reservation
@@ -1174,7 +1386,7 @@ class HotelStore extends ChangeNotifier {
     if (stayIndex != -1) {
       final stay = _stays[stayIndex];
       stay.status = StayStatus.checkedOut;
-      final roomIndex = _rooms.indexWhere((r) => r.id == stay.roomId);
+      final roomIndex = _rooms.indexWhere((r) => r.id == stay.roomId || r.roomNumber == stay.room?.roomNumber);
       if (roomIndex != -1 && _rooms[roomIndex].status == RoomStatus.reserved) {
         _rooms[roomIndex] = _rooms[roomIndex].copyWith(
           status: RoomStatus.vacant,
@@ -1182,6 +1394,13 @@ class HotelStore extends ChangeNotifier {
         );
       }
       notifyListeners();
+      saveToLocalStorage();
+      Future.microtask(() async {
+        await SupabaseSyncService.syncStay(stay, knownRooms: _rooms);
+        if (roomIndex != -1) {
+          await SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.vacant);
+        }
+      });
     }
   }
 
@@ -1198,7 +1417,7 @@ class HotelStore extends ChangeNotifier {
     if (stayIndex == -1) throw Exception('Active stay not found');
 
     final targetStay = _stays[stayIndex];
-    final roomIndex = _rooms.indexWhere((r) => r.id == targetStay.roomId);
+    final roomIndex = _rooms.indexWhere((r) => r.id == targetStay.roomId || r.roomNumber == targetStay.room?.roomNumber);
 
     // Finalize stay
     targetStay.status = StayStatus.checkedOut;
@@ -1209,9 +1428,24 @@ class HotelStore extends ChangeNotifier {
     Bill bill;
     if (billIndex != -1) {
       bill = _bills[billIndex];
+      if (bill.propertyId.isEmpty) {
+        bill.propertyId = _currentProperty.id;
+      }
+      if (!SupabaseSyncService.isValidUuid(bill.id)) {
+        final oldBillId = bill.id;
+        final newBillId = SupabaseSyncService.generateUuid();
+        bill.id = newBillId;
+        for (final p in bill.payments) {
+          if (p.billId == oldBillId || p.billId == null || p.billId!.isEmpty) {
+            p.billId = newBillId;
+          }
+        }
+      }
       if (paymentAmount > 0) {
         final payment = Payment(
-          id: 'pay-${DateTime.now().millisecondsSinceEpoch}',
+          id: SupabaseSyncService.generateUuid(),
+          propertyId: _currentProperty.id,
+          billId: bill.id,
           amount: paymentAmount,
           method: paymentMethod,
           paymentType: 'full',
@@ -1223,15 +1457,29 @@ class HotelStore extends ChangeNotifier {
       bill.outstanding = (bill.subtotal - bill.amountPaid).clamp(0.0, bill.subtotal);
       bill.status = 'finalized';
     } else {
+      final billId = SupabaseSyncService.generateUuid();
       bill = Bill(
-        id: 'bill-${DateTime.now().millisecondsSinceEpoch}',
+        id: billId,
+        propertyId: _currentProperty.id,
         stayId: stayId,
-        billNumber: 'INV-2026-FINAL',
+        billNumber: 'INV-${DateTime.now().millisecondsSinceEpoch}',
         subtotal: targetStay.nightlyRate,
-        amountPaid: targetStay.nightlyRate,
-        outstanding: 0,
+        amountPaid: paymentAmount > 0 ? paymentAmount : targetStay.nightlyRate,
+        outstanding: (targetStay.nightlyRate - paymentAmount).clamp(0.0, targetStay.nightlyRate),
         status: 'finalized',
       );
+      if (paymentAmount > 0) {
+        final payment = Payment(
+          id: SupabaseSyncService.generateUuid(),
+          propertyId: _currentProperty.id,
+          billId: bill.id,
+          amount: paymentAmount,
+          method: paymentMethod,
+          paymentType: 'full',
+        );
+        bill.payments.add(payment);
+        _payments.insert(0, payment);
+      }
       _bills.insert(0, bill);
     }
 
@@ -1245,10 +1493,16 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
     saveToLocalStorage();
-    SupabaseSyncService.syncStay(targetStay);
-    if (roomIndex != -1) {
-      SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.needsCleaning);
-    }
+    Future.microtask(() async {
+      await SupabaseSyncService.syncStay(targetStay, knownRooms: _rooms);
+      await SupabaseSyncService.syncBill(bill);
+      for (final p in bill.payments) {
+        await SupabaseSyncService.syncPayment(p);
+      }
+      if (roomIndex != -1) {
+        await SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.needsCleaning);
+      }
+    });
 
     // Trigger automated WhatsApp checkout thank-you notification with straight PDF invoice (non-blocking)
     final guestPhone = targetStay.guest?.phone;
@@ -1277,7 +1531,7 @@ class HotelStore extends ChangeNotifier {
 
   // 3. Mark Room as Clean (Housekeeping)
   void markRoomClean(String roomId) {
-    final index = _rooms.indexWhere((r) => r.id == roomId);
+    final index = _rooms.indexWhere((r) => r.id == roomId || r.roomNumber == roomId);
     if (index != -1) {
       _rooms[index] = _rooms[index].copyWith(
         status: RoomStatus.vacant,
@@ -1291,7 +1545,7 @@ class HotelStore extends ChangeNotifier {
 
   // 4. Update room status directly
   void updateRoomStatus(String roomId, RoomStatus status) {
-    final index = _rooms.indexWhere((r) => r.id == roomId);
+    final index = _rooms.indexWhere((r) => r.id == roomId || r.roomNumber == roomId);
     if (index != -1) {
       _rooms[index] = _rooms[index].copyWith(
         status: status,
@@ -1312,7 +1566,7 @@ class HotelStore extends ChangeNotifier {
     double? baseRate,
     RoomStatus? status,
   }) {
-    final index = _rooms.indexWhere((r) => r.id == roomId);
+    final index = _rooms.indexWhere((r) => r.id == roomId || r.roomNumber == roomId);
     if (index != -1) {
       _rooms[index] = _rooms[index].copyWith(
         roomNumber: roomNumber,
@@ -1323,7 +1577,16 @@ class HotelStore extends ChangeNotifier {
       );
       notifyListeners();
       saveToLocalStorage();
-      SupabaseSyncService.syncRooms(_currentProperty.id, _rooms);
+      Future.microtask(() async {
+        final idMap = await SupabaseSyncService.syncRooms(_currentProperty.id, _rooms);
+        for (int i = 0; i < _rooms.length; i++) {
+          final mappedId = idMap[_rooms[i].roomNumber];
+          if (mappedId != null && _rooms[i].id != mappedId) {
+            _rooms[i] = _rooms[i].copyWith(id: mappedId);
+          }
+        }
+        saveToLocalStorage();
+      });
     }
   }
 
@@ -1415,6 +1678,7 @@ class HotelStore extends ChangeNotifier {
       'stays': _stays.map((s) => s.toJson()).toList(),
       'bills': _bills.map((b) => b.toJson()).toList(),
       'payments': _payments.map((p) => p.toJson()).toList(),
+      'expenses': _expenses.map((e) => e.toJson()).toList(),
       'staffName': staffName,
       'staffEmail': staffEmail,
       'staffPhone': staffPhone,
@@ -1468,6 +1732,15 @@ class HotelStore extends ChangeNotifier {
       }
     }
 
+    if (map['expenses'] is List) {
+      _expenses.clear();
+      for (final e in map['expenses']) {
+        if (e is Map<String, dynamic>) {
+          try { _expenses.add(Expense.fromJson(e)); } catch (_) {}
+        }
+      }
+    }
+
     if (map['staffName'] != null) staffName = map['staffName'].toString();
     if (map['staffEmail'] != null) staffEmail = map['staffEmail'].toString();
     if (map['staffPhone'] != null) staffPhone = map['staffPhone'].toString();
@@ -1483,32 +1756,48 @@ class HotelStore extends ChangeNotifier {
   void _relinkStayRelations() {
     for (final stay in _stays) {
       if (stay.guest == null) {
-        final g = _guests.firstWhere(
-          (guest) => guest.id == stay.guestId,
-          orElse: () => stay.guest ?? Guest(
-            id: stay.guestId,
-            propertyId: stay.propertyId,
-            fullName: 'Guest',
-            phone: '',
-            idType: 'other',
-            idNumberMasked: 'XXXX',
-          ),
+        final g = _guests.cast<Guest?>().firstWhere(
+          (guest) => guest?.id == stay.guestId,
+          orElse: () => null,
         );
-        stay.guest = g;
+        stay.guest = g ?? Guest(
+          id: stay.guestId,
+          propertyId: stay.propertyId,
+          fullName: 'Guest',
+          phone: '',
+          idType: 'other',
+          idNumberMasked: 'XXXX',
+        );
       }
-      if (stay.room == null) {
-        final r = _rooms.firstWhere(
-          (room) => room.id == stay.roomId,
-          orElse: () => stay.room ?? Room(
-            id: stay.roomId,
-            propertyId: stay.propertyId,
-            roomNumber: 'Room',
-            floor: 1,
-            categoryName: 'Standard',
-            baseRate: stay.nightlyRate,
-          ),
+      // Heal and link room
+      Room? r = _rooms.cast<Room?>().firstWhere(
+        (room) => room?.id == stay.roomId,
+        orElse: () => null,
+      );
+      if (r == null && stay.room?.roomNumber != null) {
+        r = _rooms.cast<Room?>().firstWhere(
+          (room) => room?.roomNumber == stay.room!.roomNumber,
+          orElse: () => null,
         );
+      }
+      if (r == null && stay.roomId.isNotEmpty) {
+        r = _rooms.cast<Room?>().firstWhere(
+          (room) => room?.roomNumber == stay.roomId,
+          orElse: () => null,
+        );
+      }
+      if (r != null) {
         stay.room = r;
+        stay.roomId = r.id; // Heal stay.roomId to authoritative room UUID
+      } else if (stay.room == null) {
+        stay.room = Room(
+          id: stay.roomId,
+          propertyId: stay.propertyId,
+          roomNumber: 'Room',
+          floor: 1,
+          categoryName: 'Standard',
+          baseRate: stay.nightlyRate,
+        );
       }
     }
   }
@@ -1519,6 +1808,12 @@ class HotelStore extends ChangeNotifier {
   }
 
   /// Merges remote Supabase records into store
+  void applyRemoteData(Map<String, dynamic> remote) {
+    _applyRemoteData(remote);
+  }
+
+  /// Merges remote Supabase records into store
+  /// Remote data uses DB field names: base_rate, category_name, etc.
   void _applyRemoteData(Map<String, dynamic> remote) {
     final remoteRooms = remote['rooms'] as List<dynamic>? ?? [];
     final remoteGuests = remote['guests'] as List<dynamic>? ?? [];
@@ -1528,18 +1823,34 @@ class HotelStore extends ChangeNotifier {
       for (final raw in remoteRooms) {
         if (raw is! Map<String, dynamic>) continue;
         final roomNum = raw['room_number']?.toString();
+        if (roomNum == null || roomNum.isEmpty) continue;
         final status = RoomStatusExtension.fromDbValue(raw['status']?.toString() ?? 'vacant');
-        final index = _rooms.indexWhere((r) => r.roomNumber == roomNum);
+        // DB has base_rate column (after migration 00007) and category_name
+        final baseRate = (raw['base_rate'] is num)
+            ? (raw['base_rate'] as num).toDouble()
+            : (raw['rate_override'] is num ? (raw['rate_override'] as num).toDouble() : 2000.0);
+        final categoryName = raw['category_name']?.toString() ?? 'Standard Room';
+        final floor = raw['floor'] is int ? raw['floor'] as int : (int.tryParse(raw['floor']?.toString() ?? '1') ?? 1);
+        final roomId = raw['id']?.toString() ?? '';
+
+        final index = _rooms.indexWhere((r) => r.roomNumber == roomNum && r.propertyId == _currentProperty.id);
         if (index != -1) {
-          _rooms[index].status = status;
+          // Update status and rate from remote; preserve local room state if occupied
+          final existing = _rooms[index];
+          _rooms[index] = existing.copyWith(
+            id: roomId.isNotEmpty ? roomId : existing.id,
+            status: status,
+            baseRate: baseRate,
+            categoryName: categoryName,
+          );
         } else {
           _rooms.add(Room(
-            id: raw['id']?.toString() ?? '',
+            id: roomId.isNotEmpty ? roomId : SupabaseSyncService.generateUuid(),
             propertyId: _currentProperty.id,
-            roomNumber: roomNum ?? '',
-            floor: raw['floor'] is int ? raw['floor'] : 1,
-            categoryName: 'Standard Room',
-            baseRate: (raw['base_rate'] is num) ? (raw['base_rate'] as num).toDouble() : 2000.0,
+            roomNumber: roomNum,
+            floor: floor,
+            categoryName: categoryName,
+            baseRate: baseRate,
             status: status,
           ));
         }
@@ -1549,12 +1860,16 @@ class HotelStore extends ChangeNotifier {
     if (remoteGuests.isNotEmpty) {
       for (final raw in remoteGuests) {
         if (raw is! Map<String, dynamic>) continue;
-        final guest = Guest.fromJson(raw);
-        final index = _guests.indexWhere((g) => g.id == guest.id);
-        if (index != -1) {
-          _guests[index] = guest;
-        } else {
-          _guests.add(guest);
+        try {
+          final guest = Guest.fromJson(raw);
+          final index = _guests.indexWhere((g) => g.id == guest.id);
+          if (index != -1) {
+            _guests[index] = guest;
+          } else {
+            _guests.add(guest);
+          }
+        } catch (e) {
+          debugPrint('[HotelStore] Guest parse notice: $e');
         }
       }
     }
@@ -1562,36 +1877,136 @@ class HotelStore extends ChangeNotifier {
     if (remoteStays.isNotEmpty) {
       for (final raw in remoteStays) {
         if (raw is! Map<String, dynamic>) continue;
-        final stay = Stay.fromJson(raw);
-        final index = _stays.indexWhere((s) => s.id == stay.id);
-        if (index != -1) {
-          _stays[index] = stay;
-        } else {
-          _stays.add(stay);
+        try {
+          final stay = Stay.fromJson(raw);
+          final index = _stays.indexWhere((s) => s.id == stay.id);
+          if (index != -1) {
+            _stays[index] = stay;
+          } else {
+            _stays.add(stay);
+          }
+        } catch (e) {
+          debugPrint('[HotelStore] Stay parse notice: $e');
         }
       }
     }
 
+    // Parse remote bills & payments if available
+    final remoteBills = remote['bills'] as List<dynamic>? ?? [];
+    if (remoteBills.isNotEmpty) {
+      for (final raw in remoteBills) {
+        if (raw is! Map<String, dynamic>) continue;
+        try {
+          final bill = Bill.fromJson(raw);
+          final index = _bills.indexWhere((b) => b.id == bill.id);
+          if (index != -1) {
+            _bills[index] = bill;
+          } else {
+            _bills.add(bill);
+          }
+          // Merge bill's nested payments
+          for (final p in bill.payments) {
+            final pIndex = _payments.indexWhere((pay) => pay.id == p.id);
+            if (pIndex != -1) {
+              _payments[pIndex] = p;
+            } else {
+              _payments.add(p);
+            }
+          }
+        } catch (e) {
+          debugPrint('[HotelStore] Bill parse notice: $e');
+        }
+      }
+    }
+
+    // Parse remote standalone payments if available
+    final remotePayments = remote['payments'] as List<dynamic>? ?? [];
+    if (remotePayments.isNotEmpty) {
+      for (final raw in remotePayments) {
+        if (raw is! Map<String, dynamic>) continue;
+        try {
+          final payment = Payment.fromJson(raw);
+          final pIndex = _payments.indexWhere((pay) => pay.id == payment.id);
+          if (pIndex != -1) {
+            _payments[pIndex] = payment;
+          } else {
+            _payments.add(payment);
+          }
+        } catch (e) {
+          debugPrint('[HotelStore] Payment parse notice: $e');
+        }
+      }
+    }
+
+    // Parse remote expenses if available
+    final remoteExpenses = remote['expenses'] as List<dynamic>? ?? [];
+    if (remoteExpenses.isNotEmpty) {
+      mergeRemoteExpenses(remoteExpenses.whereType<Map<String, dynamic>>().toList());
+    }
+
+    // Rebuild room occupancy state from active stays
+    _reconcileRoomStatusFromStays();
     _relinkStayRelations();
   }
 
-  void _backgroundSyncWithSupabase() {
-    if (!SupabaseConfig.isConfigured || !SupabaseSyncService.isValidUuid(_currentProperty.id)) return;
-    Future.microtask(() async {
-      try {
-        final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
-        if (remote != null) {
-          _applyRemoteData(remote);
-          saveToLocalStorage();
-          notifyListeners();
-        }
-      } catch (e) {
-        debugPrint('[HotelStore] Background sync notice: $e');
+  /// Rebuilds room occupied/reserved status from active stays data
+  /// This ensures room status is always consistent with actual stay records
+  void _reconcileRoomStatusFromStays() {
+    // Reset all rooms to vacant first (only for current property)
+    for (int i = 0; i < _rooms.length; i++) {
+      if (_rooms[i].propertyId == _currentProperty.id &&
+          (_rooms[i].status == RoomStatus.occupied || _rooms[i].status == RoomStatus.reserved)) {
+        _rooms[i] = _rooms[i].copyWith(status: RoomStatus.vacant, clearStay: true);
       }
-    });
+    }
+
+    // Re-apply from stays
+    for (final stay in _stays) {
+      if (stay.propertyId != _currentProperty.id) continue;
+      if (stay.status == StayStatus.checkedOut) continue;
+
+      int roomIndex = _rooms.indexWhere((r) => r.id == stay.roomId);
+      if (roomIndex == -1 && stay.room?.roomNumber != null) {
+        roomIndex = _rooms.indexWhere((r) => r.roomNumber == stay.room!.roomNumber && r.propertyId == _currentProperty.id);
+        if (roomIndex != -1) {
+          stay.roomId = _rooms[roomIndex].id;
+        }
+      }
+      if (roomIndex == -1) continue;
+
+      final guestName = stay.guest?.fullName ?? 'Guest';
+      if (stay.status == StayStatus.active) {
+        _rooms[roomIndex] = _rooms[roomIndex].copyWith(
+          status: RoomStatus.occupied,
+          currentGuestName: guestName,
+          currentStayId: stay.id,
+          currentCheckInAt: stay.checkInAt,
+          currentExpectedCheckOut: stay.expectedCheckOut,
+        );
+      } else if (stay.status == StayStatus.reserved) {
+        // Only mark reserved if check-in is today or future
+        final now = DateTime.now();
+        final isCurrentOrFuture = !stay.checkInAt.isBefore(DateTime(now.year, now.month, now.day));
+        if (isCurrentOrFuture && _rooms[roomIndex].status == RoomStatus.vacant) {
+          _rooms[roomIndex] = _rooms[roomIndex].copyWith(
+            status: RoomStatus.reserved,
+            currentGuestName: guestName,
+            currentStayId: stay.id,
+            currentCheckInAt: stay.checkInAt,
+            currentExpectedCheckOut: stay.expectedCheckOut,
+          );
+        }
+      }
+    }
   }
 
+  // _backgroundSyncWithSupabase and _backgroundPushToSupabase are unified into _backgroundPushAndPull below
+
   /// Primary account loader: checks local storage first, then Supabase, preventing accidental resets
+  /// Flow:
+  ///   1. Load from local cache instantly → show UI → push local to Supabase + pull remote
+  ///   2. If no local cache → pull from Supabase
+  ///   3. If no remote data either → brand new account, initialize clean
   Future<void> loadForProperty({
     required Property property,
     required String managerName,
@@ -1604,6 +2019,7 @@ class HotelStore extends ChangeNotifier {
     if (!_properties.any((p) => p.id == property.id)) {
       _properties.add(property);
     }
+    // CRITICAL: Set hotel ID so WhatsApp sessions are properly isolated per account
     WhatsAppService.currentHotelId = property.id;
 
     staffName = managerName.trim();
@@ -1616,9 +2032,19 @@ class HotelStore extends ChangeNotifier {
       final localData = await LocalStoreService.loadHotelData(property.id);
       if (localData != null) {
         _applyState(localData);
+        // _applyState restores the full locally-saved property (with name, UPI, etc.)
+        // We only override if the local cache somehow lost the property or has wrong ID
+        if (_currentProperty.id != property.id) {
+          _currentProperty = property;
+        }
+        // Always ensure the property list contains this entry
+        if (!_properties.any((p) => p.id == property.id)) {
+          _properties.add(_currentProperty);
+        }
         isAuthenticated = true;
         notifyListeners();
-        _backgroundSyncWithSupabase();
+        // Push local offline changes to Supabase AND pull latest remote
+        _backgroundPushAndPull();
         return;
       }
     }
@@ -1630,16 +2056,24 @@ class HotelStore extends ChangeNotifier {
       return;
     }
 
-    // 3. Check Supabase remote data
+    // 3. Check Supabase remote data first
     if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(property.id)) {
       final remote = await SupabaseSyncService.pullRemoteData(property.id);
-      if (remote != null && (remote['rooms'] as List).isNotEmpty) {
+      if (remote != null) {
+        final hasRooms = (remote['rooms'] as List).isNotEmpty;
         _rooms.clear();
         _guests.clear();
         _stays.clear();
         _bills.clear();
         _payments.clear();
+        _expenses.clear();
         _applyRemoteData(remote);
+        // If remote had no rooms, initialize default rooms for new property
+        if (!hasRooms) {
+          _initializeRoomsForProperty(property);
+          await SupabaseSyncService.syncRooms(property.id, _rooms);
+        }
+        await SupabaseSyncService.syncProperty(property);
         isAuthenticated = true;
         saveToLocalStorage();
         notifyListeners();
@@ -1653,6 +2087,7 @@ class HotelStore extends ChangeNotifier {
     _stays.clear();
     _bills.clear();
     _payments.clear();
+    _expenses.clear();
     _initializeRoomsForProperty(property);
     isAuthenticated = true;
     notifyListeners();
@@ -1663,6 +2098,35 @@ class HotelStore extends ChangeNotifier {
       await SupabaseSyncService.syncProperty(property);
       await SupabaseSyncService.syncRooms(property.id, _rooms);
     }
+  }
+
+  /// Push local data to Supabase, then pull latest remote and merge
+  /// Called after loading from local cache to sync any offline changes
+  void _backgroundPushAndPull() {
+    if (!SupabaseConfig.isConfigured || !SupabaseSyncService.isValidUuid(_currentProperty.id)) return;
+    Future.microtask(() async {
+      try {
+        // Push local changes first
+        await SupabaseSyncService.pushAllData(
+          property: _currentProperty,
+          rooms: _rooms,
+          guests: _guests,
+          stays: _stays,
+          expenses: _expenses,
+          bills: _bills,
+        );
+        // Then pull remote to pick up any changes from other devices
+        final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+        if (remote != null) {
+          _applyRemoteData(remote);
+          saveToLocalStorage();
+          notifyListeners();
+          debugPrint('[HotelStore] Bidirectional sync complete.');
+        }
+      } catch (e) {
+        debugPrint('[HotelStore] Background push+pull notice: $e');
+      }
+    });
   }
 
 
@@ -1693,6 +2157,7 @@ class HotelStore extends ChangeNotifier {
     _stays.clear();
     _bills.clear();
     _payments.clear();
+    _expenses.clear();
 
     _initializeRoomsForProperty(_currentProperty);
     _seedInitialData();
@@ -1756,32 +2221,33 @@ class HotelStore extends ChangeNotifier {
 
   void logout() {
     isAuthenticated = false;
+    // Reset to empty state — do NOT load demo data or any other user's data
     _currentProperty = Property(
-      id: 'prop-001',
-      name: 'EaseInn Boutique & Suites',
-      address: '88 MG Road, Indiranagar',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      pincode: '560038',
-      phone: '+91 98765 43210',
-      email: 'frontdesk@easeinn.com',
-      totalRooms: 12,
-      upiId: 'piyushpal427@okaxis',
-      upiPayeeName: 'Piyush Pal',
+      id: '',
+      name: '',
+      address: '',
+      city: '',
+      state: '',
+      pincode: '',
+      phone: '',
+      email: '',
+      totalRooms: 0,
+      upiId: '',
+      upiPayeeName: '',
     );
-    _properties = [_currentProperty];
-    staffName = 'Devika Rao';
-    staffRole = 'General Manager';
-    staffEmail = 'frontdesk@easeinn.com';
-    staffPhone = '+91 98450 11223';
-    staffEmployeeId = 'EAS-MGR-009';
+    _properties = [];
+    staffName = '';
+    staffRole = '';
+    staffEmail = '';
+    staffPhone = '';
+    staffEmployeeId = '';
     _rooms.clear();
     _guests.clear();
     _stays.clear();
     _bills.clear();
     _payments.clear();
-    _initializeRoomsForProperty(_currentProperty);
-    _seedInitialData();
+    _expenses.clear();
+    WhatsAppService.currentHotelId = null;
     notifyListeners();
   }
 }

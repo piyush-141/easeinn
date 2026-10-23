@@ -23,8 +23,7 @@ class AuthResult {
 }
 
 class AuthService {
-  static const String _keyOnboardingCompleted =
-      'easeinn_onboarding_completed_v1';
+  static const String _keyOnboardingCompleted = 'easeinn_onboarding_completed_v1';
   static const String _keyIsAuthenticated = 'easeinn_is_authenticated_v1';
   static const String _keyUserEmail = 'easeinn_user_email';
   static const String _keyUserName = 'easeinn_user_name';
@@ -36,36 +35,28 @@ class AuthService {
   factory AuthService() => _instance;
   AuthService._internal();
 
-  /// Check whether first-time onboarding has been shown/completed
   Future<bool> hasCompletedOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_keyOnboardingCompleted) ?? false;
   }
 
-  /// Mark onboarding as completed
   Future<void> setCompletedOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyOnboardingCompleted, true);
   }
 
-  /// Reset onboarding (useful for testing or switching accounts)
   Future<void> resetOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyOnboardingCompleted);
   }
 
-  /// Update cached property details when switching properties
-  Future<void> updateCachedProperty(
-    String propertyId,
-    String propertyName,
-  ) async {
+  Future<void> updateCachedProperty(String propertyId, String propertyName) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyPropertyId, propertyId);
     await prefs.setString(_keyPropertyName, propertyName);
     WhatsAppService.currentHotelId = propertyId;
   }
 
-  /// Update cached manager profile details when edited in ManagerProfileScreen
   Future<void> updateCachedProfile({
     required String name,
     required String role,
@@ -77,26 +68,65 @@ class AuthService {
     await prefs.setString(_keyUserEmail, email);
   }
 
-  /// Check if user has an active, valid session
+  // ─────────────────────────────────────────────────────────
+  // CORE FIX: Resolve property ID with a strict priority chain.
+  // The property ID MUST be stable across every sign-in so that
+  // the local cache key never changes. Priority:
+  //   1. Supabase user_profiles.property_id  (real UUID from DB)
+  //   2. Cached property ID in SharedPrefs   (already stored UUID)
+  //   3. Never generate a hash-based fallback for real users
+  // ─────────────────────────────────────────────────────────
+  Future<String?> _resolveStablePropertyId({
+    required String userId,
+    required String userEmail,
+    required SharedPreferences prefs,
+    Map<String, dynamic>? profileRes,
+  }) async {
+    // 1. Supabase DB is the canonical source
+    final dbPropId =
+        profileRes?['property_id']?.toString() ??
+        (profileRes?['properties'] as Map<String, dynamic>?)?['id']?.toString();
+    if (dbPropId != null && dbPropId.isNotEmpty && dbPropId != 'prop-001') {
+      // Persist so it's available offline
+      await prefs.setString(_keyPropertyId, dbPropId);
+      return dbPropId;
+    }
+
+    // 2. Previously cached stable ID (e.g., from a prior online login)
+    final cachedId = prefs.getString(_keyPropertyId);
+    if (cachedId != null && cachedId.isNotEmpty && cachedId != 'prop-001') {
+      return cachedId;
+    }
+
+    // 3. No stable ID yet — return null; caller handles new account flow
+    return null;
+  }
+
+  /// Check whether an active Supabase or local session exists on app start
   Future<bool> checkInitialSession(HotelStore store) async {
     final prefs = await SharedPreferences.getInstance();
 
-    // 1. Check Supabase session first if connected
+    // 1. Try Supabase session
     final client = SupabaseConfig.client;
     if (client != null && client.auth.currentSession != null) {
       try {
+        if (client.auth.currentSession!.isExpired) {
+          try {
+            await client.auth.refreshSession();
+          } catch (refreshErr) {
+            debugPrint('[AuthService] Auto-refresh session notice: $refreshErr');
+          }
+        }
         final user = client.auth.currentUser;
         if (user != null) {
           final userEmail = user.email?.trim().toLowerCase() ?? '';
 
-          // Built-in offline demo account
           if (userEmail == 'frontdesk@easeinn.com') {
             store.loadDemoAccount();
             await prefs.setBool(_keyIsAuthenticated, true);
             return true;
           }
 
-          // Real user session: fetch profile and linked property
           Map<String, dynamic>? profileRes;
           try {
             profileRes = await client
@@ -105,51 +135,49 @@ class AuthService {
                 .eq('id', user.id)
                 .maybeSingle();
           } catch (e) {
-            debugPrint('[AuthService] Supabase profile fetch notice: $e');
+            debugPrint('[AuthService] Profile fetch notice: $e');
           }
 
-          final fullName =
-              profileRes?['full_name'] as String? ??
-              prefs.getString(_keyUserName) ??
-              'General Manager';
-          final role =
-              profileRes?['role'] as String? ??
-              prefs.getString(_keyUserRole) ??
-              'General Manager / Owner';
+          final fullName = profileRes?['full_name'] as String? ??
+              prefs.getString(_keyUserName) ?? 'General Manager';
+          final role = profileRes?['role'] as String? ??
+              prefs.getString(_keyUserRole) ?? 'General Manager / Owner';
           final propData = profileRes?['properties'] as Map<String, dynamic>?;
 
-          // Determine property ID - NEVER allow prop-001 for real users!
-          var assignedPropId =
-              profileRes?['property_id']?.toString() ??
-              propData?['id']?.toString() ??
-              prefs.getString(_keyPropertyId);
+          final assignedPropId = await _resolveStablePropertyId(
+            userId: user.id,
+            userEmail: userEmail,
+            prefs: prefs,
+            profileRes: profileRes,
+          );
 
-          if (assignedPropId == null || assignedPropId == 'prop-001') {
-            assignedPropId =
-                'prop-${user.id.length >= 8 ? user.id.substring(0, 8) : userEmail.hashCode.abs()}';
-            await prefs.setString(_keyPropertyId, assignedPropId);
+          if (assignedPropId == null) {
+            // No property linked — user needs to complete onboarding
+            debugPrint('[AuthService] No property linked for user $userEmail');
+            store.isAuthenticated = false;
+            return false;
           }
 
-          final propName =
-              propData?['name']?.toString() ??
-              prefs.getString(_keyPropertyName) ??
-              'My Hotel';
+          // Merge: local cache has the most up-to-date property details
+          // (user may have changed name etc. locally). Use local cache for
+          // details but always use the stable assignedPropId as key.
+          final propName = propData?['name']?.toString() ??
+              prefs.getString(_keyPropertyName) ?? 'My Hotel';
 
           final prop = Property(
             id: assignedPropId,
             name: propName,
             address: propData?['address']?.toString() ?? '',
-            city: propData?['city']?.toString() ?? 'Bengaluru',
-            state: propData?['state']?.toString() ?? 'Karnataka',
-            pincode: propData?['pincode']?.toString() ?? '560001',
+            city: propData?['city']?.toString() ?? '',
+            state: propData?['state']?.toString() ?? '',
+            pincode: propData?['pincode']?.toString() ?? '',
             phone: propData?['phone']?.toString() ?? '',
             email: propData?['email']?.toString() ?? userEmail,
             totalRooms: 12,
-            upiId: 'piyushpal427@okaxis',
-            upiPayeeName: propName,
+            upiId: propData?['upi_id']?.toString() ?? '',
+            upiPayeeName: propData?['upi_payee_name']?.toString() ?? propName,
           );
 
-          // Load existing property data from local cache / Supabase
           await store.loadForProperty(
             property: prop,
             managerName: fullName,
@@ -171,62 +199,56 @@ class AuthService {
           return true;
         }
       } catch (e) {
-        debugPrint('[AuthService] Supabase profile fetch fallback: $e');
+        debugPrint('[AuthService] Session check fallback: $e');
       }
     }
 
-    // 2. Check cached local session
+    // 2. Offline local session
     final isAuth = prefs.getBool(_keyIsAuthenticated) ?? false;
-    if (isAuth) {
-      final cachedName = prefs.getString(_keyUserName);
-      final cachedEmail = prefs.getString(_keyUserEmail);
-      final cachedRole = prefs.getString(_keyUserRole);
-      final cachedPropName = prefs.getString(_keyPropertyName);
-      var cachedPropId = prefs.getString(_keyPropertyId);
+    if (!isAuth) return false;
 
-      // Demo account
-      if (cachedEmail != null &&
-          cachedEmail.trim().toLowerCase() == 'frontdesk@easeinn.com') {
-        store.loadDemoAccount();
-        return true;
-      }
+    final cachedEmail = prefs.getString(_keyUserEmail);
+    final cachedName = prefs.getString(_keyUserName);
+    final cachedRole = prefs.getString(_keyUserRole);
+    final cachedPropName = prefs.getString(_keyPropertyName);
+    final cachedPropId = prefs.getString(_keyPropertyId);
 
-      // Real user account
-      if (cachedEmail != null && cachedEmail.isNotEmpty) {
-        if (cachedPropId == null || cachedPropId == 'prop-001') {
-          cachedPropId =
-              'prop-${cachedEmail.trim().toLowerCase().hashCode.abs()}';
-          await prefs.setString(_keyPropertyId, cachedPropId);
-        }
+    if (cachedEmail == null || cachedEmail.isEmpty) return false;
 
-        final prop = Property(
-          id: cachedPropId,
-          name: cachedPropName ?? 'My Hotel',
-          address: '',
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          pincode: '560001',
-          phone: '',
-          email: cachedEmail,
-          totalRooms: 12,
-          upiId: 'piyushpal427@okaxis',
-          upiPayeeName: cachedPropName ?? 'My Hotel',
-        );
-
-        // Load existing property data from local cache / Supabase
-        await store.loadForProperty(
-          property: prop,
-          managerName: cachedName ?? 'General Manager',
-          managerEmail: cachedEmail,
-          managerPhone: store.staffPhone,
-          managerRole: cachedRole ?? 'General Manager / Owner',
-        );
-        return true;
-      }
+    if (cachedEmail.trim().toLowerCase() == 'frontdesk@easeinn.com') {
+      store.loadDemoAccount();
+      return true;
     }
 
-    store.isAuthenticated = false;
-    return false;
+    // Must have a stable property ID saved from a previous online login
+    if (cachedPropId == null || cachedPropId.isEmpty || cachedPropId == 'prop-001') {
+      debugPrint('[AuthService] Offline session: no stable property ID, clearing session');
+      await prefs.setBool(_keyIsAuthenticated, false);
+      return false;
+    }
+
+    final prop = Property(
+      id: cachedPropId,
+      name: cachedPropName ?? 'My Hotel',
+      address: '',
+      city: '',
+      state: '',
+      pincode: '',
+      phone: '',
+      email: cachedEmail,
+      totalRooms: 12,
+      upiId: '',
+      upiPayeeName: cachedPropName ?? 'My Hotel',
+    );
+
+    await store.loadForProperty(
+      property: prop,
+      managerName: cachedName ?? 'General Manager',
+      managerEmail: cachedEmail,
+      managerPhone: store.staffPhone,
+      managerRole: cachedRole ?? 'General Manager / Owner',
+    );
+    return true;
   }
 
   /// Sign In with Email and Password
@@ -238,7 +260,6 @@ class AuthService {
     final trimmedEmail = email.trim().toLowerCase();
     final client = SupabaseConfig.client;
 
-    // Check online Supabase sign in
     if (client != null) {
       try {
         final authResponse = await client.auth.signInWithPassword(
@@ -249,7 +270,6 @@ class AuthService {
         if (authResponse.user != null) {
           final user = authResponse.user!;
 
-          // If demo account
           if (trimmedEmail == 'frontdesk@easeinn.com') {
             store.loadDemoAccount();
             await _saveSessionLocally(
@@ -262,16 +282,13 @@ class AuthService {
             return AuthResult(success: true, user: user);
           }
 
-          // Real user sign in
-          String activePropId =
-              'prop-${user.id.length >= 8 ? user.id.substring(0, 8) : trimmedEmail.hashCode.abs()}';
-          String activePropName = 'My Hotel';
           String fullName = 'General Manager';
           String role = 'General Manager / Owner';
           String phone = '';
+          Map<String, dynamic>? profileRes;
 
           try {
-            final profileRes = await client
+            profileRes = await client
                 .from('user_profiles')
                 .select('full_name, role, property_id, properties(*)')
                 .eq('id', user.id)
@@ -280,37 +297,48 @@ class AuthService {
             if (profileRes != null) {
               fullName = profileRes['full_name'] as String? ?? fullName;
               role = profileRes['role'] as String? ?? role;
-              final propData =
-                  profileRes['properties'] as Map<String, dynamic>?;
-              activePropId =
-                  profileRes['property_id']?.toString() ??
-                  propData?['id']?.toString() ??
-                  activePropId;
-
+              final propData = profileRes['properties'] as Map<String, dynamic>?;
               if (propData != null) {
-                activePropName = propData['name']?.toString() ?? activePropName;
                 phone = propData['phone']?.toString() ?? phone;
               }
             }
           } catch (e) {
-            debugPrint('[AuthService] Profile retrieval warning: $e');
+            debugPrint('[AuthService] Profile retrieval notice: $e');
           }
 
-          final prop = Property(
-            id: activePropId,
-            name: activePropName,
-            address: '',
-            city: 'Bengaluru',
-            state: 'Karnataka',
-            pincode: '560001',
-            phone: phone,
-            email: trimmedEmail,
-            totalRooms: 12,
-            upiId: 'piyushpal427@okaxis',
-            upiPayeeName: activePropName,
+          final prefs = await SharedPreferences.getInstance();
+          final assignedPropId = await _resolveStablePropertyId(
+            userId: user.id,
+            userEmail: trimmedEmail,
+            prefs: prefs,
+            profileRes: profileRes,
           );
 
-          // Load existing property data from local cache / Supabase
+          if (assignedPropId == null) {
+            return AuthResult(
+              success: false,
+              errorMessage: 'Your account has no property linked. Please contact support or register a new hotel.',
+            );
+          }
+
+          final propData = profileRes?['properties'] as Map<String, dynamic>?;
+          final propName = propData?['name']?.toString() ??
+              prefs.getString(_keyPropertyName) ?? 'My Hotel';
+
+          final prop = Property(
+            id: assignedPropId,
+            name: propName,
+            address: propData?['address']?.toString() ?? '',
+            city: propData?['city']?.toString() ?? '',
+            state: propData?['state']?.toString() ?? '',
+            pincode: propData?['pincode']?.toString() ?? '',
+            phone: propData?['phone']?.toString() ?? phone,
+            email: propData?['email']?.toString() ?? trimmedEmail,
+            totalRooms: 12,
+            upiId: propData?['upi_id']?.toString() ?? '',
+            upiPayeeName: propData?['upi_payee_name']?.toString() ?? propName,
+          );
+
           await store.loadForProperty(
             property: prop,
             managerName: fullName,
@@ -323,18 +351,16 @@ class AuthService {
             email: trimmedEmail,
             name: fullName,
             role: role,
-            propertyName: activePropName,
-            propertyId: activePropId,
+            propertyName: propName,
+            propertyId: assignedPropId,
           );
 
           return AuthResult(success: true, user: authResponse.user);
         }
       } on AuthException catch (e) {
-        debugPrint('[AuthService] Supabase AuthException: ${e.message}');
-        // If not demo credentials, return the real error
+        debugPrint('[AuthService] AuthException: ${e.message}');
         if (trimmedEmail != 'frontdesk@easeinn.com') {
-          final isUnconfirmed =
-              e.message.toLowerCase().contains('email not confirmed');
+          final isUnconfirmed = e.message.toLowerCase().contains('email not confirmed');
           return AuthResult(
             success: false,
             errorMessage: isUnconfirmed
@@ -355,7 +381,7 @@ class AuthService {
       }
     }
 
-    // Offline / Demo account fallback - STRICTLY frontdesk@easeinn.com with easeinn2026
+    // Demo account offline fallback
     if (trimmedEmail == 'frontdesk@easeinn.com' && password == 'easeinn2026') {
       store.loadDemoAccount();
       await _saveSessionLocally(
@@ -368,35 +394,34 @@ class AuthService {
       return AuthResult(success: true);
     }
 
-    // Offline / Locally registered account fallback
+    // Offline session for previously signed-in real users
     final prefs = await SharedPreferences.getInstance();
     final cachedEmail = prefs.getString(_keyUserEmail);
-    if (cachedEmail != null &&
-        cachedEmail.trim().toLowerCase() == trimmedEmail) {
-      final cachedName = prefs.getString(_keyUserName) ?? 'General Manager';
-      final cachedRole =
-          prefs.getString(_keyUserRole) ?? 'General Manager / Owner';
-      final cachedPropName = prefs.getString(_keyPropertyName) ?? 'My Hotel';
-      var cachedPropId = prefs.getString(_keyPropertyId);
-      if (cachedPropId == null || cachedPropId == 'prop-001') {
-        cachedPropId = 'prop-${trimmedEmail.hashCode.abs()}';
-        await prefs.setString(_keyPropertyId, cachedPropId);
+    if (cachedEmail != null && cachedEmail.trim().toLowerCase() == trimmedEmail) {
+      final cachedPropId = prefs.getString(_keyPropertyId);
+      if (cachedPropId == null || cachedPropId.isEmpty || cachedPropId == 'prop-001') {
+        return AuthResult(
+          success: false,
+          errorMessage: 'Cannot sign in offline: no stable session found. Please connect to the internet.',
+        );
       }
+      final cachedName = prefs.getString(_keyUserName) ?? 'General Manager';
+      final cachedRole = prefs.getString(_keyUserRole) ?? 'General Manager / Owner';
+      final cachedPropName = prefs.getString(_keyPropertyName) ?? 'My Hotel';
 
       final prop = Property(
         id: cachedPropId,
         name: cachedPropName,
         address: '',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        pincode: '560001',
+        city: '',
+        state: '',
+        pincode: '',
         phone: '',
         email: trimmedEmail,
         totalRooms: 12,
-        upiId: 'piyushpal427@okaxis',
+        upiId: '',
         upiPayeeName: cachedPropName,
       );
-
       await store.loadForProperty(
         property: prop,
         managerName: cachedName,
@@ -404,7 +429,6 @@ class AuthService {
         managerPhone: store.staffPhone,
         managerRole: cachedRole,
       );
-
       await prefs.setBool(_keyIsAuthenticated, true);
       return AuthResult(success: true);
     }
@@ -415,12 +439,10 @@ class AuthService {
     );
   }
 
-  /// Sign Up Hotel & Manager Account
+  /// Sign Up: Hotel (Primary) first, then Manager Account (Secondary).
+  /// One hotel can have multiple managers. The property is the primary business entity.
   Future<AuthResult> signUpHotel({
-    required String fullName,
-    required String email,
-    required String password,
-    required String phone,
+    // ── 1. PRIMARY: Hotel / Property Details ──
     required String hotelName,
     required String city,
     required String state,
@@ -428,6 +450,11 @@ class AuthService {
     required int totalRooms,
     required String upiId,
     required String upiPayeeName,
+    // ── 2. SECONDARY: Manager Account Credentials ──
+    required String fullName,
+    required String email,
+    required String password,
+    required String phone,
     required HotelStore store,
   }) async {
     final trimmedEmail = email.trim().toLowerCase();
@@ -435,7 +462,6 @@ class AuthService {
 
     if (client != null) {
       try {
-        // 1. Supabase Auth Sign Up
         final authResponse = await client.auth.signUp(
           email: trimmedEmail,
           password: password,
@@ -448,18 +474,15 @@ class AuthService {
 
         final user = authResponse.user;
         if (user != null) {
-          // If Supabase anti-enumeration is triggered (email already exists in Supabase):
-          // user.identities will be empty!
           if (user.identities != null && user.identities!.isEmpty) {
             return AuthResult(
               success: false,
-              errorMessage:
-                  'An account with this email already exists. Please sign in instead.',
+              errorMessage: 'An account with this email already exists. Please sign in instead.',
               email: trimmedEmail,
             );
           }
 
-          // 2. Insert into properties table
+          // Create property in Supabase
           String? createdPropertyId;
           try {
             final propertyInsert = await client
@@ -471,6 +494,8 @@ class AuthService {
                   'address': address.trim(),
                   'phone': phone.trim(),
                   'email': trimmedEmail,
+                  'upi_id': upiId.trim(),
+                  'upi_payee_name': upiPayeeName.trim(),
                   'currency': 'INR',
                   'timezone': 'Asia/Kolkata',
                 })
@@ -479,7 +504,6 @@ class AuthService {
 
             createdPropertyId = propertyInsert['id']?.toString();
 
-            // 3. Insert into user_profiles table
             await client.from('user_profiles').insert({
               'id': user.id,
               if (createdPropertyId != null) 'property_id': createdPropertyId,
@@ -488,133 +512,144 @@ class AuthService {
               'is_active': true,
             });
           } catch (dbErr) {
-            debugPrint('[AuthService] Database record creation notice: $dbErr');
+            debugPrint('[AuthService] DB record creation notice: $dbErr');
           }
 
-          // 4. Update local HotelStore state with guaranteed clean property
-          final assignedPropId =
-              createdPropertyId ??
-              'prop-${DateTime.now().millisecondsSinceEpoch}';
+          // The property ID is ALWAYS the Supabase UUID from now on
+          // Never use timestamp-based fallbacks for new accounts
+          if (createdPropertyId == null) {
+            return AuthResult(
+              success: false,
+              errorMessage: 'Account created but hotel setup failed. Please sign in to retry.',
+              email: trimmedEmail,
+            );
+          }
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_keyPropertyId, createdPropertyId);
+
           final newProp = Property(
-            id: assignedPropId,
+            id: createdPropertyId,
             name: hotelName.trim(),
+            address: address.trim(),
             city: city.trim(),
             state: state.trim(),
-            address: address.trim(),
-            pincode: '560001',
+            pincode: '',
             phone: phone.trim(),
             email: trimmedEmail,
-            totalRooms: totalRooms > 0 ? totalRooms : 12,
-            upiId: upiId.trim().isNotEmpty
-                ? upiId.trim()
-                : 'piyushpal427@okaxis',
-            upiPayeeName: upiPayeeName.trim().isNotEmpty
-                ? upiPayeeName.trim()
-                : hotelName.trim(),
+            totalRooms: totalRooms,
+            upiId: upiId.trim(),
+            upiPayeeName: upiPayeeName.trim(),
           );
 
-          // CRITICAL: Initialize 100% clean account with ZERO demo seed data!
-          store.initCleanAccount(
+          await store.loadForProperty(
             property: newProp,
             managerName: fullName.trim(),
             managerEmail: trimmedEmail,
             managerPhone: phone.trim(),
-            managerRole: 'General Manager / Owner',
+            managerRole: 'admin',
           );
 
           await _saveSessionLocally(
             email: trimmedEmail,
             name: fullName.trim(),
-            role: 'General Manager / Owner',
-            propertyName: newProp.name,
-            propertyId: newProp.id,
+            role: 'admin',
+            propertyName: hotelName.trim(),
+            propertyId: createdPropertyId,
           );
 
-          // Check if session was granted immediately (auto-confirm on Supabase)
-          final hasSession = authResponse.session != null;
-
-          return AuthResult(
-            success: true,
-            user: user,
-            requiresEmailConfirmation: !hasSession,
-            email: trimmedEmail,
-          );
+          return AuthResult(success: true, user: user);
         }
       } on AuthException catch (e) {
-        debugPrint('[AuthService] SignUp AuthException: ${e.message}');
-        return AuthResult(success: false, errorMessage: e.message);
+        final isConfirmation = e.message.toLowerCase().contains('email not confirmed');
+        return AuthResult(
+          success: false,
+          errorMessage: isConfirmation
+              ? 'Please check your email to confirm your account before signing in.'
+              : e.message,
+          requiresEmailConfirmation: isConfirmation,
+          email: trimmedEmail,
+        );
       } catch (e) {
         debugPrint('[AuthService] SignUp error: $e');
         return AuthResult(
           success: false,
-          errorMessage: 'Could not complete registration: ${e.toString()}',
+          errorMessage: 'Registration failed. Please check your connection and try again.',
         );
       }
     }
 
-    // Offline / Local registration mode
-    final assignedPropId = 'prop-${DateTime.now().millisecondsSinceEpoch}';
-    final newProp = Property(
-      id: assignedPropId,
-      name: hotelName.trim(),
-      city: city.trim(),
-      state: state.trim(),
-      address: address.trim(),
-      pincode: '560001',
-      phone: phone.trim(),
-      email: trimmedEmail,
-      totalRooms: totalRooms > 0 ? totalRooms : 12,
-      upiId: upiId.trim().isNotEmpty ? upiId.trim() : 'piyushpal427@okaxis',
-      upiPayeeName: upiPayeeName.trim().isNotEmpty
-          ? upiPayeeName.trim()
-          : hotelName.trim(),
+    return AuthResult(
+      success: false,
+      errorMessage: 'No internet connection. Please connect and try again.',
     );
-
-    // CRITICAL: Initialize 100% clean account with ZERO demo seed data!
-    store.initCleanAccount(
-      property: newProp,
-      managerName: fullName.trim(),
-      managerEmail: trimmedEmail,
-      managerPhone: phone.trim(),
-      managerRole: 'General Manager / Owner',
-    );
-
-    await _saveSessionLocally(
-      email: trimmedEmail,
-      name: fullName.trim(),
-      role: 'General Manager / Owner',
-      propertyName: newProp.name,
-      propertyId: newProp.id,
-    );
-
-    return AuthResult(success: true);
   }
 
-  /// Sign Out
-  Future<void> signOut(HotelStore store) async {
-    final prefs = await SharedPreferences.getInstance();
+  /// Add an additional manager/staff to an existing hotel property.
+  /// One hotel can have multiple managers.
+  Future<AuthResult> addManagerToProperty({
+    required String propertyId,
+    required String fullName,
+    required String email,
+    required String password,
+    required String phone,
+    String role = 'admin',
+  }) async {
+    final trimmedEmail = email.trim().toLowerCase();
     final client = SupabaseConfig.client;
-
+    if (client == null) {
+      return AuthResult(success: false, errorMessage: 'No internet connection.');
+    }
     try {
+      final authResponse = await client.auth.signUp(
+        email: trimmedEmail,
+        password: password,
+        data: {
+          'full_name': fullName.trim(),
+          'phone': phone.trim(),
+          'property_id': propertyId,
+        },
+      );
+      final user = authResponse.user;
+      if (user != null) {
+        await client.from('user_profiles').insert({
+          'id': user.id,
+          'property_id': propertyId,
+          'full_name': fullName.trim(),
+          'role': role,
+          'is_active': true,
+        });
+        return AuthResult(success: true, user: user);
+      }
+      return AuthResult(success: false, errorMessage: 'Manager registration failed.');
+    } on AuthException catch (e) {
+      return AuthResult(success: false, errorMessage: e.message);
+    } catch (e) {
+      return AuthResult(success: false, errorMessage: e.toString());
+    }
+  }
+
+  /// Sign out — clears auth session but preserves local hotel data cache
+  Future<void> signOut(HotelStore store) async {
+    try {
+      final client = SupabaseConfig.client;
       if (client != null) {
         await client.auth.signOut();
       }
     } catch (e) {
-      debugPrint('[AuthService] SignOut error: $e');
+      debugPrint('[AuthService] SignOut notice: $e');
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    // Clear auth flags but KEEP property ID and property name in prefs
+    // so offline session can still load the correct local cache
     await prefs.setBool(_keyIsAuthenticated, false);
-    await prefs.remove(_keyUserEmail);
-    await prefs.remove(_keyUserName);
-    await prefs.remove(_keyUserRole);
-    await prefs.remove(_keyPropertyName);
-    await prefs.remove(_keyPropertyId);
-    WhatsAppService.currentHotelId = null;
+    // Do NOT remove _keyPropertyId, _keyPropertyName — needed for offline login
 
     store.logout();
   }
 
-  /// Verify 6-digit Email OTP / Token
+  /// Verify the OTP token sent to the user's email after sign-up
   Future<AuthResult> verifyEmailOtp({
     required String email,
     required String token,
@@ -622,75 +657,96 @@ class AuthService {
   }) async {
     final client = SupabaseConfig.client;
     if (client == null) {
-      return AuthResult(
-        success: false,
-        errorMessage: 'Database connection not initialized.',
-      );
+      return AuthResult(success: false, errorMessage: 'No internet connection.');
     }
-
-    final trimmedEmail = email.trim().toLowerCase();
-    final cleanToken = token.trim();
-
     try {
-      final res = await client.auth.verifyOTP(
-        email: trimmedEmail,
-        token: cleanToken,
+      final response = await client.auth.verifyOTP(
+        email: email.trim().toLowerCase(),
+        token: token.trim(),
         type: OtpType.signup,
       );
-
-      if (res.session != null && res.user != null) {
-        await checkInitialSession(store);
-        return AuthResult(success: true, user: res.user);
+      final user = response.user;
+      if (user == null) {
+        return AuthResult(success: false, errorMessage: 'Verification failed. Please try again.');
       }
-      return AuthResult(
-        success: false,
-        errorMessage: 'Verification failed. Please check the code.',
-      );
-    } on AuthException catch (e) {
-      // Also try OtpType.email in case type differed
+      // After verification, do a full sign-in flow to load the store properly
+      final prefs = await SharedPreferences.getInstance();
+      Map<String, dynamic>? profileRes;
       try {
-        final res = await client.auth.verifyOTP(
-          email: trimmedEmail,
-          token: cleanToken,
-          type: OtpType.email,
-        );
-        if (res.session != null && res.user != null) {
-          await checkInitialSession(store);
-          return AuthResult(success: true, user: res.user);
-        }
+        profileRes = await client
+            .from('user_profiles')
+            .select('full_name, role, property_id, properties(*)')
+            .eq('id', user.id)
+            .maybeSingle();
       } catch (_) {}
+
+      final fullName = profileRes?['full_name'] as String? ?? prefs.getString(_keyUserName) ?? 'General Manager';
+      final role = profileRes?['role'] as String? ?? prefs.getString(_keyUserRole) ?? 'General Manager / Owner';
+      final propData = profileRes?['properties'] as Map<String, dynamic>?;
+      final assignedPropId = await _resolveStablePropertyId(
+        userId: user.id,
+        userEmail: email,
+        prefs: prefs,
+        profileRes: profileRes,
+      );
+
+      if (assignedPropId == null) {
+        return AuthResult(success: false, errorMessage: 'Account verified but no hotel linked. Please contact support.');
+      }
+
+      final propName = propData?['name']?.toString() ?? prefs.getString(_keyPropertyName) ?? 'My Hotel';
+      final prop = Property(
+        id: assignedPropId,
+        name: propName,
+        address: propData?['address']?.toString() ?? '',
+        city: propData?['city']?.toString() ?? '',
+        state: propData?['state']?.toString() ?? '',
+        pincode: propData?['pincode']?.toString() ?? '',
+        phone: propData?['phone']?.toString() ?? '',
+        email: propData?['email']?.toString() ?? email,
+        totalRooms: 12,
+        upiId: propData?['upi_id']?.toString() ?? '',
+        upiPayeeName: propData?['upi_payee_name']?.toString() ?? propName,
+      );
+
+      await store.loadForProperty(
+        property: prop,
+        managerName: fullName,
+        managerEmail: email.trim().toLowerCase(),
+        managerPhone: store.staffPhone,
+        managerRole: role,
+      );
+
+      await _saveSessionLocally(
+        email: email.trim().toLowerCase(),
+        name: fullName,
+        role: role,
+        propertyName: propName,
+        propertyId: assignedPropId,
+      );
+
+      return AuthResult(success: true, user: user);
+    } on AuthException catch (e) {
       return AuthResult(success: false, errorMessage: e.message);
     } catch (e) {
-      return AuthResult(
-        success: false,
-        errorMessage: 'Verification error: ${e.toString()}',
-      );
+      debugPrint('[AuthService] verifyEmailOtp error: $e');
+      return AuthResult(success: false, errorMessage: 'Verification failed. Please try again.');
     }
   }
 
-  /// Resend confirmation email / OTP
+  /// Resend OTP / confirmation email to the user
   Future<bool> resendVerificationEmail(String email) async {
     final client = SupabaseConfig.client;
     if (client == null) return false;
-    final trimmedEmail = email.trim().toLowerCase();
-
     try {
       await client.auth.resend(
         type: OtpType.signup,
-        email: trimmedEmail,
+        email: email.trim().toLowerCase(),
       );
       return true;
     } catch (e) {
-      debugPrint('[AuthService] Resend signup OTP error: $e');
-      try {
-        await client.auth.resend(
-          type: OtpType.email,
-          email: trimmedEmail,
-        );
-        return true;
-      } catch (_) {
-        return false;
-      }
+      debugPrint('[AuthService] resendVerificationEmail error: $e');
+      return false;
     }
   }
 
@@ -702,12 +758,11 @@ class AuthService {
     required String propertyId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyIsAuthenticated, true);
     await prefs.setString(_keyUserEmail, email);
     await prefs.setString(_keyUserName, name);
     await prefs.setString(_keyUserRole, role);
     await prefs.setString(_keyPropertyName, propertyName);
     await prefs.setString(_keyPropertyId, propertyId);
-    WhatsAppService.currentHotelId = propertyId;
+    await prefs.setBool(_keyIsAuthenticated, true);
   }
 }

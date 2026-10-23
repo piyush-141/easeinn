@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show MethodChannel, rootBundle;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -15,7 +16,7 @@ import '../models/room.dart';
 import '../models/stay.dart';
 
 class InvoicePdfService {
-  /// Generate a clean, detailed, Apple-minimalist PDF invoice document.
+  /// Generate a clean, editorial, minimal PDF invoice document matching reference aesthetics.
   static Future<Uint8List> generateInvoicePdf({
     required Property property,
     required Stay stay,
@@ -53,8 +54,6 @@ class InvoicePdfService {
     final darkSlate = PdfColor.fromHex('#0F172A');
     final mutedSlate = PdfColor.fromHex('#64748B');
     final borderSlate = PdfColor.fromHex('#E2E8F0');
-    final bgLight = PdfColor.fromHex('#F8FAFC');
-    final brandPrimary = PdfColor.fromHex('#1E293B');
     final successGreen = PdfColor.fromHex('#15803D');
     final successBg = PdfColor.fromHex('#DCFCE7');
     final successBorder = PdfColor.fromHex('#86EFAC');
@@ -62,53 +61,101 @@ class InvoicePdfService {
     final warningBg = PdfColor.fromHex('#FEF3C7');
     final warningBorder = PdfColor.fromHex('#FDE68A');
 
+    // Load panoramic scenic header banner if available
+    Uint8List? bannerBytes;
+    try {
+      final byteData = await rootBundle.load('assets/images/invoice_banner.jpg');
+      bannerBytes = byteData.buffer.asUint8List();
+    } catch (_) {}
+
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+        margin: const pw.EdgeInsets.symmetric(horizontal: 36, vertical: 30),
         build: (pw.Context context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
-              // ── 1. Top Hotel Header & Invoice Badge ────────────────────────
+              // ── 1. Top Panoramic Header Banner ─────────────────────────────
+              if (bannerBytes != null)
+                pw.ClipRRect(
+                  horizontalRadius: 10,
+                  verticalRadius: 10,
+                  child: pw.Image(
+                    pw.MemoryImage(bannerBytes),
+                    height: 100,
+                    fit: pw.BoxFit.cover,
+                  ),
+                )
+              else
+                pw.Container(
+                  height: 100,
+                  decoration: pw.BoxDecoration(
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+                    gradient: pw.LinearGradient(
+                      colors: [
+                        PdfColor.fromHex('#E2E8F0'),
+                        PdfColor.fromHex('#F8FAFC'),
+                      ],
+                    ),
+                  ),
+                ),
+
+              pw.SizedBox(height: 16),
+
+              // ── 2. Brand Monogram, INVOICE title & Status ──────────────────
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Expanded(
-                    flex: 3,
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          property.name,
-                          style: pw.TextStyle(
-                            fontSize: 20,
-                            fontWeight: pw.FontWeight.bold,
-                            color: darkSlate,
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      // Monogram Icon
+                      pw.Container(
+                        width: 32,
+                        height: 32,
+                        decoration: pw.BoxDecoration(
+                          color: darkSlate,
+                          borderRadius: const pw.BorderRadius.all(
+                            pw.Radius.circular(8),
                           ),
                         ),
-                        pw.SizedBox(height: 3),
-                        pw.Text(
-                          '${property.address}, ${property.city}, ${property.state} - ${property.pincode}',
-                          style: pw.TextStyle(fontSize: 9.5, color: mutedSlate),
-                        ),
-                        pw.SizedBox(height: 2),
-                        pw.Text(
-                          'GSTIN: ${property.gstNumber}  |  Ph: ${property.phone}  |  ${property.email}',
-                          style: pw.TextStyle(
-                            fontSize: 9.5,
-                            color: mutedSlate,
-                            fontWeight: pw.FontWeight.bold,
+                        child: pw.Center(
+                          child: pw.Text(
+                            property.name.isNotEmpty ? property.name[0].toUpperCase() : 'E',
+                            style: pw.TextStyle(
+                              color: PdfColors.white,
+                              fontSize: 18,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      pw.SizedBox(height: 12),
+                      pw.Text(
+                        'INVOICE',
+                        style: pw.TextStyle(
+                          fontSize: 30,
+                          fontWeight: pw.FontWeight.bold,
+                          color: darkSlate,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
                   ),
-                  pw.SizedBox(width: 16),
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
+                      pw.Text(
+                        '#$invoiceNo',
+                        style: pw.TextStyle(
+                          fontSize: 11,
+                          fontWeight: pw.FontWeight.bold,
+                          color: darkSlate,
+                        ),
+                      ),
+                      pw.SizedBox(height: 6),
                       pw.Container(
                         padding: const pw.EdgeInsets.symmetric(
                           horizontal: 10,
@@ -120,452 +167,372 @@ class InvoicePdfService {
                             pw.Radius.circular(12),
                           ),
                           border: pw.Border.all(
-                            color: balanceDue <= 0
-                                ? successBorder
-                                : warningBorder,
+                            color: balanceDue <= 0 ? successBorder : warningBorder,
                             width: 0.8,
                           ),
                         ),
                         child: pw.Text(
                           balanceDue <= 0 ? 'PAID IN FULL' : 'PAYMENT DUE',
                           style: pw.TextStyle(
-                            fontSize: 9,
+                            fontSize: 8.5,
                             fontWeight: pw.FontWeight.bold,
-                            color: balanceDue <= 0
-                                ? successGreen
-                                : warningAmber,
+                            color: balanceDue <= 0 ? successGreen : warningAmber,
                           ),
                         ),
-                      ),
-                      pw.SizedBox(height: 5),
-                      pw.Text(
-                        'TAX INVOICE',
-                        style: pw.TextStyle(
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: brandPrimary,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                      pw.Text(
-                        '#$invoiceNo',
-                        style: pw.TextStyle(
-                          fontSize: 10,
-                          fontWeight: pw.FontWeight.bold,
-                          color: darkSlate,
-                        ),
-                      ),
-                      pw.Text(
-                        'Date: $issueDate',
-                        style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
                       ),
                     ],
                   ),
                 ],
               ),
 
-              pw.SizedBox(height: 14),
-              pw.Divider(thickness: 1, color: borderSlate),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 18),
 
-              // ── 2. Guest Info & Stay Details (2-Column Card) ───────────────
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  color: bgLight,
-                  borderRadius: const pw.BorderRadius.all(
-                    pw.Radius.circular(8),
-                  ),
-                  border: pw.Border.all(color: borderSlate, width: 0.8),
-                ),
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    // Left: Guest Info
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'BILLED TO (GUEST)',
-                            style: pw.TextStyle(
-                              fontSize: 8,
-                              fontWeight: pw.FontWeight.bold,
-                              color: mutedSlate,
-                              letterSpacing: 0.6,
-                            ),
-                          ),
-                          pw.SizedBox(height: 4),
-                          pw.Text(
-                            guest?.fullName ?? 'Valued Guest',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                              color: darkSlate,
-                            ),
-                          ),
-                          pw.SizedBox(height: 2),
-                          pw.Text(
-                            'Phone: ${guest?.phone ?? "N/A"}',
-                            style: pw.TextStyle(
-                              fontSize: 9,
-                              color: darkSlate,
-                            ),
-                          ),
-                          if (guest?.email != null &&
-                              guest!.email!.trim().isNotEmpty)
-                            pw.Text(
-                              'Email: ${guest.email}',
-                              style: pw.TextStyle(
-                                fontSize: 9,
-                                color: darkSlate,
-                              ),
-                            ),
-                          if (guest?.displayIdNumber != null &&
-                              guest!.displayIdNumber.isNotEmpty)
-                            pw.Text(
-                              'ID: ${guest.idType.toUpperCase()} - ${guest.displayIdNumber}',
-                              style: pw.TextStyle(
-                                fontSize: 9,
-                                color: darkSlate,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    pw.SizedBox(width: 16),
-                    // Right: Stay Info
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'STAY & RESERVATION DETAILS',
-                            style: pw.TextStyle(
-                              fontSize: 8,
-                              fontWeight: pw.FontWeight.bold,
-                              color: mutedSlate,
-                              letterSpacing: 0.6,
-                            ),
-                          ),
-                          pw.SizedBox(height: 4),
-                          pw.Text(
-                            'Room ${room?.roomNumber ?? stay.room?.roomNumber ?? "N/A"} (${room?.categoryName ?? stay.room?.categoryName ?? "Standard"})',
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                              color: darkSlate,
-                            ),
-                          ),
-                          pw.SizedBox(height: 2),
-                          pw.Text(
-                            'Duration: $nights Night${nights > 1 ? "s" : ""}  |  ${stay.guestSummary}',
-                            style: pw.TextStyle(
-                              fontSize: 9,
-                              color: darkSlate,
-                            ),
-                          ),
-                          pw.Text(
-                            'Check-In:  $checkIn',
-                            style: pw.TextStyle(
-                              fontSize: 8.5,
-                              color: mutedSlate,
-                            ),
-                          ),
-                          pw.Text(
-                            'Check-Out: $checkOut',
-                            style: pw.TextStyle(
-                              fontSize: 8.5,
-                              color: mutedSlate,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              pw.SizedBox(height: 14),
-
-              // ── 3. Itemized Particulars Table ─────────────────────────────
-              pw.Container(
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: borderSlate, width: 0.8),
-                  borderRadius: const pw.BorderRadius.all(
-                    pw.Radius.circular(6),
-                  ),
-                ),
-                child: pw.Column(
-                  children: [
-                    // Table Header
-                    pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      color: PdfColor.fromHex('#F1F5F9'),
-                      child: pw.Row(
-                        children: [
-                          pw.Expanded(
-                            flex: 5,
-                            child: pw.Text(
-                              'DESCRIPTION',
-                              style: pw.TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: pw.FontWeight.bold,
-                                color: mutedSlate,
-                              ),
-                            ),
-                          ),
-                          pw.Expanded(
-                            flex: 2,
-                            child: pw.Text(
-                              'QTY',
-                              textAlign: pw.TextAlign.center,
-                              style: pw.TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: pw.FontWeight.bold,
-                                color: mutedSlate,
-                              ),
-                            ),
-                          ),
-                          pw.Expanded(
-                            flex: 2,
-                            child: pw.Text(
-                              'RATE (Rs.)',
-                              textAlign: pw.TextAlign.right,
-                              style: pw.TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: pw.FontWeight.bold,
-                                color: mutedSlate,
-                              ),
-                            ),
-                          ),
-                          pw.Expanded(
-                            flex: 3,
-                            child: pw.Text(
-                              'AMOUNT (Rs.)',
-                              textAlign: pw.TextAlign.right,
-                              style: pw.TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: pw.FontWeight.bold,
-                                color: mutedSlate,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    pw.Divider(thickness: 0.8, color: borderSlate, height: 1),
-                    // Table Row 1: Accommodation
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      child: pw.Row(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Expanded(
-                            flex: 5,
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text(
-                                  'Room Accommodation',
-                                  style: pw.TextStyle(
-                                    fontSize: 9.5,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: darkSlate,
-                                  ),
-                                ),
-                                pw.Text(
-                                  'Room ${room?.roomNumber ?? stay.room?.roomNumber ?? ""} - ${room?.categoryName ?? stay.room?.categoryName ?? "Standard Room"}',
-                                  style: pw.TextStyle(
-                                    fontSize: 8.5,
-                                    color: mutedSlate,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          pw.Expanded(
-                            flex: 2,
-                            child: pw.Text(
-                              '$nights Night${nights > 1 ? "s" : ""}',
-                              textAlign: pw.TextAlign.center,
-                              style: pw.TextStyle(
-                                fontSize: 9,
-                                color: darkSlate,
-                              ),
-                            ),
-                          ),
-                          pw.Expanded(
-                            flex: 2,
-                            child: pw.Text(
-                              'Rs. ${stay.nightlyRate.toInt()}',
-                              textAlign: pw.TextAlign.right,
-                              style: pw.TextStyle(
-                                fontSize: 9,
-                                color: darkSlate,
-                              ),
-                            ),
-                          ),
-                          pw.Expanded(
-                            flex: 3,
-                            child: pw.Text(
-                              'Rs. ${(stay.nightlyRate * nights).toInt()}',
-                              textAlign: pw.TextAlign.right,
-                              style: pw.TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: pw.FontWeight.bold,
-                                color: darkSlate,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              pw.SizedBox(height: 12),
-
-              // ── 4. Tax & Settlement Summary ───────────────────────────────
+              // ── 3. Clean 3-Column Metadata (FROM, BILL TO, DATES) ──────────
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  // Left note / Bank details
-                  pw.Expanded(
-                    flex: 3,
-                    child: pw.Container(
-                      padding: const pw.EdgeInsets.all(10),
-                      decoration: pw.BoxDecoration(
-                        color: bgLight,
-                        borderRadius: const pw.BorderRadius.all(
-                          pw.Radius.circular(6),
-                        ),
-                        border: pw.Border.all(color: borderSlate, width: 0.8),
-                      ),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'PAYMENT & BANKING DETAILS',
-                            style: pw.TextStyle(
-                              fontSize: 7.5,
-                              fontWeight: pw.FontWeight.bold,
-                              color: mutedSlate,
-                            ),
-                          ),
-                          pw.SizedBox(height: 3),
-                          pw.Text(
-                            'Payee: ${property.upiPayeeName}',
-                            style: pw.TextStyle(
-                              fontSize: 8.5,
-                              color: darkSlate,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                          pw.Text(
-                            'UPI VPA: ${property.upiId}',
-                            style: pw.TextStyle(
-                              fontSize: 8.5,
-                              color: darkSlate,
-                            ),
-                          ),
-                          pw.SizedBox(height: 6),
-                          pw.Text(
-                            'Remarks: Folio settled upon check-out via ${paymentMethod.toUpperCase()}.',
-                            style: pw.TextStyle(
-                              fontSize: 8,
-                              color: mutedSlate,
-                              fontStyle: pw.FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  pw.SizedBox(width: 14),
-                  // Right financial rows
+                  // Column 1: FROM
                   pw.Expanded(
                     flex: 4,
                     child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        _summaryRow(
-                          'Base Room Tariff (Taxable)',
-                          'Rs. $baseAmount',
-                          darkSlate,
+                        pw.Text(
+                          'FROM',
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: mutedSlate,
+                            letterSpacing: 0.8,
+                          ),
                         ),
-                        _summaryRow(
-                          'CGST (6.0%)',
-                          'Rs. $cgst',
-                          mutedSlate,
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          property.name,
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: darkSlate,
+                          ),
                         ),
-                        _summaryRow(
-                          'SGST (6.0%)',
-                          'Rs. $sgst',
-                          mutedSlate,
+                        pw.SizedBox(height: 2),
+                        if (property.email.isNotEmpty)
+                          pw.Text(
+                            property.email,
+                            style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
+                          ),
+                        pw.Text(
+                          '${property.address}, ${property.city}',
+                          style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
                         ),
-                        pw.Divider(thickness: 0.8, color: borderSlate, height: 8),
+                        pw.Text(
+                          '${property.state} - ${property.pincode}',
+                          style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
+                        ),
+                        if (property.phone.isNotEmpty)
+                          pw.Text(
+                            'Ph: ${property.phone}',
+                            style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
+                          ),
+                        if (property.gstNumber.isNotEmpty)
+                          pw.Text(
+                            'GSTIN: ${property.gstNumber}',
+                            style: pw.TextStyle(
+                              fontSize: 8.5,
+                              color: darkSlate,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 14),
+
+                  // Column 2: BILL TO
+                  pw.Expanded(
+                    flex: 4,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'BILL TO',
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: mutedSlate,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          guest?.fullName ?? 'Valued Guest',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: darkSlate,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        if (guest != null && guest.email != null && guest.email!.trim().isNotEmpty)
+                          pw.Text(
+                            guest.email!,
+                            style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
+                          ),
+                        if (guest != null && guest.phone.trim().isNotEmpty)
+                          pw.Text(
+                            guest.phone,
+                            style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
+                          ),
+                        pw.Text(
+                          'Room: ${room?.roomNumber ?? stay.room?.roomNumber ?? "N/A"} (${room?.categoryName ?? stay.room?.categoryName ?? "Standard"})',
+                          style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
+                        ),
+                        if (guest != null && guest.displayIdNumber.isNotEmpty)
+                          pw.Text(
+                            '${guest.idType.toUpperCase()}: ${guest.displayIdNumber}',
+                            style: pw.TextStyle(fontSize: 8.5, color: mutedSlate),
+                          ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 14),
+
+                  // Column 3: DATES (Right aligned)
+                  pw.Expanded(
+                    flex: 3,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        pw.Text(
+                          'ISSUED',
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: mutedSlate,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          issueDate,
+                          style: pw.TextStyle(
+                            fontSize: 8.5,
+                            color: darkSlate,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 6),
+                        pw.Text(
+                          'CHECK-IN',
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: mutedSlate,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          checkIn,
+                          style: pw.TextStyle(fontSize: 8.5, color: darkSlate),
+                        ),
+                        pw.SizedBox(height: 6),
+                        pw.Text(
+                          'CHECK-OUT',
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: mutedSlate,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          checkOut,
+                          style: pw.TextStyle(fontSize: 8.5, color: darkSlate),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              pw.SizedBox(height: 22),
+
+              // ── 4. Itemized Particulars Table ─────────────────────────────
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(vertical: 6),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border(
+                    top: pw.BorderSide(color: borderSlate, width: 0.8),
+                    bottom: pw.BorderSide(color: borderSlate, width: 0.8),
+                  ),
+                ),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      flex: 5,
+                      child: pw.Text(
+                        'DESCRIPTION',
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: mutedSlate,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'QTY',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: mutedSlate,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'RATE (Rs.)',
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: mutedSlate,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'AMOUNT (Rs.)',
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: mutedSlate,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Table Row
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(vertical: 10),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      flex: 5,
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Room Accommodation',
+                            style: pw.TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: pw.FontWeight.bold,
+                              color: darkSlate,
+                            ),
+                          ),
+                          pw.SizedBox(height: 2),
+                          pw.Text(
+                            'Room ${room?.roomNumber ?? stay.room?.roomNumber ?? ""} · ${room?.categoryName ?? stay.room?.categoryName ?? "Standard Room"}',
+                            style: pw.TextStyle(
+                              fontSize: 8,
+                              color: mutedSlate,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        '$nights Night${nights > 1 ? "s" : ""}',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(fontSize: 8.5, color: darkSlate),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'Rs. ${stay.nightlyRate.toInt()}',
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(fontSize: 8.5, color: darkSlate),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'Rs. ${(stay.nightlyRate * nights).toInt()}',
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          fontWeight: pw.FontWeight.bold,
+                          color: darkSlate,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              pw.Divider(thickness: 0.8, color: borderSlate),
+
+              pw.SizedBox(height: 8),
+
+              // ── 5. Financial Summary (Right-Aligned) ───────────────────────
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.end,
+                children: [
+                  pw.SizedBox(
+                    width: 220,
+                    child: pw.Column(
+                      children: [
+                        _summaryRow('Subtotal (Taxable)', 'Rs. $baseAmount', darkSlate),
+                        _summaryRow('Tax (12% GST)', 'Rs. ${cgst + sgst}', mutedSlate),
+                        pw.SizedBox(height: 3),
+                        pw.Divider(thickness: 0.8, color: borderSlate),
+                        pw.SizedBox(height: 3),
                         _summaryRow(
-                          'Total Invoice Amount (GST Incl.)',
+                          'Total',
                           'Rs. ${totalBilled.toInt()}',
                           darkSlate,
                           isBold: true,
+                          fontSize: 9.5,
                         ),
-                        _summaryRow(
-                          'Advance Deposit Received',
-                          '(-) Rs. ${advancePaid.toInt()}',
-                          successGreen,
-                        ),
+                        if (advancePaid > 0)
+                          _summaryRow(
+                            'Advance Deposit',
+                            '(-) Rs. ${advancePaid.toInt()}',
+                            successGreen,
+                          ),
                         if (balancePaid > 0)
                           _summaryRow(
-                            'Settlement (${paymentMethod.toUpperCase()})',
+                            'Paid at Check-Out (${paymentMethod.toUpperCase()})',
                             '(-) Rs. ${balancePaid.toInt()}',
                             successGreen,
                           ),
-                        pw.Divider(thickness: 1, color: borderSlate, height: 8),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 5,
-                          ),
-                          decoration: pw.BoxDecoration(
-                            color: balanceDue <= 0 ? successBg : warningBg,
-                            borderRadius: const pw.BorderRadius.all(
-                              pw.Radius.circular(4),
-                            ),
-                          ),
-                          child: pw.Row(
-                            mainAxisAlignment:
-                                pw.MainAxisAlignment.spaceBetween,
-                            children: [
-                              pw.Text(
-                                'NET BALANCE DUE',
-                                style: pw.TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: balanceDue <= 0
-                                      ? successGreen
-                                      : warningAmber,
-                                ),
-                              ),
-                              pw.Text(
-                                'Rs. ${balanceDue.toInt()}',
-                                style: pw.TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: balanceDue <= 0
-                                      ? successGreen
-                                      : warningAmber,
-                                ),
-                              ),
-                            ],
-                          ),
+                        pw.SizedBox(height: 3),
+                        pw.Divider(thickness: 0.8, color: borderSlate),
+                        pw.SizedBox(height: 3),
+                        _summaryRow(
+                          'Balance Due',
+                          'Rs. ${balanceDue.toInt()}',
+                          balanceDue <= 0 ? successGreen : warningAmber,
+                          isBold: true,
+                          fontSize: 10.5,
                         ),
                       ],
                     ),
@@ -575,11 +542,11 @@ class InvoicePdfService {
 
               pw.Spacer(),
 
-              // ── 5. Terms, Conditions & Footer ─────────────────────────────
+              // ── 6. Bottom Payment Details & Notes ─────────────────────────
               pw.Divider(thickness: 0.8, color: borderSlate),
-              pw.SizedBox(height: 6),
+              pw.SizedBox(height: 8),
               pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Expanded(
@@ -587,46 +554,61 @@ class InvoicePdfService {
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
-                          'Terms & Conditions:',
+                          'PAYMENT DETAILS',
                           style: pw.TextStyle(
                             fontSize: 7.5,
                             fontWeight: pw.FontWeight.bold,
-                            color: darkSlate,
+                            color: mutedSlate,
+                            letterSpacing: 0.6,
                           ),
                         ),
+                        pw.SizedBox(height: 3),
                         pw.Text(
-                          '1. All tariffs are inclusive of Goods & Services Tax (GST). All disputes subject to local jurisdiction.',
-                          style: pw.TextStyle(fontSize: 7, color: mutedSlate),
+                          'Method: ${paymentMethod.toUpperCase()}',
+                          style: pw.TextStyle(fontSize: 8, color: darkSlate),
                         ),
-                        pw.Text(
-                          '2. Check-out time is strictly ${property.defaultCheckOutTime}. Late check-out is subject to prior availability.',
-                          style: pw.TextStyle(fontSize: 7, color: mutedSlate),
-                        ),
-                        pw.Text(
-                          '3. This is an authentic computer-generated GST tax invoice issued via EaseInn PMS and requires no signature.',
-                          style: pw.TextStyle(fontSize: 7, color: mutedSlate),
-                        ),
+                        if (property.upiPayeeName.isNotEmpty)
+                          pw.Text(
+                            'Payee: ${property.upiPayeeName}',
+                            style: pw.TextStyle(fontSize: 8, color: darkSlate),
+                          ),
+                        if (property.upiId.isNotEmpty)
+                          pw.Text(
+                            'UPI ID: ${property.upiId}',
+                            style: pw.TextStyle(fontSize: 8, color: darkSlate),
+                          ),
                       ],
                     ),
                   ),
                   pw.SizedBox(width: 16),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text(
-                        'Thank you for staying with us!',
-                        style: pw.TextStyle(
-                          fontSize: 8.5,
-                          fontWeight: pw.FontWeight.bold,
-                          color: darkSlate,
-                          fontStyle: pw.FontStyle.italic,
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'NOTES',
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: mutedSlate,
+                            letterSpacing: 0.6,
+                          ),
                         ),
-                      ),
-                      pw.Text(
-                        'EaseInn PMS • Verified Property Management System',
-                        style: pw.TextStyle(fontSize: 7, color: mutedSlate),
-                      ),
-                    ],
+                        pw.SizedBox(height: 3),
+                        pw.Text(
+                          'Thank you for staying at ${property.name}!',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            color: darkSlate,
+                            fontStyle: pw.FontStyle.italic,
+                          ),
+                        ),
+                        pw.Text(
+                          'Official computer-generated GST tax invoice issued via EaseInn PMS.',
+                          style: pw.TextStyle(fontSize: 7, color: mutedSlate),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -644,24 +626,25 @@ class InvoicePdfService {
     String value,
     PdfColor color, {
     bool isBold = false,
+    double fontSize = 8.5,
   }) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      padding: const pw.EdgeInsets.symmetric(vertical: 2.2),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
             label,
             style: pw.TextStyle(
-              fontSize: 8.5,
+              fontSize: fontSize,
               fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              color: color,
+              color: isBold ? PdfColor.fromHex('#0F172A') : PdfColor.fromHex('#64748B'),
             ),
           ),
           pw.Text(
             value,
             style: pw.TextStyle(
-              fontSize: 8.5,
+              fontSize: fontSize,
               fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
               color: color,
             ),
@@ -671,15 +654,47 @@ class InvoicePdfService {
     );
   }
 
-  /// Save PDF file to temporary or documents storage
+  static const _downloadsChannel = MethodChannel('com.easeinn.mobile/downloads');
+
+  /// Save PDF file to public Downloads (on Android) and return a local File
   static Future<File> saveInvoicePdfToFile({
     required Uint8List pdfBytes,
     required String fileName,
   }) async {
+    // 1. Write to local cache/documents so Share & local viewers have a direct File path
     final tempDir = await getTemporaryDirectory();
-    final file = File('${tempDir.path}/$fileName');
-    await file.writeAsBytes(pdfBytes, flush: true);
-    return file;
+    final localFile = File('${tempDir.path}/$fileName');
+    await localFile.writeAsBytes(pdfBytes, flush: true);
+
+    // 2. Save directly to Android public Downloads via MediaStore so it appears in the Downloads app
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        await _downloadsChannel.invokeMethod<String>('saveToDownloads', {
+          'fileName': fileName,
+          'mimeType': 'application/pdf',
+          'bytes': pdfBytes,
+        });
+      } catch (_) {
+        try {
+          final publicDownload = Directory('/storage/emulated/0/Download/EaseInn');
+          if (!publicDownload.existsSync()) {
+            publicDownload.createSync(recursive: true);
+          }
+          final dlFile = File('${publicDownload.path}/$fileName');
+          await dlFile.writeAsBytes(pdfBytes, flush: true);
+        } catch (_) {}
+      }
+    } else if (!kIsWeb) {
+      try {
+        final dlDir = await getDownloadsDirectory();
+        if (dlDir != null) {
+          final dlFile = File('${dlDir.path}/$fileName');
+          await dlFile.writeAsBytes(pdfBytes, flush: true);
+        }
+      } catch (_) {}
+    }
+
+    return localFile;
   }
 
   /// Print or open standard Android/iOS print spooler preview

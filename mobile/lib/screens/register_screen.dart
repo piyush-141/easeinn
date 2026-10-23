@@ -15,18 +15,18 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  int _currentStep = 1; // 1 = Manager Account, 2 = Hotel Details
+  int _currentStep = 1; // 1 = Hotel Property (Primary), 2 = Manager Account (Secondary)
   bool _isLoading = false;
   String? _errorMessage;
 
-  // Manager controllers
+  // Manager controllers (Secondary)
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   bool _obscurePassword = true;
 
-  // Hotel controllers
+  // Hotel controllers (Primary)
   final _hotelNameController = TextEditingController();
   final _cityController = TextEditingController();
   final _stateController = TextEditingController(text: 'Karnataka');
@@ -51,7 +51,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  /// Step 1: Validate Hotel Property Details (Primary)
   void _validateStep1AndProceed() {
+    setState(() => _errorMessage = null);
+
+    final hotelName = _hotelNameController.text.trim();
+    final city = _cityController.text.trim();
+
+    if (hotelName.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your hotel or property name');
+      return;
+    }
+    if (city.isEmpty) {
+      setState(() => _errorMessage = 'Please enter the city');
+      return;
+    }
+
+    setState(() => _currentStep = 2);
+  }
+
+  /// Step 2: Validate Manager Account (Secondary) and Submit Full Registration
+  Future<void> _submitRegistration() async {
     setState(() => _errorMessage = null);
 
     final name = _fullNameController.text.trim();
@@ -76,12 +96,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() => _currentStep = 2);
-  }
-
-  Future<void> _submitRegistration() async {
-    setState(() => _errorMessage = null);
-
     final hotelName = _hotelNameController.text.trim();
     final city = _cityController.text.trim();
     final state = _stateController.text.trim();
@@ -92,25 +106,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ? _upiPayeeNameController.text.trim()
         : hotelName;
 
-    if (hotelName.isEmpty) {
-      setState(() => _errorMessage = 'Please enter your hotel or property name');
-      return;
-    }
-    if (city.isEmpty) {
-      setState(() => _errorMessage = 'Please enter the city');
-      return;
-    }
-
     setState(() => _isLoading = true);
 
     final authService = AuthService();
     final store = context.read<HotelStore>();
 
     final result = await authService.signUpHotel(
-      fullName: _fullNameController.text.trim(),
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
-      phone: _phoneController.text.trim(),
       hotelName: hotelName,
       city: city,
       state: state,
@@ -118,6 +119,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       totalRooms: rooms,
       upiId: upiId,
       upiPayeeName: upiPayee,
+      fullName: name,
+      email: email,
+      password: password,
+      phone: phone,
       store: store,
     );
 
@@ -216,7 +221,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              'Register Hotel Account',
+              'Register Hotel Property',
               style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
             ),
           ],
@@ -234,7 +239,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Expanded(
                     child: _buildStepTab(
                       stepNumber: 1,
-                      title: 'Manager Info',
+                      title: 'Hotel Property',
                       isActive: _currentStep == 1,
                       isCompleted: _currentStep > 1,
                     ),
@@ -243,7 +248,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Expanded(
                     child: _buildStepTab(
                       stepNumber: 2,
-                      title: 'Hotel Profile',
+                      title: 'Manager Account',
                       isActive: _currentStep == 2,
                       isCompleted: false,
                     ),
@@ -277,92 +282,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 16),
               ],
 
-              // ── STEP 1: Manager Account ──────────────────────────
+              // ── STEP 1: Hotel Details (Primary) ──────────────────
               if (_currentStep == 1) ...[
-                Text(
-                  'General Manager Credentials',
-                  style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Set up your master administrative account for front-desk operations.',
-                  style: GoogleFonts.inter(fontSize: 13, color: Colors.white60),
-                ),
-                const SizedBox(height: 20),
-
-                _buildTextField(
-                  label: 'Full Name',
-                  controller: _fullNameController,
-                  hint: 'e.g. Piyush Pal',
-                  icon: Icons.person_outline_rounded,
-                ),
-                const SizedBox(height: 14),
-
-                _buildTextField(
-                  label: 'Work Email Address',
-                  controller: _emailController,
-                  hint: 'manager@yourhotel.com',
-                  icon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 14),
-
-                _buildTextField(
-                  label: 'Mobile Contact',
-                  controller: _phoneController,
-                  hint: '+91 98765 43210',
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 14),
-
-                _buildTextField(
-                  label: 'Password',
-                  controller: _passwordController,
-                  hint: 'Minimum 6 characters',
-                  icon: Icons.lock_outline_rounded,
-                  obscureText: _obscurePassword,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                      color: Colors.white54,
-                      size: 20,
-                    ),
-                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                  ),
-                ),
-                const SizedBox(height: 28),
-
-                SizedBox(
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _validateStep1AndProceed,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.brandPrimary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('Continue to Hotel Details', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.arrow_forward_rounded, size: 18),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-
-              // ── STEP 2: Hotel Details ────────────────────────────
-              if (_currentStep == 2) ...[
                 Text(
                   'Hotel & Property Information',
                   style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Your property details appear on guest folios and Indian GST invoices.',
+                  'Register your primary hotel property first. Managers will be assigned to this hotel.',
                   style: GoogleFonts.inter(fontSize: 13, color: Colors.white60),
                 ),
                 const SizedBox(height: 20),
@@ -430,6 +358,83 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 28),
+
+                SizedBox(
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _validateStep1AndProceed,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.brandPrimary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('Continue to Manager Account', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
+              // ── STEP 2: Manager Account (Secondary) ──────────────
+              if (_currentStep == 2) ...[
+                Text(
+                  'General Manager Credentials',
+                  style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Set up your administrative account for front-desk operations.',
+                  style: GoogleFonts.inter(fontSize: 13, color: Colors.white60),
+                ),
+                const SizedBox(height: 20),
+
+                _buildTextField(
+                  label: 'Full Name',
+                  controller: _fullNameController,
+                  hint: 'e.g. Piyush Pal',
+                  icon: Icons.person_outline_rounded,
+                ),
+                const SizedBox(height: 14),
+
+                _buildTextField(
+                  label: 'Work Email Address',
+                  controller: _emailController,
+                  hint: 'manager@yourhotel.com',
+                  icon: Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 14),
+
+                _buildTextField(
+                  label: 'Mobile Contact',
+                  controller: _phoneController,
+                  hint: '+91 98765 43210',
+                  icon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 14),
+
+                _buildTextField(
+                  label: 'Password',
+                  controller: _passwordController,
+                  hint: 'Minimum 6 characters',
+                  icon: Icons.lock_outline_rounded,
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                      color: Colors.white54,
+                      size: 20,
+                    ),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  ),
                 ),
                 const SizedBox(height: 28),
 

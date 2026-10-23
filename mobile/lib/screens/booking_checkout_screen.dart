@@ -8,7 +8,6 @@ import '../models/stay.dart';
 import '../models/bill.dart';
 import '../models/room.dart';
 import '../services/hotel_store.dart';
-import '../services/whatsapp_service.dart';
 import '../services/invoice_pdf_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/pressable_scale.dart';
@@ -194,84 +193,6 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
     }
   }
 
-  Future<void> _sendInvoicePdfViaWhatsApp({
-    required Stay stay,
-    required Bill? bill,
-    required double totalBilled,
-    required double advancePaid,
-    required double balancePaid,
-    required double balanceDue,
-    required Room? room,
-    required String invoiceNo,
-  }) async {
-    final phone = stay.guest?.phone;
-    if (phone == null || phone.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No guest phone number available to send WhatsApp.'),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
-    try {
-      final store = context.read<HotelStore>();
-      final df = DateFormat('dd MMM yyyy');
-      final pdfBytes = await _getPdfBytes(
-        stay: stay,
-        bill: bill,
-        totalBilled: totalBilled,
-        advancePaid: advancePaid,
-        balancePaid: balancePaid,
-        balanceDue: balanceDue,
-        room: room,
-      );
-      final pdfBase64 = InvoicePdfService.toBase64(pdfBytes);
-      final fileName = 'Invoice_$invoiceNo.pdf';
-
-      final success = await WhatsAppService.triggerCheckOut(
-        guestName: stay.guest?.fullName ?? 'Valued Guest',
-        phone: phone,
-        hotelName: store.currentProperty.name,
-        roomNumber: room?.roomNumber ?? stay.room?.roomNumber ?? '',
-        checkInDate: df.format(stay.checkInAt),
-        checkOutDate: df.format(stay.checkOutAt ?? DateTime.now()),
-        stayId: stay.id,
-        pdfBase64: pdfBase64,
-        pdfFileName: fileName,
-      );
-
-      await InvoicePdfService.shareInvoicePdf(
-        pdfBytes: pdfBytes,
-        fileName: fileName,
-        guestName: stay.guest?.fullName ?? 'Guest',
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success
-                ? 'Invoice PDF dispatched via WhatsApp to ${stay.guest?.fullName}!'
-                : 'Invoice PDF prepared for ${stay.guest?.fullName}!'),
-            backgroundColor: const Color(0xFF16A34A),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error dispatching PDF: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
 
   Future<void> _saveInvoicePdf({
     required Stay stay,
@@ -294,7 +215,7 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
         room: room,
       );
       final fileName = 'Invoice_$invoiceNo.pdf';
-      final file = await InvoicePdfService.saveInvoicePdfToFile(
+      await InvoicePdfService.saveInvoicePdfToFile(
         pdfBytes: pdfBytes,
         fileName: fileName,
       );
@@ -302,7 +223,7 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('PDF Invoice saved: ${file.path.split("/").last}'),
+            content: Text('Saved to Downloads/EaseInn: $fileName'),
             backgroundColor: const Color(0xFF16A34A),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -331,42 +252,6 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
     }
   }
 
-  Future<void> _printInvoicePdf({
-    required Stay stay,
-    required Bill? bill,
-    required double totalBilled,
-    required double advancePaid,
-    required double balancePaid,
-    required double balanceDue,
-    required Room? room,
-    required String invoiceNo,
-  }) async {
-    try {
-      final pdfBytes = await _getPdfBytes(
-        stay: stay,
-        bill: bill,
-        totalBilled: totalBilled,
-        advancePaid: advancePaid,
-        balancePaid: balancePaid,
-        balanceDue: balanceDue,
-        room: room,
-      );
-      await InvoicePdfService.printInvoicePdf(
-        pdfBytes: pdfBytes,
-        documentName: 'Invoice_$invoiceNo.pdf',
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open print spooler: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
 
   void _showGenerateInvoice(Stay stay, Bill? bill, double roomTotal, {bool isFinalized = false}) {
     final store = context.read<HotelStore>();
@@ -496,87 +381,200 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // 1. Hotel Header & Status Badge
+                          // 1. Panoramic Scenic Header Banner
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.asset(
+                              'assets/images/invoice_banner.jpg',
+                              height: 110,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                height: 110,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFFE2E8F0), Color(0xFFF8FAFC)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // 2. Monogram, INVOICE title & Status Badge
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.slateDark,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        property.name.isNotEmpty
+                                            ? property.name[0].toUpperCase()
+                                            : 'E',
+                                        style: GoogleFonts.outfit(
+                                          color: Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'INVOICE',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateDark,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '#$invoiceNo',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.slateDark,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: balanceDue <= 0
+                                          ? const Color(0xFFDCFCE7)
+                                          : const Color(0xFFFEF3C7),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: balanceDue <= 0
+                                            ? const Color(0xFF86EFAC)
+                                            : const Color(0xFFFDE68A),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      balanceDue <= 0
+                                          ? 'PAID IN FULL'
+                                          : 'PAYMENT DUE',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: balanceDue <= 0
+                                            ? const Color(0xFF15803D)
+                                            : const Color(0xFFB45309),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+
+                          // 3. Clean 3-Column Metadata (FROM, BILL TO, DATES)
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // FROM
                               Expanded(
+                                flex: 4,
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
+                                      'FROM',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateMuted,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
                                       property.name,
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 18,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11.5,
                                         fontWeight: FontWeight.bold,
                                         color: AppTheme.slateDark,
                                       ),
                                     ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      '${property.address}, ${property.city}, ${property.state} - ${property.pincode}',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: AppTheme.slateMuted,
-                                      ),
-                                    ),
                                     const SizedBox(height: 2),
+                                    if (property.email.isNotEmpty)
+                                      Text(
+                                        property.email,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          color: AppTheme.slateMuted,
+                                        ),
+                                      ),
                                     Text(
-                                      'GSTIN: ${property.gstNumber}  •  Ph: ${property.phone}',
+                                      '${property.address}, ${property.city}',
                                       style: GoogleFonts.inter(
-                                        fontSize: 11,
+                                        fontSize: 10,
                                         color: AppTheme.slateMuted,
-                                        fontWeight: FontWeight.w500,
                                       ),
                                     ),
+                                    Text(
+                                      '${property.state} - ${property.pincode}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                    if (property.phone.isNotEmpty)
+                                      Text(
+                                        'Ph: ${property.phone}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          color: AppTheme.slateMuted,
+                                        ),
+                                      ),
+                                    if (property.gstNumber.isNotEmpty)
+                                      Text(
+                                        'GSTIN: ${property.gstNumber}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          color: AppTheme.slateDark,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: balanceDue <= 0
-                                      ? const Color(0xFFDCFCE7)
-                                      : const Color(0xFFFEF3C7),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: balanceDue <= 0
-                                        ? const Color(0xFF86EFAC)
-                                        : const Color(0xFFFDE68A),
-                                  ),
-                                ),
-                                child: Text(
-                                  balanceDue <= 0 ? 'PAID IN FULL' : 'PAYMENT DUE',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                    color: balanceDue <= 0
-                                        ? const Color(0xFF15803D)
-                                        : const Color(0xFFB45309),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Divider(height: 24, color: AppTheme.slateBorder),
+                              const SizedBox(width: 12),
 
-                          // 2. Invoice Meta & Guest Info
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                              // BILL TO
                               Expanded(
+                                flex: 4,
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'BILLED TO',
+                                      'BILL TO',
                                       style: GoogleFonts.inter(
-                                        fontSize: 10,
+                                        fontSize: 9.5,
                                         fontWeight: FontWeight.bold,
                                         color: AppTheme.slateMuted,
                                         letterSpacing: 0.8,
@@ -586,67 +584,104 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                                     Text(
                                       guest?.fullName ?? 'Valued Guest',
                                       style: GoogleFonts.inter(
-                                        fontSize: 14,
+                                        fontSize: 11.5,
                                         fontWeight: FontWeight.bold,
                                         color: AppTheme.slateDark,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
+                                    if (guest?.email != null &&
+                                        guest!.email!.trim().isNotEmpty)
+                                      Text(
+                                        guest.email!,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          color: AppTheme.slateMuted,
+                                        ),
+                                      ),
+                                    if (guest != null && guest.phone.trim().isNotEmpty)
+                                      Text(
+                                        guest.phone,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          color: AppTheme.slateMuted,
+                                        ),
+                                      ),
                                     Text(
-                                      guest?.phone ?? 'No phone recorded',
+                                      'Room: ${room?.roomNumber ?? stay.room?.roomNumber ?? "N/A"} (${room?.categoryName ?? stay.room?.categoryName ?? "Standard"})',
                                       style: GoogleFonts.inter(
-                                        fontSize: 11,
+                                        fontSize: 10,
                                         color: AppTheme.slateMuted,
                                       ),
                                     ),
-                                    if (guest?.displayIdNumber != null &&
-                                        guest!.displayIdNumber.isNotEmpty)
+                                    if (guest != null && guest.displayIdNumber.isNotEmpty)
                                       Text(
                                         '${guest.idType.toUpperCase()}: ${guest.displayIdNumber}',
                                         style: GoogleFonts.inter(
-                                          fontSize: 11,
+                                          fontSize: 10,
                                           color: AppTheme.slateMuted,
                                         ),
                                       ),
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
+
+                              // DATES
                               Expanded(
+                                flex: 3,
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      'INVOICE NO.',
+                                      'ISSUED',
                                       style: GoogleFonts.inter(
-                                        fontSize: 10,
+                                        fontSize: 9,
                                         fontWeight: FontWeight.bold,
                                         color: AppTheme.slateMuted,
                                         letterSpacing: 0.8,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
                                     Text(
-                                      invoiceNo,
+                                      issueDate,
                                       style: GoogleFonts.inter(
-                                        fontSize: 13,
+                                        fontSize: 10.5,
                                         fontWeight: FontWeight.bold,
-                                        color: AppTheme.brandPrimary,
+                                        color: AppTheme.slateDark,
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
+                                    const SizedBox(height: 6),
                                     Text(
-                                      'Issued: $issueDate',
+                                      'CHECK-IN',
                                       style: GoogleFonts.inter(
-                                        fontSize: 10.5,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
                                         color: AppTheme.slateMuted,
+                                        letterSpacing: 0.8,
                                       ),
                                     ),
                                     Text(
-                                      'Stay ID: #${stay.id.toUpperCase()}',
+                                      checkIn,
                                       style: GoogleFonts.inter(
-                                        fontSize: 10.5,
+                                        fontSize: 10,
+                                        color: AppTheme.slateDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'CHECK-OUT',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
                                         color: AppTheme.slateMuted,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                    Text(
+                                      checkOut,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        color: AppTheme.slateDark,
                                       ),
                                     ),
                                   ],
@@ -654,84 +689,34 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 14),
-
-                          // 3. Stay Details Banner
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Column(
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Room ${room?.roomNumber ?? stay.room?.roomNumber ?? "N/A"} (${room?.categoryName ?? stay.room?.categoryName ?? "Standard"})',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.slateDark,
-                                      ),
-                                    ),
-                                    Text(
-                                      '$nights Night${nights > 1 ? "s" : ""} · ${stay.guestSummary}',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppTheme.brandPrimary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'In: $checkIn',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 10.5,
-                                        color: AppTheme.slateMuted,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Out: $checkOut',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 10.5,
-                                        color: AppTheme.slateMuted,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 22),
 
                           // 4. Itemized Charges Table
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(8),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: const BoxDecoration(
+                              border: Border(
+                                top: BorderSide(
+                                  color: AppTheme.slateBorder,
+                                  width: 0.8,
+                                ),
+                                bottom: BorderSide(
+                                  color: AppTheme.slateBorder,
+                                  width: 0.8,
+                                ),
+                              ),
                             ),
                             child: Row(
                               children: [
                                 Expanded(
                                   flex: 5,
                                   child: Text(
-                                    'PARTICULARS',
+                                    'DESCRIPTION',
                                     style: GoogleFonts.inter(
-                                      fontSize: 10,
+                                      fontSize: 9.5,
                                       fontWeight: FontWeight.bold,
                                       color: AppTheme.slateMuted,
+                                      letterSpacing: 0.6,
                                     ),
                                   ),
                                 ),
@@ -741,9 +726,10 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                                     'QTY',
                                     textAlign: TextAlign.center,
                                     style: GoogleFonts.inter(
-                                      fontSize: 10,
+                                      fontSize: 9.5,
                                       fontWeight: FontWeight.bold,
                                       color: AppTheme.slateMuted,
+                                      letterSpacing: 0.6,
                                     ),
                                   ),
                                 ),
@@ -753,9 +739,10 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                                     'RATE',
                                     textAlign: TextAlign.right,
                                     style: GoogleFonts.inter(
-                                      fontSize: 10,
+                                      fontSize: 9.5,
                                       fontWeight: FontWeight.bold,
                                       color: AppTheme.slateMuted,
+                                      letterSpacing: 0.6,
                                     ),
                                   ),
                                 ),
@@ -765,9 +752,10 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                                     'AMOUNT',
                                     textAlign: TextAlign.right,
                                     style: GoogleFonts.inter(
-                                      fontSize: 10,
+                                      fontSize: 9.5,
                                       fontWeight: FontWeight.bold,
                                       color: AppTheme.slateMuted,
+                                      letterSpacing: 0.6,
                                     ),
                                   ),
                                 ),
@@ -775,16 +763,15 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                             ),
                           ),
                           Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 10,
-                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                             child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   flex: 5,
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Room Accommodation',
@@ -794,10 +781,11 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                                           color: AppTheme.slateDark,
                                         ),
                                       ),
+                                      const SizedBox(height: 2),
                                       Text(
-                                        'Room ${room?.roomNumber} (${room?.categoryName})',
+                                        'Room ${room?.roomNumber ?? stay.room?.roomNumber ?? ""} · ${room?.categoryName ?? stay.room?.categoryName ?? "Standard Room"}',
                                         style: GoogleFonts.inter(
-                                          fontSize: 11,
+                                          fontSize: 10,
                                           color: AppTheme.slateMuted,
                                         ),
                                       ),
@@ -810,7 +798,7 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                                     '$nights N',
                                     textAlign: TextAlign.center,
                                     style: GoogleFonts.inter(
-                                      fontSize: 12,
+                                      fontSize: 11,
                                       color: AppTheme.slateDark,
                                     ),
                                   ),
@@ -821,7 +809,7 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                                     '₹${stay.nightlyRate.toInt()}',
                                     textAlign: TextAlign.right,
                                     style: GoogleFonts.inter(
-                                      fontSize: 12,
+                                      fontSize: 11,
                                       color: AppTheme.slateDark,
                                     ),
                                   ),
@@ -841,197 +829,242 @@ class _BookingCheckOutScreenState extends State<BookingCheckOutScreen> {
                               ],
                             ),
                           ),
-                          const Divider(height: 16, color: AppTheme.slateBorder),
+                          const Divider(height: 1, color: AppTheme.slateBorder),
+                          const SizedBox(height: 10),
 
-                          // Tax Breakdown
-                          _subDetailRow('Base Room Charges', '₹$baseAmount'),
-                          _subDetailRow('CGST (6%)', '₹$cgst'),
-                          _subDetailRow('SGST (6%)', '₹$sgst'),
-                          _subDetailRow(
-                            'Total Room Tariff (GST Inclusive)',
-                            '₹${totalBilled.toInt()}',
-                            isBold: true,
-                          ),
-                          const Divider(height: 16, color: AppTheme.slateBorder),
-
-                          // Settlement Breakdown
-                          _subDetailRow(
-                            'Advance Deposit Received',
-                            '-₹${advancePaid.toInt()}',
-                            color: const Color(0xFF16A34A),
-                          ),
-                          if (balancePaid > 0)
-                            _subDetailRow(
-                              'Paid at Check-Out (${_paymentMethod.toUpperCase()})',
-                              '-₹${balancePaid.toInt()}',
-                              color: const Color(0xFF16A34A),
-                            ),
-                          const Divider(height: 16, color: AppTheme.slateBorder),
+                          // 5. Financial Summary (Right-Aligned)
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Text(
-                                'NET BALANCE DUE',
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.slateDark,
-                                ),
-                              ),
-                              Text(
-                                '₹${balanceDue.toInt()}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: balanceDue > 0
-                                      ? Colors.red.shade700
-                                      : const Color(0xFF16A34A),
+                              SizedBox(
+                                width: 230,
+                                child: Column(
+                                  children: [
+                                    _subDetailRow(
+                                      'Subtotal (Taxable)',
+                                      '₹$baseAmount',
+                                    ),
+                                    _subDetailRow(
+                                      'Tax (12% GST)',
+                                      '₹${cgst + sgst}',
+                                    ),
+                                    const Divider(
+                                      height: 10,
+                                      color: AppTheme.slateBorder,
+                                    ),
+                                    _subDetailRow(
+                                      'Total',
+                                      '₹${totalBilled.toInt()}',
+                                      isBold: true,
+                                    ),
+                                    if (advancePaid > 0)
+                                      _subDetailRow(
+                                        'Advance Deposit',
+                                        '-₹${advancePaid.toInt()}',
+                                        color: const Color(0xFF16A34A),
+                                      ),
+                                    if (balancePaid > 0)
+                                      _subDetailRow(
+                                        'Paid at Check-Out (${_paymentMethod.toUpperCase()})',
+                                        '-₹${balancePaid.toInt()}',
+                                        color: const Color(0xFF16A34A),
+                                      ),
+                                    const Divider(
+                                      height: 10,
+                                      color: AppTheme.slateBorder,
+                                    ),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Balance Due',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.slateDark,
+                                          ),
+                                        ),
+                                        Text(
+                                          '₹${balanceDue.toInt()}',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: balanceDue > 0
+                                                ? Colors.red.shade700
+                                                : const Color(0xFF16A34A),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 20),
+                          const Divider(height: 1, color: AppTheme.slateBorder),
+                          const SizedBox(height: 10),
 
-                          // Terms & Declaration
-                          Text(
-                            'Thank you for staying with us at ${property.name}!',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontStyle: FontStyle.italic,
-                              color: AppTheme.slateMuted,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Official computer-generated GST tax invoice issued via EaseInn PMS.',
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              color: AppTheme.slateMuted,
-                            ),
+                          // 6. Payment Details & Notes
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'PAYMENT DETAILS',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateMuted,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      'Method: ${_paymentMethod.toUpperCase()}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        color: AppTheme.slateDark,
+                                      ),
+                                    ),
+                                    if (property.upiPayeeName.isNotEmpty)
+                                      Text(
+                                        'Payee: ${property.upiPayeeName}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10.5,
+                                          color: AppTheme.slateDark,
+                                        ),
+                                      ),
+                                    if (property.upiId.isNotEmpty)
+                                      Text(
+                                        'UPI ID: ${property.upiId}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10.5,
+                                          color: AppTheme.slateDark,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'NOTES',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.slateMuted,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      'Thank you for staying at ${property.name}!',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        fontStyle: FontStyle.italic,
+                                        color: AppTheme.slateDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Official GST tax invoice issued via EaseInn PMS.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9,
+                                        color: AppTheme.slateMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 14),
 
-                    // Action Buttons Card
+                    // Action Buttons Card: Only 2 options (Save & Share)
                     Container(
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: AppTheme.slateBorder),
                       ),
-                      child: Column(
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _sharePdfInvoice(
-                                    stay: stay,
-                                    bill: bill,
-                                    totalBilled: totalBilled,
-                                    advancePaid: advancePaid,
-                                    balancePaid: balancePaid,
-                                    balanceDue: balanceDue,
-                                    room: room,
-                                    invoiceNo: invoiceNo,
-                                  ),
-                                  icon: const Icon(Icons.share_rounded, size: 16),
-                                  label: const Text('Share PDF'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppTheme.slateDark,
-                                    side: const BorderSide(color: AppTheme.slateBorder),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _saveInvoicePdf(
+                                stay: stay,
+                                bill: bill,
+                                totalBilled: totalBilled,
+                                advancePaid: advancePaid,
+                                balancePaid: balancePaid,
+                                balanceDue: balanceDue,
+                                room: room,
+                                invoiceNo: invoiceNo,
+                              ),
+                              icon: const Icon(Icons.download_rounded, size: 18),
+                              label: Text(
+                                'Save PDF',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _sendInvoicePdfViaWhatsApp(
-                                    stay: stay,
-                                    bill: bill,
-                                    totalBilled: totalBilled,
-                                    advancePaid: advancePaid,
-                                    balancePaid: balancePaid,
-                                    balanceDue: balanceDue,
-                                    room: room,
-                                    invoiceNo: invoiceNo,
-                                  ),
-                                  icon: const Icon(Icons.chat_rounded, size: 16),
-                                  label: const Text('WhatsApp PDF'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF16A34A),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    elevation: 0,
-                                  ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTheme.slateDark,
+                                side: const BorderSide(
+                                  color: AppTheme.slateBorder,
+                                  width: 1.2,
                                 ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 13),
                               ),
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _saveInvoicePdf(
-                                    stay: stay,
-                                    bill: bill,
-                                    totalBilled: totalBilled,
-                                    advancePaid: advancePaid,
-                                    balancePaid: balancePaid,
-                                    balanceDue: balanceDue,
-                                    room: room,
-                                    invoiceNo: invoiceNo,
-                                  ),
-                                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
-                                  label: const Text('Save PDF'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppTheme.slateDark,
-                                    side: const BorderSide(color: AppTheme.slateBorder),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _sharePdfInvoice(
+                                stay: stay,
+                                bill: bill,
+                                totalBilled: totalBilled,
+                                advancePaid: advancePaid,
+                                balancePaid: balancePaid,
+                                balanceDue: balanceDue,
+                                room: room,
+                                invoiceNo: invoiceNo,
+                              ),
+                              icon: const Icon(Icons.share_rounded, size: 18),
+                              label: Text(
+                                'Share PDF',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _printInvoicePdf(
-                                    stay: stay,
-                                    bill: bill,
-                                    totalBilled: totalBilled,
-                                    advancePaid: advancePaid,
-                                    balancePaid: balancePaid,
-                                    balanceDue: balanceDue,
-                                    room: room,
-                                    invoiceNo: invoiceNo,
-                                  ),
-                                  icon: const Icon(Icons.print_rounded, size: 16),
-                                  label: const Text('Print PDF'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.brandPrimary,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    elevation: 0,
-                                  ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.slateDark,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                elevation: 0,
                               ),
-                            ],
+                            ),
                           ),
                         ],
                       ),

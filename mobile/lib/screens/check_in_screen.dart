@@ -1399,10 +1399,19 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
               Row(
                 children: [
-                  if (widget.onBack == null &&
+                  if (widget.onBack != null ||
+                      widget.onReturnHome != null ||
                       Navigator.of(context).canPop()) ...[
                     IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        if (widget.onBack != null) {
+                          widget.onBack!();
+                        } else if (widget.onReturnHome != null) {
+                          widget.onReturnHome!();
+                        } else if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        }
+                      },
                       icon: const Icon(
                         Icons.arrow_back_rounded,
                         color: AppTheme.slateDark,
@@ -1412,7 +1421,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       constraints: const BoxConstraints(),
                       tooltip: 'Back',
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                   ],
                   Expanded(
                     child: Text(

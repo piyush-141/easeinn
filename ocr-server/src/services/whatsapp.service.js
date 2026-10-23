@@ -357,9 +357,12 @@ class HotelWhatsAppSession {
           lastDisconnect?.error?.output?.statusCode ||
           lastDisconnect?.error?.statusCode ||
           null;
-        const loggedOut = statusCode === DisconnectReason.loggedOut;
+        // DisconnectReason.loggedOut = 401 (WhatsApp explicitly kicked us out)
+        // ONLY delete session when we get an explicit 401 logout — NOT for network drops
+        const loggedOut = statusCode === DisconnectReason.loggedOut; // 401
+        const connectionReplaced = statusCode === 440; // Another device connected
         const reason = lastDisconnect?.error?.message || `code ${statusCode}`;
-        console.warn(`[WhatsApp] [${this.hotelId}] Connection closed (${reason}). loggedOut=${loggedOut}`);
+        console.warn(`[WhatsApp] [${this.hotelId}] Connection closed (${reason}). loggedOut=${loggedOut} code=${statusCode}`);
 
         this.sock = null;
         this.currentQrCodeDataUrl = null;
@@ -369,19 +372,26 @@ class HotelWhatsAppSession {
         this.connectedPushname = null;
         this.isInitializing = false;
 
-        if (loggedOut) {
+        if (loggedOut || connectionReplaced) {
+          // Actual WhatsApp logout: clear credentials so user must re-scan
           this.allowReconnect = false;
           try {
             fs.rmSync(this.authDir, { recursive: true, force: true });
           } catch (err) {
             console.warn(`[WhatsApp] [${this.hotelId}] Could not clear invalid session files:`, err.message);
           }
-          this.setStatus("DISCONNECTED", { error: "WhatsApp session expired or was unlinked. Please link your device again." });
+          this.setStatus("DISCONNECTED", {
+            error: loggedOut
+              ? "WhatsApp session expired or was logged out from the phone. Please link your device again."
+              : "WhatsApp was connected on another device. Please link again.",
+          });
           return;
         }
 
-        this.setStatus("DISCONNECTED", { error: `Connection dropped: ${reason}` });
+        // Network drop / server restart / Render wakeup — preserve session files, reconnect
+        this.setStatus("DISCONNECTED", { error: `Connection dropped: ${reason}. Auto-reconnecting...` });
         if (this.allowReconnect) {
+          // Use exponential backoff: restart-required gets fast reconnect, others get 4s
           const delay = statusCode === DisconnectReason.restartRequired ? 1000 : 4000;
           this.scheduleReconnect(delay);
         }

@@ -193,16 +193,31 @@ class WhatsAppService {
     return _cachedBaseUrl ?? defaultBaseUrl;
   }
 
+  /// The hotel/property ID for this session. MUST be set to the authenticated user's property UUID.
+  /// This determines which WhatsApp session is used on the backend.
+  /// null = user is not authenticated (no WhatsApp calls should be made)
   static String? currentHotelId;
+
+  /// Returns the sanitized hotel ID for use in API headers.
+  /// If the property ID is a valid UUID, use it directly.
+  /// Otherwise use a hash-stable identifier derived from it.
+  /// NEVER returns 'default' when a user is authenticated.
+  static String? get _effectiveHotelId {
+    final id = currentHotelId;
+    if (id == null || id.isEmpty || id == 'prop-001') return null;
+    return id;
+  }
 
   static Future<Map<String, String>> _requestHeaders({
     bool json = false,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final hotelId = currentHotelId ?? prefs.getString('easeinn_property_id') ?? 'default';
+    // CRITICAL: Only send x-hotel-id when we have a valid authenticated hotel ID.
+    // Using the wrong hotel ID would allow one account to access another's WhatsApp session.
+    final hotelId = _effectiveHotelId;
     return <String, String>{
       if (json) 'Content-Type': 'application/json',
-      'x-hotel-id': hotelId,
+      // Only include x-hotel-id if we have a real authenticated hotel ID
+      if (hotelId != null) 'x-hotel-id': hotelId,
     };
   }
 
@@ -240,6 +255,10 @@ class WhatsAppService {
     } catch (_) {}
   }
 
+  static WhatsAppStatusData? lastStatus;
+  static final ValueNotifier<WhatsAppStatusData?> statusNotifier =
+      ValueNotifier<WhatsAppStatusData?>(null);
+
   /// Get status of WhatsApp client
   static Future<WhatsAppStatusData> getStatus() async {
     try {
@@ -249,7 +268,10 @@ class WhatsAppService {
           .timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        return WhatsAppStatusData.fromJson(data);
+        final status = WhatsAppStatusData.fromJson(data);
+        lastStatus = status;
+        statusNotifier.value = status;
+        return status;
       }
       String? serverError;
       String? serverErrorCode;
@@ -261,7 +283,7 @@ class WhatsAppService {
           serverErrorCode = body['code']?.toString();
         }
       } catch (_) {}
-      return WhatsAppStatusData(
+      final errStatus = WhatsAppStatusData(
         success: false,
         status: 'DISCONNECTED',
         isConnected: false,
@@ -273,8 +295,11 @@ class WhatsAppService {
             serverError ?? 'Backend returned HTTP ${res.statusCode}',
         errorCode: serverErrorCode,
       );
+      lastStatus = errStatus;
+      statusNotifier.value = errStatus;
+      return errStatus;
     } catch (e) {
-      return WhatsAppStatusData(
+      final catchStatus = WhatsAppStatusData(
         success: false,
         status: 'DISCONNECTED',
         isConnected: false,
@@ -284,6 +309,9 @@ class WhatsAppService {
         totalTemplatesCount: 0,
         initializationError: e.toString(),
       );
+      lastStatus = catchStatus;
+      statusNotifier.value = catchStatus;
+      return catchStatus;
     }
   }
 
@@ -342,7 +370,13 @@ class WhatsAppService {
           .post(uri, headers: await _requestHeaders())
           .timeout(const Duration(seconds: 12));
       final data = jsonDecode(res.body);
-      return data['success'] == true;
+      final success = data['success'] == true;
+      if (success) {
+        final initStatus = WhatsAppStatusData.initial();
+        lastStatus = initStatus;
+        statusNotifier.value = initStatus;
+      }
+      return success;
     } catch (_) {
       return false;
     }

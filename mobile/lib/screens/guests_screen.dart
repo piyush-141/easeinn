@@ -1437,7 +1437,7 @@ Stay: $stayData
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 84),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

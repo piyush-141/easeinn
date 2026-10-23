@@ -7,7 +7,7 @@ class Stay {
   final String id;
   final String propertyId;
   final String guestId;
-  final String roomId;
+  String roomId;
   final DateTime checkInAt;
   DateTime? checkOutAt;
   final DateTime expectedCheckOut;
@@ -37,6 +37,42 @@ class Stay {
     this.coGuests = const [],
     this.room,
   });
+
+  Stay copyWith({
+    String? id,
+    String? propertyId,
+    String? guestId,
+    String? roomId,
+    DateTime? checkInAt,
+    DateTime? checkOutAt,
+    DateTime? expectedCheckOut,
+    int? numGuests,
+    int? numAdults,
+    int? numKids,
+    double? nightlyRate,
+    StayStatus? status,
+    Guest? guest,
+    List<Guest>? coGuests,
+    Room? room,
+  }) {
+    return Stay(
+      id: id ?? this.id,
+      propertyId: propertyId ?? this.propertyId,
+      guestId: guestId ?? this.guestId,
+      roomId: roomId ?? this.roomId,
+      checkInAt: checkInAt ?? this.checkInAt,
+      checkOutAt: checkOutAt ?? this.checkOutAt,
+      expectedCheckOut: expectedCheckOut ?? this.expectedCheckOut,
+      numGuests: numGuests ?? this.numGuests,
+      numAdults: numAdults ?? this.numAdults,
+      numKids: numKids ?? this.numKids,
+      nightlyRate: nightlyRate ?? this.nightlyRate,
+      status: status ?? this.status,
+      guest: guest ?? this.guest,
+      coGuests: coGuests ?? this.coGuests,
+      room: room ?? this.room,
+    );
+  }
 
   String get guestSummary {
     final parts = <String>[];
@@ -112,9 +148,13 @@ class Stay {
       numKids: json['num_kids'] is int ? json['num_kids'] : (int.tryParse(json['num_kids']?.toString() ?? '0') ?? 0),
       nightlyRate: (json['nightly_rate'] is num) ? (json['nightly_rate'] as num).toDouble() : (double.tryParse(json['nightly_rate']?.toString() ?? '2000') ?? 2000.0),
       status: parsedStatus,
-      guest: json['guest'] is Map<String, dynamic> ? Guest.fromJson(json['guest']) : null,
+      guest: json['guest'] is Map<String, dynamic>
+          ? Guest.fromJson(json['guest'])
+          : (json['guests'] is Map<String, dynamic> ? Guest.fromJson(json['guests']) : null),
       coGuests: coGuestsList,
-      room: json['room'] is Map<String, dynamic> ? Room.fromJson(json['room']) : null,
+      room: json['room'] is Map<String, dynamic>
+          ? Room.fromJson(json['room'])
+          : (json['rooms'] is Map<String, dynamic> ? Room.fromJson(json['rooms']) : null),
     );
   }
 }

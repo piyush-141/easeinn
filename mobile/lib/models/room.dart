@@ -76,6 +76,7 @@ class Room {
   });
 
   Room copyWith({
+    String? id,
     String? roomNumber,
     int? floor,
     String? categoryName,
@@ -88,7 +89,7 @@ class Room {
     bool clearStay = false,
   }) {
     return Room(
-      id: id,
+      id: id ?? this.id,
       propertyId: propertyId,
       roomNumber: roomNumber ?? this.roomNumber,
       floor: floor ?? this.floor,

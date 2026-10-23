@@ -64,7 +64,7 @@ class CheckOutScreen extends StatelessWidget {
               child: activeStays.isEmpty
                   ? _buildEmptyState()
                   : ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 84),
                       itemCount: activeStays.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 10),
                       itemBuilder: (context, index) {

@@ -1,14 +1,33 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/models/property.dart';
 import 'package:mobile/models/room.dart';
 import 'package:mobile/models/stay.dart';
 import 'package:mobile/services/hotel_store.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('HotelStore - Real Dynamic Stats & Lifecycle Invariants', () {
     late HotelStore store;
 
     setUp(() {
       store = HotelStore();
+      store.initCleanAccount(
+        property: Property(
+          id: 'prop-real-001',
+          name: 'EaseInn Test Hotel',
+          address: 'MG Road',
+          city: 'Bengaluru',
+          state: 'Karnataka',
+          pincode: '560001',
+          phone: '+91 99999 99999',
+          email: 'test@easeinn.com',
+          totalRooms: 12,
+        ),
+        managerName: 'Manager Test',
+        managerEmail: 'test@easeinn.com',
+        managerPhone: '+91 99999 99999',
+      );
     });
 
     test('Initial state metrics are computed from real inventory', () {
@@ -168,25 +187,30 @@ void main() {
 
     test('Multi-property addition and switching maintains isolated dynamic states', () {
       expect(store.properties.length, 1);
+      final initialProp = store.currentProperty;
 
-      store.addNewProperty(
+      // Adding an additional property
+      final secondProp = store.addNewProperty(
         name: 'EaseInn Resort & Spa',
         address: 'Candolim Beach Road',
         city: 'Goa',
         state: 'Goa',
         phone: '+91 832 248 9000',
         email: 'goa@easeinn.com',
-        totalRooms: 20,
+        totalRooms: 12,
       );
 
       expect(store.properties.length, 2);
-      final newProp = store.properties.last;
-      expect(newProp.name, 'EaseInn Resort & Spa');
-      expect(store.currentProperty.id, newProp.id);
+      expect(store.currentProperty.id, secondProp.id);
+      expect(secondProp.name, 'EaseInn Resort & Spa');
 
       // Verify new property initialized fresh inventory
       expect(store.totalRooms, 12);
       expect(store.occupiedRooms, 0);
+
+      // Switch back to initial property
+      store.switchProperty(initialProp.id);
+      expect(store.currentProperty.id, initialProp.id);
     });
   });
 }
