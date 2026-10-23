@@ -200,9 +200,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
     _selectedRoomId = widget.preselectedRoomId;
     final now = DateTime.now();
     _checkInDate = DateTime(now.year, now.month, now.day);
-    _expectedCheckOut = _checkInDate.add(
-      const Duration(days: 1),
-    ); // Default: just tonight (today and tomorrow)
+    if (_bookingMode == BookingMode.checkIn) {
+      // Past 12 AM midnight, 1 night means today morning/afternoon check-out
+      _expectedCheckOut = now.hour < 12
+          ? _checkInDate
+          : _checkInDate.add(const Duration(days: 1));
+    } else {
+      _expectedCheckOut = _checkInDate.add(const Duration(days: 1));
+    }
   }
 
   @override
@@ -627,7 +632,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
       _numKids = 0;
       final now = DateTime.now();
       _checkInDate = DateTime(now.year, now.month, now.day);
-      _expectedCheckOut = _checkInDate.add(const Duration(days: 1));
+      _expectedCheckOut = (_bookingMode == BookingMode.checkIn && now.hour < 12)
+          ? _checkInDate
+          : _checkInDate.add(const Duration(days: 1));
     });
   }
 
@@ -1320,10 +1327,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
       orElse: () => availableRooms.isEmpty ? null : availableRooms.first,
     );
 
-    final nights = _expectedCheckOut
+    final diffDays = _expectedCheckOut
         .difference(_checkInDate)
-        .inDays
-        .clamp(1, 365);
+        .inDays;
+    final nights = diffDays <= 0 ? 1 : diffDays.clamp(1, 365);
     final nightlyRate = selectedRoom?.baseRate ?? 2200.0;
     final totalEstimatedAmount = nights * nightlyRate;
 
@@ -1471,9 +1478,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   now.month,
                                   now.day,
                                 );
-                                _expectedCheckOut = _checkInDate.add(
-                                  const Duration(days: 1),
-                                );
+                                _expectedCheckOut = now.hour < 12
+                                    ? _checkInDate
+                                    : _checkInDate.add(const Duration(days: 1));
                               });
                             }
                           },
@@ -1534,14 +1541,26 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               final now = DateTime.now();
                               setState(() {
                                 _bookingMode = BookingMode.reservation;
-                                if (_checkInDate.isBefore(now)) {
+                                // Keep next day by default, but user is free to change to today
+                                final todayDate = DateTime(now.year, now.month, now.day);
+                                if (_checkInDate.isBefore(todayDate)) {
                                   _checkInDate = DateTime(
                                     now.year,
                                     now.month,
                                     now.day + 1,
                                   );
                                   _expectedCheckOut = _checkInDate.add(
-                                    const Duration(days: 2),
+                                    const Duration(days: 1),
+                                  );
+                                } else if (_checkInDate == todayDate) {
+                                  // Default reservation to tomorrow, but allow today
+                                  _checkInDate = DateTime(
+                                    now.year,
+                                    now.month,
+                                    now.day + 1,
+                                  );
+                                  _expectedCheckOut = _checkInDate.add(
+                                    const Duration(days: 1),
                                   );
                                 }
                               });
@@ -1616,7 +1635,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 ),
                 const SizedBox(height: 8),
                 _buildWizardSectionCard(
-                  child: _buildCompactStaySelector(nights),
+                  child: _buildCompactStaySelector(nights, store),
                 ),
                 const SizedBox(height: 8),
                 _buildWizardSectionCard(child: _buildCompactGuestSelector()),
@@ -4362,9 +4381,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
 
   Future<void> _pickArrivalDate() async {
     final today = DateTime.now();
-    final firstDate = _bookingMode == BookingMode.reservation
-        ? DateTime(today.year, today.month, today.day + 1)
-        : DateTime(today.year, today.month, today.day);
+    // Reservations can be done for today or any future date
+    final firstDate = DateTime(today.year, today.month, today.day);
     final picked = await _showDatePickerSheet(
       title: 'Check-in date',
       initialDate: _checkInDate,
@@ -4373,17 +4391,22 @@ class _CheckInScreenState extends State<CheckInScreen> {
     if (picked == null || !mounted) return;
     setState(() {
       _checkInDate = DateTime(picked.year, picked.month, picked.day);
-      if (!_expectedCheckOut.isAfter(_checkInDate)) {
+      if (_expectedCheckOut.isBefore(_checkInDate)) {
         _expectedCheckOut = _checkInDate.add(const Duration(days: 1));
       }
     });
   }
 
   Future<void> _pickCheckoutDate() async {
+    // For check-in, guest can checkout on the same day (e.g. midnight check-in, morning check-out)
+    // For reservations, checkout must be on or after check-in date
+    final firstDate = _bookingMode == BookingMode.checkIn
+        ? _checkInDate
+        : _checkInDate;
     final picked = await _showDatePickerSheet(
       title: 'Check-out date',
       initialDate: _expectedCheckOut,
-      firstDate: _checkInDate.add(const Duration(days: 1)),
+      firstDate: firstDate,
     );
     if (picked == null || !mounted) return;
     setState(() {
@@ -4391,12 +4414,18 @@ class _CheckInScreenState extends State<CheckInScreen> {
     });
   }
 
-  Widget _buildCompactStaySelector(int nights) {
+  Widget _buildCompactStaySelector(int nights, HotelStore store) {
     final durations = const [(1, '1 Night'), (2, '2 Nights'), (3, '3 Nights')];
     final today = DateTime.now();
     final checkInLabel = _bookingMode == BookingMode.checkIn
         ? 'Today · ${DateFormat('EEE, d MMM').format(_checkInDate)}'
         : DateFormat('EEE, d MMM').format(_checkInDate);
+
+    final checkInTimeStr = _bookingMode == BookingMode.checkIn
+        ? DateFormat('hh:mm a').format(today)
+        : store.defaultCheckInTime;
+    final checkOutTimeStr = store.defaultCheckOutTime;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4433,6 +4462,25 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           color: AppTheme.slateDark,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time_rounded,
+                            size: 11,
+                            color: AppTheme.slateMuted,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            checkInTimeStr,
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.slateMuted,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -4446,9 +4494,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: InkWell(
-                onTap: _bookingMode == BookingMode.reservation
-                    ? _pickCheckoutDate
-                    : null,
+                onTap: _pickCheckoutDate,
                 borderRadius: BorderRadius.circular(12),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 5),
@@ -4475,6 +4521,25 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           color: AppTheme.slateDark,
                         ),
                       ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time_rounded,
+                            size: 11,
+                            color: AppTheme.slateMuted,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            checkOutTimeStr,
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: AppTheme.slateMuted,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -4498,10 +4563,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         today.month,
                         today.day,
                       );
+                      // If post-midnight (< 12 PM), 1 night means checkout today
+                      final addDays = (durations[i].$1 == 1 && today.hour < 12)
+                          ? 0
+                          : durations[i].$1;
+                      _expectedCheckOut = _checkInDate.add(Duration(days: addDays));
+                    } else {
+                      _expectedCheckOut = _checkInDate.add(
+                        Duration(days: durations[i].$1),
+                      );
                     }
-                    _expectedCheckOut = _checkInDate.add(
-                      Duration(days: durations[i].$1),
-                    );
                   }),
                 ),
               ),
