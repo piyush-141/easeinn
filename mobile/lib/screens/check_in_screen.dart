@@ -187,11 +187,17 @@ class _CheckInScreenState extends State<CheckInScreen> {
     }
   }
 
-  // Step 3: Payment
+  // Step 3: Payment & Flexible Pricing
   final _advanceController = TextEditingController();
+  bool _hasManualAdvance = false;
   String _paymentMethod = 'upi'; // 'upi', 'cash', 'card'
   final _paymentRefController = TextEditingController();
   bool _sendWhatsAppMessage = true;
+
+  // Flexible Pricing / Bargaining
+  bool _isCustomPricing = false;
+  double? _customTotalAmount;
+  double? _customNightlyRate;
 
   @override
   void initState() {
@@ -1089,6 +1095,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
         : null;
     final primaryPhone = _formatPhoneForStorage(_phoneController.text.trim());
 
+    final diffDays = _expectedCheckOut.difference(_checkInDate).inDays;
+    final nights = diffDays <= 0 ? 1 : diffDays.clamp(1, 365);
+    final defaultTotal = nights * selectedRoom.baseRate;
+    final totalStay = (_isCustomPricing && _customTotalAmount != null && _customTotalAmount! > 0)
+        ? _customTotalAmount!
+        : defaultTotal;
+    final effectiveNightlyRate = totalStay / nights;
+
     late final Map<String, dynamic> result;
     try {
       result = _bookingMode == BookingMode.reservation
@@ -1099,7 +1113,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
               numGuests: _totalGuests,
               numAdults: _numAdults,
               numKids: _numKids,
-              nightlyRate: selectedRoom.baseRate,
+              nightlyRate: effectiveNightlyRate,
+              totalStayAmount: totalStay,
               fullName: _nameController.text.trim(),
               phone: primaryPhone,
               email: primaryEmail,
@@ -1122,7 +1137,8 @@ class _CheckInScreenState extends State<CheckInScreen> {
               numGuests: _totalGuests,
               numAdults: _numAdults,
               numKids: _numKids,
-              nightlyRate: selectedRoom.baseRate,
+              nightlyRate: effectiveNightlyRate,
+              totalStayAmount: totalStay,
               fullName: _nameController.text.trim(),
               phone: primaryPhone,
               email: primaryEmail,
@@ -1331,12 +1347,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
         .difference(_checkInDate)
         .inDays;
     final nights = diffDays <= 0 ? 1 : diffDays.clamp(1, 365);
-    final nightlyRate = selectedRoom?.baseRate ?? 2200.0;
-    final totalEstimatedAmount = nights * nightlyRate;
+    final baseNightlyRate = selectedRoom?.baseRate ?? 2200.0;
+    final defaultTotal = nights * baseNightlyRate;
+    final totalEstimatedAmount = (_isCustomPricing && _customTotalAmount != null && _customTotalAmount! > 0)
+        ? _customTotalAmount!
+        : defaultTotal;
+    final effectiveNightlyRate = totalEstimatedAmount / nights;
 
-    // Set default advance if empty
-    if (_advanceController.text.isEmpty && selectedRoom != null) {
-      _advanceController.text = nightlyRate.toInt().toString();
+    // Set default advance if empty and not manually set
+    if (!_hasManualAdvance && _advanceController.text.isEmpty && selectedRoom != null) {
+      _advanceController.text = effectiveNightlyRate.toInt().toString();
     }
 
     return Scaffold(
@@ -1346,6 +1366,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
         selectedRoom: selectedRoom,
         nights: nights,
         totalEstimatedAmount: totalEstimatedAmount,
+        effectiveNightlyRate: effectiveNightlyRate,
         isNoRooms: availableRooms.isEmpty,
         store: store,
       ),
@@ -1639,6 +1660,15 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 ),
                 const SizedBox(height: 8),
                 _buildWizardSectionCard(child: _buildCompactGuestSelector()),
+                const SizedBox(height: 8),
+                _buildWizardSectionCard(
+                  child: _buildPricingSummaryCard(
+                    selectedRoom: selectedRoom,
+                    nights: nights,
+                    totalEstimatedAmount: totalEstimatedAmount,
+                    effectiveNightlyRate: effectiveNightlyRate,
+                  ),
+                ),
                 const SizedBox(height: 4),
               ],
 
@@ -1909,28 +1939,71 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             ),
                             _buildDarkSummaryRow(
                               'Nightly Rate',
-                              '₹${nightlyRate.toInt()}',
+                              _isCustomPricing
+                                  ? '₹${effectiveNightlyRate.toInt()} (Agreed Rate)'
+                                  : '₹${baseNightlyRate.toInt()}',
                             ),
                             const Divider(color: Colors.white24),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  _bookingMode == BookingMode.reservation
-                                      ? 'Total Reservation Bill'
-                                      : 'Total Estimated Stay',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      _bookingMode == BookingMode.reservation
+                                          ? 'Total Reservation Bill'
+                                          : 'Total Estimated Stay',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    if (_isCustomPricing) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.5)),
+                                        ),
+                                        child: const Text(
+                                          'AGREED',
+                                          style: TextStyle(
+                                            color: Color(0xFF34D399),
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                                Text(
-                                  '₹${totalEstimatedAmount.toInt()}',
-                                  style: GoogleFonts.outfit(
-                                    color: AppTheme.brandAccent,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 20,
+                                InkWell(
+                                  onTap: () => _openPriceAdjustmentSheet(
+                                    selectedRoom: selectedRoom,
+                                    nights: nights,
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '₹${totalEstimatedAmount.toInt()}',
+                                        style: GoogleFonts.outfit(
+                                          color: AppTheme.brandAccent,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.edit_outlined,
+                                        color: AppTheme.brandAccent,
+                                        size: 14,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -1955,6 +2028,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       TextField(
                         controller: _advanceController,
                         keyboardType: TextInputType.number,
+                        onChanged: (val) {
+                          setState(() {
+                            _hasManualAdvance = true;
+                          });
+                        },
                         style: GoogleFonts.outfit(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -1973,6 +2051,45 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             ),
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildAdvanceChip(
+                            'Full Stay (₹${totalEstimatedAmount.toInt()})',
+                            () {
+                              setState(() {
+                                _advanceController.text = totalEstimatedAmount.toInt().toString();
+                                _hasManualAdvance = true;
+                              });
+                            },
+                            isSelected: double.tryParse(_advanceController.text) == totalEstimatedAmount,
+                          ),
+                          const SizedBox(width: 6),
+                          if (nights > 1) ...[
+                            _buildAdvanceChip(
+                              '1 Night (₹${effectiveNightlyRate.toInt()})',
+                              () {
+                                setState(() {
+                                  _advanceController.text = effectiveNightlyRate.toInt().toString();
+                                  _hasManualAdvance = true;
+                                });
+                              },
+                              isSelected: double.tryParse(_advanceController.text) == effectiveNightlyRate,
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          _buildAdvanceChip(
+                            'No Advance (₹0)',
+                            () {
+                              setState(() {
+                                _advanceController.text = '0';
+                                _hasManualAdvance = true;
+                              });
+                            },
+                            isSelected: double.tryParse(_advanceController.text) == 0,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 14),
 
@@ -4256,7 +4373,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
                 final selected = room.id == selectedRoom?.id;
                 return InkWell(
                   borderRadius: BorderRadius.circular(15),
-                  onTap: () => setState(() => _selectedRoomId = room.id),
+                  onTap: () => setState(() {
+                    _selectedRoomId = room.id;
+                    _isCustomPricing = false;
+                    _customTotalAmount = null;
+                    _customNightlyRate = null;
+                    _hasManualAdvance = false;
+                    _advanceController.clear();
+                  }),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     width: 130,
@@ -4394,6 +4518,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
       if (_expectedCheckOut.isBefore(_checkInDate)) {
         _expectedCheckOut = _checkInDate.add(const Duration(days: 1));
       }
+      final diff = _expectedCheckOut.difference(_checkInDate).inDays;
+      final newNights = diff <= 0 ? 1 : diff.clamp(1, 365);
+      if (_isCustomPricing && _customNightlyRate != null) {
+        _customTotalAmount = newNights * _customNightlyRate!;
+      }
     });
   }
 
@@ -4411,6 +4540,11 @@ class _CheckInScreenState extends State<CheckInScreen> {
     if (picked == null || !mounted) return;
     setState(() {
       _expectedCheckOut = DateTime(picked.year, picked.month, picked.day);
+      final diff = _expectedCheckOut.difference(_checkInDate).inDays;
+      final newNights = diff <= 0 ? 1 : diff.clamp(1, 365);
+      if (_isCustomPricing && _customNightlyRate != null) {
+        _customTotalAmount = newNights * _customNightlyRate!;
+      }
     });
   }
 
@@ -4557,6 +4691,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   durations[i].$2,
                   nights == durations[i].$1,
                   () => setState(() {
+                    final newNights = durations[i].$1;
                     if (_bookingMode == BookingMode.checkIn) {
                       _checkInDate = DateTime(
                         today.year,
@@ -4572,6 +4707,9 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       _expectedCheckOut = _checkInDate.add(
                         Duration(days: durations[i].$1),
                       );
+                    }
+                    if (_isCustomPricing && _customNightlyRate != null) {
+                      _customTotalAmount = newNights * _customNightlyRate!;
                     }
                   }),
                 ),
@@ -4797,15 +4935,667 @@ class _CheckInScreenState extends State<CheckInScreen> {
     );
   }
 
+  void _openPriceAdjustmentSheet({
+    required Room? selectedRoom,
+    required int nights,
+  }) {
+    final baseRate = selectedRoom?.baseRate ?? 2200.0;
+    final defaultTotal = nights * baseRate;
+    final initialTotal = (_isCustomPricing && _customTotalAmount != null && _customTotalAmount! > 0)
+        ? _customTotalAmount!
+        : defaultTotal;
+    final initialRate = initialTotal / nights;
+
+    final totalCtrl = TextEditingController(text: initialTotal.toInt().toString());
+    final rateCtrl = TextEditingController(text: initialRate.toInt().toString());
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final currentTotal = double.tryParse(totalCtrl.text.replaceAll(',', '').trim()) ?? defaultTotal;
+            final diff = currentTotal - defaultTotal;
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+                left: 20,
+                right: 20,
+                top: 12,
+              ),
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppTheme.slateBorder,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.brandLight,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.handshake_outlined,
+                              size: 20,
+                              color: AppTheme.brandPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Flexible Stay Pricing',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
+                                Text(
+                                  'Adjust total stay or nightly rate for bargaining & deals',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppTheme.slateMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Standard Room Rate Reference Card
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppTheme.slateBorder),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'DEFAULT ROOM RATE',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.slateMuted,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Room ${selectedRoom?.roomNumber ?? "—"} (${selectedRoom?.categoryName ?? "Standard"})',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '₹${baseRate.toInt()}/n × $nights n',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppTheme.slateMuted,
+                                  ),
+                                ),
+                                Text(
+                                  '₹${defaultTotal.toInt()}',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Synchronized Inputs: Total & Nightly Rate
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Total Estimated Stay Input
+                          Expanded(
+                            flex: 3,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Total Agreed Stay (₹)',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                TextField(
+                                  controller: totalCtrl,
+                                  keyboardType: TextInputType.number,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                  onChanged: (text) {
+                                    final val = double.tryParse(text.replaceAll(',', '').trim()) ?? 0;
+                                    if (val > 0) {
+                                      final r = (val / nights).round();
+                                      final rStr = r.toString();
+                                      if (rateCtrl.text != rStr) {
+                                        rateCtrl.value = TextEditingValue(
+                                          text: rStr,
+                                          selection: TextSelection.collapsed(offset: rStr.length),
+                                        );
+                                      }
+                                    }
+                                    setSheetState(() {});
+                                  },
+                                  decoration: InputDecoration(
+                                    prefixText: '₹ ',
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+
+                          // Nightly Rate Input
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Per Night (₹)',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                TextField(
+                                  controller: rateCtrl,
+                                  keyboardType: TextInputType.number,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                  onChanged: (text) {
+                                    final val = double.tryParse(text.replaceAll(',', '').trim()) ?? 0;
+                                    if (val > 0) {
+                                      final tot = (val * nights).round();
+                                      final totStr = tot.toString();
+                                      if (totalCtrl.text != totStr) {
+                                        totalCtrl.value = TextEditingValue(
+                                          text: totStr,
+                                          selection: TextSelection.collapsed(offset: totStr.length),
+                                        );
+                                      }
+                                    }
+                                    setSheetState(() {});
+                                  },
+                                  decoration: InputDecoration(
+                                    prefixText: '₹ ',
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(color: AppTheme.slateBorder),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(color: AppTheme.brandPrimary, width: 1.8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Difference indicator badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: diff < -0.5
+                              ? const Color(0xFFDCFCE7)
+                              : diff > 0.5
+                              ? const Color(0xFFEEF2FF)
+                              : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: diff < -0.5
+                                ? const Color(0xFF86EFAC)
+                                : diff > 0.5
+                                ? const Color(0xFFC7D2FE)
+                                : AppTheme.slateBorder,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              diff < -0.5
+                                  ? Icons.arrow_downward_rounded
+                                  : diff > 0.5
+                                  ? Icons.arrow_upward_rounded
+                                  : Icons.check_circle_outline_rounded,
+                              size: 15,
+                              color: diff < -0.5
+                                  ? const Color(0xFF15803D)
+                                  : diff > 0.5
+                                  ? const Color(0xFF4338CA)
+                                  : AppTheme.slateDark,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                diff < -0.5
+                                    ? 'Discount: ₹${(-diff).toInt()} off standard (${((-diff) / defaultTotal * 100).toStringAsFixed(0)}% savings)'
+                                    : diff > 0.5
+                                    ? 'Custom premium: +₹${diff.toInt()} above standard rate'
+                                    : 'Default room rate applied',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: diff < -0.5
+                                      ? const Color(0xFF15803D)
+                                      : diff > 0.5
+                                      ? const Color(0xFF4338CA)
+                                      : AppTheme.slateDark,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Quick suggestion chips
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          ActionChip(
+                            avatar: const Icon(Icons.refresh_rounded, size: 14),
+                            label: Text('Standard (₹${defaultTotal.toInt()})'),
+                            labelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
+                            onPressed: () {
+                              totalCtrl.text = defaultTotal.toInt().toString();
+                              rateCtrl.text = baseRate.toInt().toString();
+                              setSheetState(() {});
+                            },
+                          ),
+                          if (baseRate > 500)
+                            ActionChip(
+                              avatar: const Icon(Icons.remove_circle_outline, size: 14),
+                              label: Text('-₹200/n (₹${(baseRate - 200).toInt()})'),
+                              labelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
+                              onPressed: () {
+                                final newRate = baseRate - 200;
+                                final newTotal = newRate * nights;
+                                rateCtrl.text = newRate.toInt().toString();
+                                totalCtrl.text = newTotal.toInt().toString();
+                                setSheetState(() {});
+                              },
+                            ),
+                          if (nights > 1 && defaultTotal > 500)
+                            ActionChip(
+                              avatar: const Icon(Icons.discount_outlined, size: 14),
+                              label: const Text('-₹500 Flat'),
+                              labelStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
+                              onPressed: () {
+                                final newTotal = (defaultTotal - 500).clamp(100.0, 9999999.0);
+                                final newRate = (newTotal / nights).round();
+                                totalCtrl.text = newTotal.toInt().toString();
+                                rateCtrl.text = newRate.toString();
+                                setSheetState(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Action buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(color: AppTheme.slateBorder),
+                              ),
+                              child: Text(
+                                'Cancel',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.slateDark,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                final chosenTotal = double.tryParse(totalCtrl.text.replaceAll(',', '').trim()) ?? defaultTotal;
+                                Navigator.pop(sheetContext);
+                                setState(() {
+                                  if ((chosenTotal - defaultTotal).abs() < 0.5) {
+                                    _isCustomPricing = false;
+                                    _customTotalAmount = null;
+                                    _customNightlyRate = null;
+                                  } else {
+                                    _isCustomPricing = true;
+                                    _customTotalAmount = chosenTotal;
+                                    _customNightlyRate = chosenTotal / nights;
+                                    if (!_hasManualAdvance) {
+                                      _advanceController.text = (chosenTotal / nights).toInt().toString();
+                                    }
+                                  }
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      _isCustomPricing
+                                          ? 'Agreed pricing set: ₹${chosenTotal.toInt()} (₹${(chosenTotal / nights).toInt()}/night)'
+                                          : 'Standard rate applied: ₹${defaultTotal.toInt()}',
+                                    ),
+                                    backgroundColor: AppTheme.slateDark,
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.brandPrimary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: Text(
+                                'Apply Agreed Price (₹${currentTotal.toInt()})',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPricingSummaryCard({
+    required Room? selectedRoom,
+    required int nights,
+    required double totalEstimatedAmount,
+    required double effectiveNightlyRate,
+  }) {
+    final baseRate = selectedRoom?.baseRate ?? 2200.0;
+    final defaultTotal = nights * baseRate;
+    final diff = totalEstimatedAmount - defaultTotal;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: _isCustomPricing ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _isCustomPricing ? const Color(0xFF86EFAC) : AppTheme.slateBorder,
+          width: _isCustomPricing ? 1.5 : 1.0,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    _isCustomPricing ? Icons.handshake_rounded : Icons.payments_outlined,
+                    size: 16,
+                    color: _isCustomPricing ? const Color(0xFF16A34A) : AppTheme.brandPrimary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _isCustomPricing ? 'AGREED STAY PRICING' : 'ESTIMATED STAY PRICING',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                      color: _isCustomPricing ? const Color(0xFF15803D) : AppTheme.slateMuted,
+                    ),
+                  ),
+                ],
+              ),
+              if (_isCustomPricing)
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _isCustomPricing = false;
+                      _customTotalAmount = null;
+                      _customNightlyRate = null;
+                      if (!_hasManualAdvance) {
+                        _advanceController.text = (defaultTotal / nights).toInt().toString();
+                      }
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text(
+                      'Reset to Standard',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFEF4444),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isCustomPricing
+                        ? 'Agreed: ₹${effectiveNightlyRate.toInt()}/night ($nights night${nights > 1 ? "s" : ""})'
+                        : 'Standard: ₹${baseRate.toInt()}/night ($nights night${nights > 1 ? "s" : ""})',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.slateDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  if (_isCustomPricing)
+                    Text(
+                      diff < 0
+                          ? 'Guest discount of ₹${(-diff).toInt()} applied'
+                          : 'Custom rate applied (+₹${diff.toInt()})',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: diff < 0 ? const Color(0xFF16A34A) : AppTheme.slateMuted,
+                      ),
+                    )
+                  else
+                    Text(
+                      'Guest bargaining? Tap button to customize rate',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: AppTheme.slateMuted,
+                      ),
+                    ),
+                ],
+              ),
+              InkWell(
+                onTap: () => _openPriceAdjustmentSheet(
+                  selectedRoom: selectedRoom,
+                  nights: nights,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _isCustomPricing ? const Color(0xFFDCFCE7) : AppTheme.brandLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _isCustomPricing
+                          ? const Color(0xFF16A34A).withValues(alpha: 0.3)
+                          : AppTheme.brandPrimary.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isCustomPricing ? Icons.edit_rounded : Icons.local_offer_outlined,
+                        size: 13,
+                        color: _isCustomPricing ? const Color(0xFF15803D) : AppTheme.brandPrimary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isCustomPricing ? 'Edit Price' : 'Bargain Rate',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _isCustomPricing ? const Color(0xFF15803D) : AppTheme.brandPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdvanceChip(
+    String label,
+    VoidCallback onTap, {
+    required bool isSelected,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.brandLight : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? AppTheme.brandPrimary : AppTheme.slateBorder,
+              width: isSelected ? 1.4 : 1.0,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? AppTheme.brandPrimary : AppTheme.slateDark,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildUnifiedStickyFooter({
     required Room? selectedRoom,
     required int nights,
     required double totalEstimatedAmount,
+    required double effectiveNightlyRate,
     required bool isNoRooms,
     required HotelStore store,
   }) {
     final double advanceAmt =
         double.tryParse(_advanceController.text) ?? totalEstimatedAmount;
+    final baseRate = selectedRoom?.baseRate ?? 2200.0;
+    final defaultTotal = nights * baseRate;
 
     return Container(
       decoration: const BoxDecoration(
@@ -4826,60 +5616,92 @@ class _CheckInScreenState extends State<CheckInScreen> {
         top: false,
         child: Row(
           children: [
-            // Left summary (context-aware per step)
+            // Left summary (context-aware per step & tap to edit pricing)
             Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              child: InkWell(
+                onTap: () => _openPriceAdjustmentSheet(
+                  selectedRoom: selectedRoom,
+                  nights: nights,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '₹${totalEstimatedAmount.toInt()}',
-                        style: GoogleFonts.outfit(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.slateDark,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'TOTAL',
-                          style: GoogleFonts.inter(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                            color: const Color(0xFF16A34A),
+                      Row(
+                        children: [
+                          if (_isCustomPricing) ...[
+                            Text(
+                              '₹${defaultTotal.toInt()}',
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                decoration: TextDecoration.lineThrough,
+                                color: AppTheme.slateMuted,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(
+                            '₹${totalEstimatedAmount.toInt()}',
+                            style: GoogleFonts.outfit(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: _isCustomPricing ? const Color(0xFF0F766E) : AppTheme.slateDark,
+                            ),
                           ),
+                          const SizedBox(width: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _isCustomPricing
+                                  ? const Color(0xFFCCFBF1)
+                                  : const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              _isCustomPricing ? 'AGREED' : 'TOTAL',
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                                color: _isCustomPricing
+                                    ? const Color(0xFF0F766E)
+                                    : const Color(0xFF16A34A),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.edit_outlined,
+                            size: 13,
+                            color: _isCustomPricing ? const Color(0xFF0F766E) : AppTheme.slateMuted,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        _currentStep == 1
+                            ? '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : "Select room"} • $nights night${nights > 1 ? "s" : ""} • $_totalGuests guest${_totalGuests > 1 ? "s" : ""}'
+                            : _currentStep == 2
+                            ? '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_nameController.text.trim().isNotEmpty ? _nameController.text.trim() : "Primary Guest"} • $nights night${nights > 1 ? "s" : ""}'
+                            : '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_paymentMethod.toUpperCase()} • Bal: ₹${(totalEstimatedAmount - advanceAmt).clamp(0, 999999).toInt()}',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: AppTheme.slateMuted,
+                          fontWeight: FontWeight.w500,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    _currentStep == 1
-                        ? '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : "Select room"} • $nights night${nights > 1 ? "s" : ""} • $_totalGuests guest${_totalGuests > 1 ? "s" : ""}'
-                        : _currentStep == 2
-                        ? '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_nameController.text.trim().isNotEmpty ? _nameController.text.trim() : "Primary Guest"} • $nights night${nights > 1 ? "s" : ""}'
-                        : '${selectedRoom != null ? "Room ${selectedRoom.roomNumber}" : ""} • ${_paymentMethod.toUpperCase()} • Bal: ₹${(totalEstimatedAmount - advanceAmt).clamp(0, 999999).toInt()}',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppTheme.slateMuted,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                ),
               ),
             ),
             const SizedBox(width: 6),

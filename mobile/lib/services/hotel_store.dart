@@ -1135,6 +1135,7 @@ class HotelStore extends ChangeNotifier {
     int numAdults = 1,
     int numKids = 0,
     required double nightlyRate,
+    double? totalStayAmount,
     required String fullName,
     required String phone,
     String? email,
@@ -1225,6 +1226,15 @@ class HotelStore extends ChangeNotifier {
         ? applyDefaultCheckOutTime(expectedCheckOut)
         : expectedCheckOut;
 
+    // Calculate total duration (calendar nights)
+    final checkInDateOnly = DateTime(checkInTime.year, checkInTime.month, checkInTime.day);
+    final checkOutDateOnly = DateTime(resolvedExpectedCheckOut.year, resolvedExpectedCheckOut.month, resolvedExpectedCheckOut.day);
+    final diffDays = checkOutDateOnly.difference(checkInDateOnly).inDays;
+    final nights = diffDays <= 0 ? 1 : diffDays;
+    final finalTotalStayAmount = totalStayAmount ?? (nights * nightlyRate);
+    final effectiveNightlyRate = finalTotalStayAmount / nights;
+    final outstanding = (finalTotalStayAmount - advanceAmount).clamp(0.0, finalTotalStayAmount);
+
     final newStay = Stay(
       id: stayId,
       propertyId: _currentProperty.id,
@@ -1235,7 +1245,7 @@ class HotelStore extends ChangeNotifier {
       numGuests: numGuests,
       numAdults: numAdults,
       numKids: numKids,
-      nightlyRate: nightlyRate,
+      nightlyRate: effectiveNightlyRate,
       status: StayStatus.active,
       guest: newGuest,
       coGuests: registeredCoGuests,
@@ -1243,21 +1253,13 @@ class HotelStore extends ChangeNotifier {
     );
     _stays.insert(0, newStay);
 
-    // Calculate total duration (calendar nights)
-    final checkInDateOnly = DateTime(checkInTime.year, checkInTime.month, checkInTime.day);
-    final checkOutDateOnly = DateTime(resolvedExpectedCheckOut.year, resolvedExpectedCheckOut.month, resolvedExpectedCheckOut.day);
-    final diffDays = checkOutDateOnly.difference(checkInDateOnly).inDays;
-    final nights = diffDays <= 0 ? 1 : diffDays;
-    final totalStayAmount = nights * nightlyRate;
-    final outstanding = (totalStayAmount - advanceAmount).clamp(0.0, totalStayAmount);
-
     // 3. Create Bill & Line Item
     final newBill = Bill(
       id: billId,
       propertyId: _currentProperty.id,
       stayId: stayId,
       billNumber: billNumber,
-      subtotal: totalStayAmount,
+      subtotal: finalTotalStayAmount,
       amountPaid: advanceAmount,
       outstanding: outstanding,
       status: 'draft',
@@ -1266,8 +1268,8 @@ class HotelStore extends ChangeNotifier {
           id: isUuid ? SupabaseSyncService.generateUuid() : 'li-${DateTime.now().millisecondsSinceEpoch}',
           description: 'Room Stay ($nights night${nights > 1 ? 's' : ''})',
           quantity: nights,
-          unitPrice: nightlyRate,
-          amount: totalStayAmount,
+          unitPrice: effectiveNightlyRate,
+          amount: finalTotalStayAmount,
         ),
       ],
     );
@@ -1373,6 +1375,7 @@ class HotelStore extends ChangeNotifier {
     int numAdults = 1,
     int numKids = 0,
     required double nightlyRate,
+    double? totalStayAmount,
     required String fullName,
     required String phone,
     String? email,
@@ -1461,6 +1464,13 @@ class HotelStore extends ChangeNotifier {
     final resolvedCheckIn = applyDefaultCheckInTime(checkInDate);
     final resolvedCheckOut = applyDefaultCheckOutTime(checkOutDate);
 
+    // Bill calculation
+    final diffDays = resolvedCheckOut.difference(resolvedCheckIn).inDays;
+    final nights = diffDays <= 0 ? 1 : diffDays;
+    final finalTotalStayAmount = totalStayAmount ?? (nights * nightlyRate);
+    final effectiveNightlyRate = finalTotalStayAmount / nights;
+    final outstanding = (finalTotalStayAmount - advanceAmount).clamp(0.0, finalTotalStayAmount);
+
     final newStay = Stay(
       id: stayId,
       propertyId: _currentProperty.id,
@@ -1471,7 +1481,7 @@ class HotelStore extends ChangeNotifier {
       numGuests: numGuests,
       numAdults: numAdults,
       numKids: numKids,
-      nightlyRate: nightlyRate,
+      nightlyRate: effectiveNightlyRate,
       status: StayStatus.reserved, // Explicit reservation status
       guest: newGuest,
       coGuests: registeredCoGuests,
@@ -1479,18 +1489,12 @@ class HotelStore extends ChangeNotifier {
     );
     _stays.insert(0, newStay);
 
-    // Bill calculation
-    final diffDays = resolvedCheckOut.difference(resolvedCheckIn).inDays;
-    final nights = diffDays <= 0 ? 1 : diffDays;
-    final totalStayAmount = nights * nightlyRate;
-    final outstanding = (totalStayAmount - advanceAmount).clamp(0.0, totalStayAmount);
-
     final newBill = Bill(
       id: billId,
       propertyId: _currentProperty.id,
       stayId: stayId,
       billNumber: billNumber,
-      subtotal: totalStayAmount,
+      subtotal: finalTotalStayAmount,
       amountPaid: advanceAmount,
       outstanding: outstanding,
       status: 'reserved',
@@ -1499,8 +1503,8 @@ class HotelStore extends ChangeNotifier {
           id: isUuid ? SupabaseSyncService.generateUuid() : 'li-${DateTime.now().millisecondsSinceEpoch}',
           description: 'Advance Booking Reservation ($nights night${nights > 1 ? 's' : ''})',
           quantity: nights,
-          unitPrice: nightlyRate,
-          amount: totalStayAmount,
+          unitPrice: effectiveNightlyRate,
+          amount: finalTotalStayAmount,
         ),
       ],
     );
