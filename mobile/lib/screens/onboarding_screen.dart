@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_brand.dart';
 import 'login_screen.dart';
 import 'register_screen.dart';
 
@@ -83,9 +84,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.white12),
                     ),
-                    child: Image.asset(
-                      'assets/images/easeinn_logo.png',
-                      errorBuilder: (_, __, ___) => const Icon(Icons.hotel_rounded, size: 20, color: Colors.white),
+                    child: AppBrand.logo(
+                      fallbackColor: Colors.white,
+                      fallbackIconSize: 20,
                     ),
                   ),
                   const SizedBox(width: 12),

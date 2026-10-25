@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'backend_config.dart';
-import 'package:flutter/foundation.dart';
 
 class OcrResult {
   final bool success;
@@ -17,6 +18,8 @@ class OcrResult {
   final String? fatherName;
   final String? confidence;
   final String? rawMessage;
+  /// Server-side timing breakdown (present when server returns _timing)
+  final Map<String, dynamic>? timing;
 
   OcrResult({
     required this.success,
@@ -30,13 +33,14 @@ class OcrResult {
     this.fatherName,
     this.confidence,
     this.rawMessage,
+    this.timing,
   });
 
   factory OcrResult.fromJson(Map<String, dynamic> json) {
     final guestData = json['guest_data'] as Map<String, dynamic>? ?? {};
-    final details = json['details'] as Map<String, dynamic>? ?? {};
-    final front = details['front'] as Map<String, dynamic>?;
-    final back = details['back'] as Map<String, dynamic>?;
+    final details   = json['details']    as Map<String, dynamic>? ?? {};
+    final front     = details['front']   as Map<String, dynamic>?;
+    final back      = details['back']    as Map<String, dynamic>?;
 
     String conf = '96.5%';
     if (front != null && front['confidence'] != null) {
@@ -46,22 +50,63 @@ class OcrResult {
     }
 
     return OcrResult(
-      success: json['success'] ?? true,
+      success:      json['success'] ?? true,
       documentType: json['document_type'] ?? 'aadhaar',
-      fullName: guestData['full_name'] ?? '',
-      idNumber: guestData['id_number'] ?? '',
-      dateOfBirth: guestData['date_of_birth'],
-      gender: guestData['gender'],
-      address: guestData['address'],
-      pincode: guestData['pincode'],
-      fatherName: guestData['father_name'],
-      confidence: conf,
-      rawMessage: json['message'],
+      fullName:     guestData['full_name']     ?? '',
+      idNumber:     guestData['id_number']     ?? '',
+      dateOfBirth:  guestData['date_of_birth'] as String?,
+      gender:       guestData['gender']        as String?,
+      address:      guestData['address']       as String?,
+      pincode:      guestData['pincode']       as String?,
+      fatherName:   guestData['father_name']   as String?,
+      confidence:   conf,
+      rawMessage:   json['message']            as String?,
+      timing:       json['_timing']            as Map<String, dynamic>?,
     );
   }
 }
 
 class OcrService {
+  // ── Client-side resize ──────────────────────────────────────────────
+  // Only applied when payload > 500KB. Uses platform-native codecs
+  // (UIKit on iOS, android.graphics on Android) via flutter_image_compress.
+  // Typical overhead: ~50-100ms. Typical upload saving: ~400-700ms on LTE.
+  //
+  // Images already under 500KB are returned unchanged — zero overhead.
+  static const int _resizeThresholdBytes = 500 * 1024; // 500 KB
+  static const int _maxDimension         = 1500;       // px on longest edge
+  static const int _jpegQuality          = 72;
+
+  static Future<Uint8List> _maybeResizeBytes(
+    Uint8List bytes,
+    String filename,
+  ) async {
+    if (bytes.length <= _resizeThresholdBytes) return bytes; // already small
+
+    final ext = filename.split('.').last.toLowerCase();
+    final CompressFormat fmt =
+        ext == 'png' ? CompressFormat.png : CompressFormat.jpeg;
+
+    try {
+      final result = await FlutterImageCompress.compressWithList(
+        bytes,
+        minWidth:  _maxDimension,
+        minHeight: _maxDimension,
+        quality:   _jpegQuality,
+        format:    fmt,
+        keepExif:  false,
+      );
+      debugPrint(
+        '[OcrService] resize: ${bytes.length}B → ${result.length}B '
+        '(${((1 - result.length / bytes.length) * 100).toStringAsFixed(0)}% smaller)',
+      );
+      return result;
+    } catch (e) {
+      // If compression fails for any reason, send original — never drop the scan
+      debugPrint('[OcrService] resize skipped: $e');
+      return bytes;
+    }
+  }
   static String get baseUrl => BackendConfig.baseUrl;
 
   static MediaType _resolveMediaType(String filename) {
@@ -95,48 +140,86 @@ class OcrService {
 
       request.fields['document_type'] = documentType;
 
-      // Front side upload
-      if (frontFile != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath('document_front', frontFile.path),
-        );
-      } else if (frontBytes != null && frontBytes.isNotEmpty) {
-        final filename = frontFilename ?? 'document_front.jpg';
+      // Resize front + back concurrently before upload (native codec,
+      // skipped automatically for images already ≤ 500 KB)
+      final tResize = Stopwatch()..start();
+
+      Uint8List? resolvedFront;
+      Uint8List? resolvedBack;
+
+      final results = await Future.wait([
+        () async {
+          if (frontFile != null) {
+            final b = await frontFile.readAsBytes();
+            return _maybeResizeBytes(b, frontFile.path.split('/').last);
+          } else if (frontBytes != null && frontBytes.isNotEmpty) {
+            return _maybeResizeBytes(frontBytes, frontFilename ?? 'document_front.jpg');
+          }
+          return null;
+        }(),
+        () async {
+          if (backFile != null) {
+            final b = await backFile.readAsBytes();
+            return _maybeResizeBytes(b, backFile.path.split('/').last);
+          } else if (backBytes != null && backBytes.isNotEmpty) {
+            return _maybeResizeBytes(backBytes, backFilename ?? 'document_back.jpg');
+          }
+          return null;
+        }(),
+      ]);
+
+      resolvedFront = results[0];
+      resolvedBack  = results[1];
+      tResize.stop();
+      debugPrint('[OcrService] resize phase: ${tResize.elapsedMilliseconds}ms');
+
+      // Front side
+      if (resolvedFront != null) {
+        final filename = frontFilename ?? frontFile?.path.split('/').last ?? 'document_front.jpg';
         request.files.add(
           http.MultipartFile.fromBytes(
             'document_front',
-            frontBytes,
+            resolvedFront,
             filename: filename,
             contentType: _resolveMediaType(filename),
           ),
         );
       }
 
-      // Back side upload (optional)
-      if (backFile != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath('document_back', backFile.path),
-        );
-      } else if (backBytes != null && backBytes.isNotEmpty) {
-        final filename = backFilename ?? 'document_back.jpg';
+      // Back side
+      if (resolvedBack != null) {
+        final filename = backFilename ?? backFile?.path.split('/').last ?? 'document_back.jpg';
         request.files.add(
           http.MultipartFile.fromBytes(
             'document_back',
-            backBytes,
+            resolvedBack,
             filename: filename,
             contentType: _resolveMediaType(filename),
           ),
         );
       }
 
+      final sw = Stopwatch()..start();
       final streamedResponse = await request.send().timeout(
         const Duration(seconds: 120),
       );
       final response = await http.Response.fromStream(streamedResponse);
+      sw.stop();
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-        return OcrResult.fromJson(decoded);
+        final result  = OcrResult.fromJson(decoded);
+
+        // Log real latency breakdown for benchmarking
+        final serverMs = result.timing?['server_total_ms'];
+        debugPrint(
+          '[OcrService] round-trip=${sw.elapsedMilliseconds}ms'
+          '${serverMs != null ? " server=${serverMs}ms" : ""}'
+          ' front_vision=${result.timing?["front_vision_ms"]}ms'
+          ' back_vision=${result.timing?["back_vision_ms"]}ms',
+        );
+
+        return result;
       } else {
         String errMsg = 'OCR server returned status ${response.statusCode}';
         try {

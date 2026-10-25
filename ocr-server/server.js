@@ -9,6 +9,7 @@ const apiRoutes = require("./src/routes/api.routes");
 const whatsappRoutes = require("./src/routes/whatsapp.routes");
 const whatsappService = require("./src/services/whatsapp.service");
 const { errorHandler } = require("./src/middleware/error.middleware");
+const { startCleanup } = require("./src/utils/cleanup");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,8 +34,9 @@ app.use("/api/whatsapp", (req, res, next) => {
   next();
 });
 
-// Serve processed files statically (for debugging/download)
-app.use("/processed", express.static(path.join(__dirname, "processed")));
+// NOTE: processed/ is intentionally NOT served statically.
+// It contains extracted Aadhaar data (name, DOB, ID number, address).
+// Use GET /api/status/:document_id for authorised field retrieval.
 
 // Health check
 app.get("/", (req, res) => {
@@ -86,13 +88,15 @@ const httpServer = app.listen(PORT, () => {
   const openRouterActive = Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim().length > 5);
 
   console.log(`\n========================================`);
-  console.log(`  EaseInn Backend & Document API v2.2.0`);
+  console.log(`  EaseInn Backend & Document API v2.3.0`);
   console.log(`  Running on: http://localhost:${PORT}`);
-  console.log(`  Gemini Vision:     ${geminiActive ? "ENABLED (High Speed ~1s)" : "Disabled (Add GEMINI_API_KEY to .env)"}`);
+  console.log(`  Gemini Vision:     ${geminiActive ? "ENABLED (timeout=6s, keep-alive)" : "Disabled (Add GEMINI_API_KEY to .env)"}`);
   console.log(`  OpenRouter Vision: ${openRouterActive ? "ENABLED" : "Disabled"}`);
   console.log(`  Ollama (Local):    ${process.env.OLLAMA_API_BASE_URL || "http://localhost:11434"}`);
   console.log(`  WhatsApp engine:   Baileys (session auto-restore)`);
   console.log(`========================================\n`);
+
+  startCleanup();
 
   // Restore WhatsApp sessions on boot so a Render/process restart stays linked
   if (typeof whatsappService.restoreAllSessions === "function") {

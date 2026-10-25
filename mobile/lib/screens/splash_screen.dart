@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import '../services/hotel_store.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_brand.dart';
 import 'onboarding_screen.dart';
 import 'login_screen.dart';
 import 'home_shell.dart';
@@ -149,14 +150,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.asset(
-                          'assets/images/easeinn_logo.png',
+                        child: AppBrand.logo(
                           fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.hotel_rounded,
-                            size: 44,
-                            color: Colors.white,
-                          ),
+                          fallbackColor: Colors.white,
+                          fallbackIconSize: 44,
                         ),
                       ),
                     ),

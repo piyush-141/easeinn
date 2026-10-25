@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/hotel_store.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_brand.dart';
 import 'dashboard_screen.dart';
 import 'rooms_screen.dart';
 import 'check_in_screen.dart';
@@ -182,14 +183,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(4),
-                      child: Image.asset(
-                        'assets/images/easeinn_logo.png',
+                      child: AppBrand.logo(
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.hotel_rounded,
-                          color: AppTheme.brandPrimary,
-                          size: 18,
-                        ),
+                        fallbackColor: AppTheme.brandPrimary,
+                        fallbackIconSize: 18,
                       ),
                     ),
                   ),

@@ -236,37 +236,37 @@ async function extractText(imageVariants, documentId) {
   if (documentId) {
     fs.mkdirSync("processed", { recursive: true });
 
-    fs.writeFileSync(
+    fs.promises.writeFile(
       path.join("processed", `${documentId}_ocr_best.txt`),
       `Variant: ${best.variant}\nConfig: ${best.config} (PSM ${best.psm})\n` +
       `Quality: ${best.qualityScore}\nConfidence: ${best.confidence.toFixed(1)}%\n` +
       `---\n\n${best.text}`
-    );
+    ).catch(() => {});
 
-    fs.writeFileSync(
+    fs.promises.writeFile(
       path.join("processed", `${documentId}_ocr_merged.txt`),
       mergedText
-    );
+    ).catch(() => {});
 
-    fs.writeFileSync(
+    fs.promises.writeFile(
       path.join("processed", `${documentId}_ocr_field_merged.txt`),
       fieldMergedText
-    );
+    ).catch(() => {});
 
     const summary = allResults.slice(0, 15).map((r) => ({
-      variant: r.variant,
-      config: r.config,
-      psm: r.psm,
-      quality: r.qualityScore,
+      variant:    r.variant,
+      config:     r.config,
+      psm:        r.psm,
+      quality:    r.qualityScore,
       confidence: r.confidence.toFixed(1),
-      length: r.text.length,
-      preview: r.text.substring(0, 80).replace(/\n/g, "⏎"),
+      length:     r.text.length,
+      preview:    r.text.substring(0, 80).replace(/\n/g, "⏎"),
     }));
 
-    fs.writeFileSync(
+    fs.promises.writeFile(
       path.join("processed", `${documentId}_ocr_all.json`),
       JSON.stringify(summary, null, 2)
-    );
+    ).catch(() => {});
   }
 
   return {

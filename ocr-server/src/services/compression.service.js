@@ -1,21 +1,24 @@
 // src/services/compression.service.js
+// Single-pass compression: estimate quality from size ratio, write once.
+// Replaces the iterative 9-pass loop that did up to 9 disk writes.
 const sharp = require("sharp");
-const path = require("path");
-const fs = require("fs");
+const path  = require("path");
+const fs    = require("fs");
 const { formatBytes } = require("../utils/helpers");
 
 const MAX_SIZE = (parseInt(process.env.COMPRESSED_MAX_SIZE_MB) || 1) * 1024 * 1024;
 
 /**
- * Compress image to under MAX_SIZE while maintaining OCR readability.
+ * Compress image to under MAX_SIZE in a single pass.
  *
  * Strategy:
- *  - If image already under limit → keep JPEG with high quality
- *  - If image over limit → progressive resize + quality reduction
- *  - NEVER go below width 1000px (text becomes unreadable)
- *  - NEVER go below quality 50 (artifacts kill OCR)
+ *  1. Compute ratio = inputBytes / MAX_SIZE
+ *  2. Map ratio to (quality, maxWidth) in one step
+ *  3. Encode to buffer — no temp files
+ *  4. If the estimate overshoots (very rare), one hard fallback at 900px/q50
+ *
+ * NEVER go below 900px width or quality 50 — text becomes unreadable for OCR.
  */
-
 async function compressImage(inputPath) {
   if (!fs.existsSync(inputPath)) {
     throw new Error("Image file not found: " + inputPath);
@@ -23,82 +26,62 @@ async function compressImage(inputPath) {
 
   fs.mkdirSync("processed", { recursive: true });
 
-  const filename = path.basename(inputPath, path.extname(inputPath));
+  const filename    = path.basename(inputPath, path.extname(inputPath));
+  const outputPath  = path.join("processed", `${filename}_compressed.jpg`);
   const beforeBytes = fs.statSync(inputPath).size;
-  const metadata = await sharp(inputPath).metadata();
+  const meta        = await sharp(inputPath).metadata();
 
-  console.log(
-    `[Compress] Input: ${formatBytes(beforeBytes)} (${metadata.width}x${metadata.height})`
-  );
+  console.log(`[Compress] Input: ${formatBytes(beforeBytes)} (${meta.width}x${meta.height})`);
 
-  // If already under limit → normalize but KEEP JPEG
-  if (beforeBytes <= MAX_SIZE) {
-    const outputPath = path.join("processed", `${filename}_compressed.jpg`);
+  // ── Quality / width selection based on compression ratio needed ──────────
+  const ratio = beforeBytes / MAX_SIZE;
 
-    await sharp(inputPath)
-      .rotate() // apply EXIF rotation
-      .jpeg({ quality: 90, progressive: true })
-      .toFile(outputPath);
+  let quality, maxWidth;
 
-    console.log(
-      `[Compress] Already under ${formatBytes(MAX_SIZE)}, saved as optimized JPEG`
-    );
+  if (ratio <= 1.0) {
+    // Already under limit — light re-encode, no resize
+    quality  = 90;
+    maxWidth = undefined;
+  } else if (ratio <= 2.0) {
+    quality  = 80;
+    maxWidth = 1800;
+  } else if (ratio <= 4.0) {
+    quality  = 70;
+    maxWidth = 1600;
+  } else if (ratio <= 8.0) {
+    quality  = 60;
+    maxWidth = 1400;
+  } else {
+    quality  = 52;
+    maxWidth = 1100;
+  }
 
+  // ── Single pass — encode to buffer, no temp files ────────────────────────
+  let pipeline = sharp(inputPath).rotate();
+  if (maxWidth) pipeline = pipeline.resize({ width: maxWidth, withoutEnlargement: true });
+  pipeline = pipeline.jpeg({ quality, progressive: true });
+
+  const buffer = await pipeline.toBuffer();
+
+  // ── Safety fallback (rare: very high-resolution images) ─────────────────
+  if (buffer.length > MAX_SIZE) {
+    console.warn(`[Compress] Estimate missed (${formatBytes(buffer.length)}), using hard fallback`);
+    const fallback = await sharp(inputPath)
+      .rotate()
+      .resize({ width: 900, withoutEnlargement: true })
+      .jpeg({ quality: 50, progressive: true })
+      .toBuffer();
+
+    await fs.promises.writeFile(outputPath, fallback);
+    console.log(`[Compress] Fallback: ${formatBytes(beforeBytes)} → ${formatBytes(fallback.length)}`);
     return outputPath;
   }
 
-  // Iterative compression
-  const outputPath = path.join("processed", `${filename}_compressed.jpg`);
-
-  const attempts = [
-    { width: 2000, quality: 85 },
-    { width: 1800, quality: 80 },
-    { width: 1600, quality: 75 },
-    { width: 1500, quality: 70 },
-    { width: 1400, quality: 65 },
-    { width: 1200, quality: 60 },
-    { width: 1100, quality: 55 },
-    { width: 1000, quality: 50 }, // minimum acceptable for OCR
-  ];
-
-  for (const attempt of attempts) {
-    const tempPath = outputPath + ".tmp";
-
-    await sharp(inputPath)
-      .rotate()
-      .resize({ width: attempt.width, withoutEnlargement: true })
-      .jpeg({ quality: attempt.quality, progressive: true })
-      .toFile(tempPath);
-
-    const afterBytes = fs.statSync(tempPath).size;
-
-    if (afterBytes <= MAX_SIZE) {
-      fs.renameSync(tempPath, outputPath);
-
-      console.log(
-        `[Compress] ${formatBytes(beforeBytes)} → ${formatBytes(afterBytes)} ` +
-          `(width=${attempt.width}, q=${attempt.quality})`
-      );
-
-      return outputPath;
-    }
-
-    fs.unlinkSync(tempPath);
-  }
-
-  // Last resort
-  await sharp(inputPath)
-    .rotate()
-    .resize({ width: 900, withoutEnlargement: true })
-    .jpeg({ quality: 45, progressive: true })
-    .toFile(outputPath);
-
-  const afterBytes = fs.statSync(outputPath).size;
-
+  await fs.promises.writeFile(outputPath, buffer);
   console.log(
-    `[Compress] Aggressive: ${formatBytes(beforeBytes)} → ${formatBytes(afterBytes)}`
+    `[Compress] ${formatBytes(beforeBytes)} → ${formatBytes(buffer.length)}` +
+    ` (q=${quality}${maxWidth ? `, w≤${maxWidth}` : ""})`
   );
-
   return outputPath;
 }
 

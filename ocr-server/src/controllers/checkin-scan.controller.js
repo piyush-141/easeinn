@@ -78,65 +78,59 @@ function mergeFrontAndBack(frontFields, backFields, expectedDocType) {
  */
 async function processSingleImage(filePath, originalName, docId) {
   console.log(`[Scan] Processing image: ${originalName} (ID: ${docId})`);
-  
+  const t0 = Date.now();
+
   // Step 1: Compress
   const compressedPath = await compressImage(filePath);
+  const compressMs = Date.now() - t0;
 
   let fields = null;
   let ocrResult = null;
+  const tVision = Date.now();
 
-  // Step 2: Instant Cloud Vision extraction if Gemini / OpenRouter is available
+  // Step 2: Cloud Vision (Gemini → OpenRouter)
   if (isCloudVisionAvailable()) {
     try {
-      console.log(`[Scan] Cloud Vision available — extracting fields from ${docId}...`);
+      console.log(`[Scan] Cloud Vision — extracting fields from ${docId}...`);
       const cloudVisionResult = await extractFieldsWithCloudVision(compressedPath, `${docId}_cloud_vision`);
-      if (cloudVisionResult && (cloudVisionResult.name || cloudVisionResult.id_number || cloudVisionResult.dob || cloudVisionResult.aadhaar_number)) {
+      if (cloudVisionResult && (cloudVisionResult.name || cloudVisionResult.id_number || cloudVisionResult.dob)) {
         fields = cloudVisionResult;
-        console.log(`[Scan] ✓ Cloud Vision extracted accurate fields in ~1s!`);
+        console.log(`[Scan] ✓ Cloud Vision extracted fields for ${docId}`);
       }
     } catch (err) {
       console.warn(`[Scan] Cloud Vision error: ${err.message}. Falling back to local pipeline.`);
     }
   }
 
-  // Step 3: If Cloud Vision didn't run or yielded no fields, run local multi-pass OCR & Ollama
+  // Step 3: Local OCR fallback if cloud vision yielded nothing
   if (!fields) {
-    console.log(`[Scan] Running local preprocessing and multi-pass OCR on ${docId}...`);
+    console.log(`[Scan] Running local OCR on ${docId}...`);
     const variants = await preprocessImage(compressedPath);
     variants.original = filePath;
     variants.compressed = compressedPath;
 
-    // OCR across variants
     ocrResult = await extractText(variants, docId);
-
-    // Extract fields from OCR text
     fields = extractFieldsFromText(ocrResult, `${docId}_ocr`);
 
-    // Optional Vision model if Ollama is available
     try {
       const ollamaReady = await isOllamaAvailable();
       if (ollamaReady) {
-        console.log(`[Scan] Ollama available — running local vision on ${docId}...`);
         const visionResult = await extractFieldsWithVision(compressedPath, `${docId}_vision`);
-        if (visionResult) {
-          fields = smartMerge(visionResult, fields);
-        }
+        if (visionResult) fields = smartMerge(visionResult, fields);
       }
     } catch (err) {
-      console.warn(`[Scan] Local vision extraction skipped: ${err.message}`);
+      console.warn(`[Scan] Local vision skipped: ${err.message}`);
     }
   } else {
-    // Synthetic OCR result based on Cloud Vision
     ocrResult = {
       confidence: 98,
       qualityScore: 95,
-      bestVariant: "cloud_vision_gemini",
-      rawText: Object.entries(fields)
-        .filter(([_, v]) => v)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join("\n"),
+      bestVariant: "cloud_vision",
+      rawText: Object.entries(fields).filter(([_, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n"),
     };
   }
+
+  const visionMs = Date.now() - tVision;
 
   return {
     docId,
@@ -149,6 +143,7 @@ async function processSingleImage(filePath, originalName, docId) {
       rawText: ocrResult.text || ocrResult.rawText,
     },
     fields,
+    timing: { compress_ms: compressMs, vision_ms: visionMs, total_ms: Date.now() - t0 },
   };
 }
 
@@ -191,25 +186,18 @@ async function scanDocumentHandler(req, res, next) {
     console.log(`======================================================\n`);
 
     let frontResult = null;
-    let backResult = null;
+    let backResult  = null;
+    const tTotal = Date.now();
 
-    // Process front side
-    if (frontFile) {
-      frontResult = await processSingleImage(
-        frontFile.path,
-        frontFile.originalname,
-        `${baseId}_front`
-      );
-    }
-
-    // Process back side
-    if (backFile) {
-      backResult = await processSingleImage(
-        backFile.path,
-        backFile.originalname,
-        `${baseId}_back`
-      );
-    }
+    // Process front and back CONCURRENTLY — single biggest latency gain
+    [frontResult, backResult] = await Promise.all([
+      frontFile
+        ? processSingleImage(frontFile.path, frontFile.originalname, `${baseId}_front`)
+        : Promise.resolve(null),
+      backFile
+        ? processSingleImage(backFile.path, backFile.originalname, `${baseId}_back`)
+        : Promise.resolve(null),
+    ]);
 
     let finalExtractedData = {};
     let finalDocType = docTypeHint !== "auto" ? docTypeHint : null;
@@ -260,7 +248,18 @@ async function scanDocumentHandler(req, res, next) {
       },
     };
 
-    console.log(`[CheckIn Scan] Extraction completed successfully for ${baseId}`);
+    // Attach timing breakdown (always included — useful for benchmarking)
+    responsePayload._timing = {
+      server_total_ms: Date.now() - tTotal,
+      front_ms: frontResult?.timing?.total_ms ?? null,
+      front_compress_ms: frontResult?.timing?.compress_ms ?? null,
+      front_vision_ms:   frontResult?.timing?.vision_ms   ?? null,
+      back_ms:  backResult?.timing?.total_ms  ?? null,
+      back_compress_ms:  backResult?.timing?.compress_ms  ?? null,
+      back_vision_ms:    backResult?.timing?.vision_ms    ?? null,
+    };
+
+    console.log(`[CheckIn Scan] Done ${baseId} in ${responsePayload._timing.server_total_ms}ms`);
     console.log(`[CheckIn Scan] Auto-fill fields:`, responsePayload.guest_data);
 
     return res.status(200).json(responsePayload);

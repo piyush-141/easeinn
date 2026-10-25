@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import '../services/hotel_store.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_brand.dart';
 import 'home_shell.dart';
 import '../widgets/email_otp_dialog.dart';
 
@@ -217,7 +218,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 color: Colors.white10,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Image.asset('assets/images/easeinn_logo.png'),
+              child: AppBrand.logo(
+                fallbackColor: Colors.white,
+                fallbackIconSize: 18,
+              ),
             ),
             const SizedBox(width: 8),
             Text(

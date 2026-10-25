@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import '../services/hotel_store.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_brand.dart';
 import 'register_screen.dart';
 import 'home_shell.dart';
 import '../widgets/pressable_scale.dart';
@@ -129,14 +130,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(14),
-                        child: Image.asset(
-                          'assets/images/easeinn_logo.png',
+                        child: AppBrand.logo(
                           fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.hotel_rounded,
-                            size: 36,
-                            color: Colors.white,
-                          ),
+                          fallbackColor: Colors.white,
+                          fallbackIconSize: 36,
                         ),
                       ),
                     ),
