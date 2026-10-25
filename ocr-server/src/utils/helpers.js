@@ -103,6 +103,19 @@ function normalizeAadhaar(aadhaar) {
   return aadhaar.replace(/\s+/g, "").replace(/[^0-9]/g, "");
 }
 
+/**
+ * Format Aadhaar number consistently as 12 digits grouped by 4 (XXXX XXXX XXXX)
+ * Returns formatted 12-digit string if valid Aadhaar, otherwise cleaned digits
+ */
+function formatAadhaarNumber(val) {
+  if (!val || typeof val !== "string") return "";
+  const digits = val.replace(/\D/g, "");
+  if (digits.length === 12) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 8)} ${digits.slice(8, 12)}`;
+  }
+  return val.trim();
+}
+
 module.exports = {
   generateDocumentId,
   formatBytes,
@@ -110,4 +123,5 @@ module.exports = {
   similarityScore,
   normalizeDate,
   normalizeAadhaar,
+  formatAadhaarNumber,
 };

@@ -102,16 +102,29 @@ async function extractWithGemini(base64Image, mimeType) {
   if (!apiKey) return null;
 
   const models = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
+    { name: "gemini-2.5-flash", thinkingBudget: 0 },
+    { name: "gemini-3.5-flash-lite", thinkingBudget: null },
   ];
 
   let lastError = null;
 
-  for (const model of models) {
+  for (const entry of models) {
+    const model = entry.name;
     try {
-      console.log(`[CloudVision] Gemini → "${model}"...`);
+      console.log(`[CloudVision] Gemini → "${model}"${entry.thinkingBudget !== null ? ` (thinkingBudget: ${entry.thinkingBudget})` : ""}...`);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      const generationConfig = {
+        temperature:      0.1,
+        responseMimeType: "application/json",
+        maxOutputTokens:  400,
+      };
+
+      if (entry.thinkingBudget !== null) {
+        generationConfig.thinkingConfig = {
+          thinkingBudget: entry.thinkingBudget,
+        };
+      }
 
       const response = await fetch(url, {
         method:  "POST",
@@ -126,11 +139,7 @@ async function extractWithGemini(base64Image, mimeType) {
               { text: DOCUMENT_EXTRACTION_PROMPT },
             ],
           }],
-          generationConfig: {
-            temperature:      0.1,
-            responseMimeType: "application/json",
-            maxOutputTokens:  400,
-          },
+          generationConfig,
         }),
       });
 

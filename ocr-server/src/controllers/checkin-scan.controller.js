@@ -7,7 +7,7 @@ const { extractText } = require("../services/ocr.service");
 const { extractFieldsFromText, detectDocumentType } = require("../services/extraction.service");
 const { extractFieldsWithVision, isOllamaAvailable } = require("../services/ollama-vision.service");
 const { extractFieldsWithCloudVision, isCloudVisionAvailable } = require("../services/cloud-vision.service");
-const { generateDocumentId, formatBytes } = require("../utils/helpers");
+const { generateDocumentId, formatBytes, formatAadhaarNumber } = require("../utils/helpers");
 
 /**
  * Smart merge function combining vision output and OCR output
@@ -29,7 +29,7 @@ function smartMerge(vision, ocr) {
 
     if (vExists && oExists) {
       if (key === "id_number") {
-        merged[key] = v.includes(" ") ? v : (o.includes(" ") ? o : v);
+        merged[key] = formatAadhaarNumber(v || o);
       } else if (key === "address") {
         merged[key] = v.length >= o.length ? v : o;
       } else {
@@ -226,7 +226,9 @@ async function scanDocumentHandler(req, res, next) {
       guest_data: {
         full_name: finalExtractedData.name || "",
         id_type: finalDocType === "unknown" ? "aadhaar" : finalDocType,
-        id_number: finalExtractedData.id_number || "",
+        id_number: finalDocType === "aadhaar" || (!finalDocType && finalExtractedData.id_number)
+          ? formatAadhaarNumber(finalExtractedData.id_number)
+          : (finalExtractedData.id_number || ""),
         date_of_birth: finalExtractedData.dob || "",
         gender: finalExtractedData.gender ? finalExtractedData.gender.toLowerCase() : "",
         address: finalExtractedData.address || "",
