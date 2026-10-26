@@ -44,6 +44,7 @@ out/
 coverage/
 
 # --- OCR Server Runtime Data & Cached Models ---
+processed/
 ocr-server/uploads/*
 !ocr-server/uploads/.gitkeep
 ocr-server/processed/*
