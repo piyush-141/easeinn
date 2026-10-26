@@ -102,8 +102,8 @@ async function extractWithGemini(base64Image, mimeType) {
   if (!apiKey) return null;
 
   const models = [
-    { name: "gemini-2.5-flash", thinkingBudget: 0 },
     { name: "gemini-3.5-flash-lite", thinkingBudget: null },
+    { name: "gemini-2.5-flash",      thinkingBudget: 0 },
   ];
 
   let lastError = null;
