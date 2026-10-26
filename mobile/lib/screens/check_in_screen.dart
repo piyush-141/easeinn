@@ -648,6 +648,148 @@ class _CheckInScreenState extends State<CheckInScreen> {
     });
   }
 
+  bool get _hasPrimaryInputFilled {
+    return _nameController.text.trim().isNotEmpty ||
+        _idNumberController.text.trim().isNotEmpty ||
+        _dobController.text.trim().isNotEmpty ||
+        _addressController.text.trim().isNotEmpty ||
+        _pincodeController.text.trim().isNotEmpty ||
+        _phoneController.text.trim().isNotEmpty ||
+        _emailController.text.trim().isNotEmpty ||
+        _fatherNameController.text.trim().isNotEmpty ||
+        _hasFrontUploaded ||
+        _hasBackUploaded ||
+        _frontBytes != null ||
+        _backBytes != null ||
+        _scanSuccess;
+  }
+
+  void _clearPrimaryGuestFields() {
+    setState(() {
+      _primaryScanToken++;
+      _nameController.clear();
+      _idNumberController.clear();
+      _dobController.clear();
+      _genderController.text = 'Male';
+      _addressController.clear();
+      _pincodeController.clear();
+      _phoneController.clear();
+      _emailController.clear();
+      _fatherNameController.clear();
+      _hasFrontUploaded = false;
+      _frontBytes = null;
+      _frontFilename = null;
+      _hasBackUploaded = false;
+      _backBytes = null;
+      _backFilename = null;
+      _scanSuccess = false;
+      _scanDone = false;
+      _isScanning = false;
+    });
+  }
+
+  Widget _buildClearPrimaryButton() {
+    return InkWell(
+      onTap: _clearPrimaryGuestFields,
+      borderRadius: BorderRadius.circular(5),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.close_rounded,
+              size: 13,
+              color: Color(0xFFEF4444),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              'Clear',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFEF4444),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _hasExtraGuestInputFilled(int index) {
+    if (index < 0 || index >= _extraGuests.length) return false;
+    final g = _extraGuests[index];
+    return g.nameController.text.trim().isNotEmpty ||
+        g.idNumberController.text.trim().isNotEmpty ||
+        g.dobController.text.trim().isNotEmpty ||
+        g.addressController.text.trim().isNotEmpty ||
+        g.pincodeController.text.trim().isNotEmpty ||
+        g.phoneController.text.trim().isNotEmpty ||
+        g.emailController.text.trim().isNotEmpty ||
+        g.fatherNameController.text.trim().isNotEmpty ||
+        g.hasFrontUploaded ||
+        g.hasBackUploaded ||
+        g.frontBytes != null ||
+        g.backBytes != null ||
+        g.scanSuccess;
+  }
+
+  void _clearExtraGuestFields(int index) {
+    if (index < 0 || index >= _extraGuests.length) return;
+    final g = _extraGuests[index];
+    setState(() {
+      g.scanToken++;
+      g.nameController.clear();
+      g.idNumberController.clear();
+      g.dobController.clear();
+      g.genderController.text = 'Male';
+      g.addressController.clear();
+      g.pincodeController.clear();
+      g.phoneController.clear();
+      g.emailController.clear();
+      g.fatherNameController.clear();
+      g.hasFrontUploaded = false;
+      g.frontBytes = null;
+      g.frontFilename = null;
+      g.hasBackUploaded = false;
+      g.backBytes = null;
+      g.backFilename = null;
+      g.scanSuccess = false;
+      g.scanDone = false;
+      g.isScanning = false;
+    });
+  }
+
+  Widget _buildClearExtraGuestButton(int index) {
+    return InkWell(
+      onTap: () => _clearExtraGuestFields(index),
+      borderRadius: BorderRadius.circular(5),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.close_rounded,
+              size: 13,
+              color: Color(0xFFEF4444),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              'Clear',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFEF4444),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ignore: unused_element
   void _showEditBranchUpiDialog(BuildContext context, HotelStore store) {
     final prop = store.currentProperty;
@@ -2362,7 +2504,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Scan buttons or compact green status card
-                if (!_hasFrontUploaded)
+                if (!_hasFrontUploaded) ...[
                   Row(
                     children: [
                       Expanded(
@@ -2414,7 +2556,104 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                       ),
                     ],
-                  )
+                  ),
+                  if (_hasPrimaryInputFilled) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.flip_rounded,
+                          size: 12,
+                          color: AppTheme.slateMuted,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Back side',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => _openCamera(isBack: true),
+                          borderRadius: BorderRadius.circular(5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.brandLight,
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: AppTheme.brandPrimary.withValues(
+                                  alpha: 0.3,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.camera_alt_rounded,
+                                  size: 11,
+                                  color: AppTheme.brandPrimary,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'Camera',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.brandPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap: _pickBackFile,
+                          borderRadius: BorderRadius.circular(5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.background,
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(color: AppTheme.slateBorder),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.upload_file_rounded,
+                                  size: 11,
+                                  color: AppTheme.slateMuted,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'File',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        _buildClearPrimaryButton(),
+                      ],
+                    ),
+                  ],
+                ]
                 else ...[
                   // Compact status row (exact match to screenshot)
                   Container(
@@ -2645,6 +2884,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             ),
                           ),
                         ),
+                        if (_hasPrimaryInputFilled) ...[
+                          const Spacer(),
+                          _buildClearPrimaryButton(),
+                        ],
                       ],
                     )
                   else
@@ -2677,6 +2920,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               ),
                             ),
                           ),
+                        if (_hasPrimaryInputFilled) ...[
+                          const Spacer(),
+                          _buildClearPrimaryButton(),
+                        ],
                       ],
                     ),
                 ],
@@ -3319,7 +3566,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Scan area
-                if (!g.hasFrontUploaded)
+                if (!g.hasFrontUploaded) ...[
                   Row(
                     children: [
                       Expanded(
@@ -3371,7 +3618,104 @@ class _CheckInScreenState extends State<CheckInScreen> {
                         ),
                       ),
                     ],
-                  )
+                  ),
+                  if (_hasExtraGuestInputFilled(i)) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.flip_rounded,
+                          size: 12,
+                          color: AppTheme.slateMuted,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Back side',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => _openCameraForGuest(i, isBack: true),
+                          borderRadius: BorderRadius.circular(5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.brandLight,
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: AppTheme.brandPrimary.withValues(
+                                  alpha: 0.3,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.camera_alt_rounded,
+                                  size: 11,
+                                  color: AppTheme.brandPrimary,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'Camera',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.brandPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap: () => _pickBackFileForGuest(i),
+                          borderRadius: BorderRadius.circular(5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.background,
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(color: AppTheme.slateBorder),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.upload_file_rounded,
+                                  size: 11,
+                                  color: AppTheme.slateMuted,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'File',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.slateDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        _buildClearExtraGuestButton(i),
+                      ],
+                    ),
+                  ],
+                ]
                 else ...[
                   // Compact status row
                   Container(
@@ -3602,6 +3946,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             ),
                           ),
                         ),
+                        if (_hasExtraGuestInputFilled(i)) ...[
+                          const Spacer(),
+                          _buildClearExtraGuestButton(i),
+                        ],
                       ],
                     )
                   else
@@ -3638,6 +3986,10 @@ class _CheckInScreenState extends State<CheckInScreen> {
                               ),
                             ),
                           ),
+                        if (_hasExtraGuestInputFilled(i)) ...[
+                          const Spacer(),
+                          _buildClearExtraGuestButton(i),
+                        ],
                       ],
                     ),
                 ],
