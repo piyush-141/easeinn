@@ -55,7 +55,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && mounted) {
       final store = context.read<HotelStore>();
       store.startAutoSync();
-      store.syncData(isBackground: true);
+      store.flushOutboxAndPullIncremental();
     }
   }
 

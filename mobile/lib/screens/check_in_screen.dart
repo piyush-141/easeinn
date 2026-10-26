@@ -720,14 +720,14 @@ class _CheckInScreenState extends State<CheckInScreen> {
   bool _hasExtraGuestInputFilled(int index) {
     if (index < 0 || index >= _extraGuests.length) return false;
     final g = _extraGuests[index];
-    return g.nameController.text.trim().isNotEmpty ||
-        g.idNumberController.text.trim().isNotEmpty ||
-        g.dobController.text.trim().isNotEmpty ||
-        g.addressController.text.trim().isNotEmpty ||
-        g.pincodeController.text.trim().isNotEmpty ||
-        g.phoneController.text.trim().isNotEmpty ||
-        g.emailController.text.trim().isNotEmpty ||
-        g.fatherNameController.text.trim().isNotEmpty ||
+    return g.nameCtrl.text.trim().isNotEmpty ||
+        g.idNumberCtrl.text.trim().isNotEmpty ||
+        g.dobCtrl.text.trim().isNotEmpty ||
+        g.addressCtrl.text.trim().isNotEmpty ||
+        g.pincodeCtrl.text.trim().isNotEmpty ||
+        g.phoneCtrl.text.trim().isNotEmpty ||
+        g.emailCtrl.text.trim().isNotEmpty ||
+        g.fatherNameCtrl.text.trim().isNotEmpty ||
         g.hasFrontUploaded ||
         g.hasBackUploaded ||
         g.frontBytes != null ||
@@ -740,15 +740,15 @@ class _CheckInScreenState extends State<CheckInScreen> {
     final g = _extraGuests[index];
     setState(() {
       g.scanToken++;
-      g.nameController.clear();
-      g.idNumberController.clear();
-      g.dobController.clear();
-      g.genderController.text = 'Male';
-      g.addressController.clear();
-      g.pincodeController.clear();
-      g.phoneController.clear();
-      g.emailController.clear();
-      g.fatherNameController.clear();
+      g.nameCtrl.clear();
+      g.idNumberCtrl.clear();
+      g.dobCtrl.clear();
+      g.genderCtrl.text = 'Male';
+      g.addressCtrl.clear();
+      g.pincodeCtrl.clear();
+      g.phoneCtrl.clear();
+      g.emailCtrl.clear();
+      g.fatherNameCtrl.clear();
       g.hasFrontUploaded = false;
       g.frontBytes = null;
       g.frontFilename = null;

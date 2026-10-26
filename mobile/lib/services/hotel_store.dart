@@ -12,6 +12,7 @@ import 'whatsapp_service.dart';
 import 'local_store_service.dart';
 import 'supabase_sync_service.dart';
 import 'supabase_service.dart';
+import 'outbox_queue_service.dart';
 
 class HotelStore extends ChangeNotifier {
   // Current active property
@@ -179,24 +180,30 @@ class HotelStore extends ChangeNotifier {
     await syncData(isBackground: false, forceNotify: true);
   }
 
-  /// Starts continuous auto-sync: periodic background polling (every 3s)
-  /// + Supabase Realtime channel subscription for instant multi-device sync.
+  /// Starts event-driven auto-sync:
+  /// 1. Realtime WebSocket subscription for instant sub-second multi-device sync
+  /// 2. Flush durable offline outbox queue
+  /// 3. Conservative safety heartbeat (every 10 minutes) instead of aggressive 3s polling
   void startAutoSync() {
     if (!SupabaseConfig.isConfigured || !SupabaseSyncService.isValidUuid(_currentProperty.id)) {
       return;
     }
 
-    // Restart if needed (re-entrant safe)
     stopAutoSync();
 
-    // 1. Poll every 3 seconds — fast enough for near-realtime without hammering DB
-    _autoSyncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      _backgroundPollForChanges();
+    // 1. Initial flush of any pending outbox items and incremental check
+    flushOutboxAndPullIncremental();
+
+    // 2. Realtime WebSocket subscription for instant push events from other devices
+    _setupRealtimeChannel();
+
+    // 3. Conservative safety heartbeat: once every 10 minutes (not 3 seconds!)
+    _autoSyncTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      debugPrint('[HotelStore] Safety heartbeat triggered (10m interval)');
+      flushOutboxAndPullIncremental();
     });
 
-    // 2. Realtime WebSocket subscription for instant push-based event driven sync
-    _setupRealtimeChannel();
-    debugPrint('[HotelStore] Auto-sync started (3s poll + Realtime) for ${_currentProperty.name}');
+    debugPrint('[HotelStore] Event-driven sync active (Realtime + Outbox + 10m Heartbeat) for ${_currentProperty.name}');
   }
 
   /// Stops continuous auto-sync timer and unbinds Realtime channel
@@ -218,13 +225,13 @@ class HotelStore extends ChangeNotifier {
       _tearDownRealtimeChannel();
 
       final propId = _currentProperty.id;
-      final channelName = 'prop-rt-$propId-${DateTime.now().millisecondsSinceEpoch}';
+      final channelName = 'prop-rt-$propId';
       final channel = client.channel(channelName);
 
       void handleDbChange(PostgresChangePayload payload) {
         debugPrint('[HotelStore Realtime] ${payload.eventType.name} on ${payload.table}');
-        // Signal that there are remote changes — UI will show banner
-        _signalRemoteChanges();
+        // Immediately trigger targeted debounced sync so notification/state appears on this device
+        _triggerDebouncedSyncWithBanner();
       }
 
       for (final table in ['rooms', 'stays', 'guests', 'bills', 'payments', 'expenses']) {
@@ -246,7 +253,6 @@ class HotelStore extends ChangeNotifier {
         if (status == RealtimeSubscribeStatus.channelError ||
             status == RealtimeSubscribeStatus.timedOut ||
             status == RealtimeSubscribeStatus.closed) {
-          // Schedule a reconnect in 5s if auto-sync is still expected to be active
           _scheduleRealtimeReconnect();
         }
       });
@@ -259,40 +265,41 @@ class HotelStore extends ChangeNotifier {
 
   void _scheduleRealtimeReconnect() {
     _realtimeReconnectTimer?.cancel();
-    if (_autoSyncTimer == null || !_autoSyncTimer!.isActive) return; // sync stopped
     _realtimeReconnectTimer = Timer(const Duration(seconds: 5), () {
-      if (_autoSyncTimer != null && _autoSyncTimer!.isActive) {
+      if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(_currentProperty.id)) {
         debugPrint('[HotelStore Realtime] Reconnecting channel...');
         _setupRealtimeChannel();
       }
     });
   }
 
-  /// Called by Realtime on any remote DB event.
-  /// Sets the banner flag and immediately schedules a debounced pull.
-  void _signalRemoteChanges() {
-    // Immediately apply changes silently AND set banner if data actually changed
-    _triggerDebouncedSyncWithBanner();
-  }
-
+  /// Triggers debounced sync when a Realtime event arrives from another device.
+  /// Pulls the latest incremental changes, updates local state, shows notification banner, and notifies listeners.
   void _triggerDebouncedSyncWithBanner() {
     _realtimeDebounceTimer?.cancel();
-    _realtimeDebounceTimer = Timer(const Duration(milliseconds: 400), () async {
-      // Don't apply if a manual sync is running
+    _realtimeDebounceTimer = Timer(const Duration(milliseconds: 300), () async {
       if (_isManualSyncRunning) return;
       _isBgSyncRunning = true;
       try {
         if (SupabaseConfig.isConfigured && SupabaseSyncService.isValidUuid(_currentProperty.id)) {
-          final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+          // Flush outbox first, then pull remote changes
+          await _flushOutbox();
+
+          // Try incremental pull if we have a lastSyncTime, else full pull
+          Map<String, dynamic>? remote;
+          if (lastSyncTime != null) {
+            remote = await SupabaseSyncService.pullIncrementalData(_currentProperty.id, lastSyncTime!);
+          }
+          remote ??= await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+
           if (remote != null) {
             final changed = _applyRemoteData(remote);
             if (changed) {
-              // Data changed from another device — show banner and update UI
               hasRemoteChanges = true;
               lastSyncTime = DateTime.now();
               saveToLocalStorage();
               notifyListeners();
-              debugPrint('[HotelStore] Realtime: remote changes detected and applied.');
+              debugPrint('[HotelStore] Realtime: remote changes applied from another device.');
             }
           }
         }
@@ -304,13 +311,36 @@ class HotelStore extends ChangeNotifier {
     });
   }
 
-  /// Background poll — silently pull and if changed, show banner
-  Future<void> _backgroundPollForChanges() async {
+  /// Drains local outbox queue to push any pending offline mutations to Supabase.
+  Future<void> _flushOutbox() async {
+    final propId = _currentProperty.id;
+    if (!SupabaseSyncService.isValidUuid(propId)) return;
+    await OutboxQueueService.flushQueue(
+      propertyId: propId,
+      processor: (item) async {
+        return await SupabaseSyncService.pushOutboxItem(
+          item.action,
+          item.payload,
+          knownRooms: _rooms,
+        );
+      },
+    );
+  }
+
+  /// Flushes outbox and pulls changes (called on app start, resume, network restore, or 10m heartbeat)
+  Future<void> flushOutboxAndPullIncremental() async {
     if (_isBgSyncRunning || _isManualSyncRunning) return;
     _isBgSyncRunning = true;
     try {
       if (!SupabaseConfig.isConfigured || !SupabaseSyncService.isValidUuid(_currentProperty.id)) return;
-      final remote = await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+      await _flushOutbox();
+
+      Map<String, dynamic>? remote;
+      if (lastSyncTime != null) {
+        remote = await SupabaseSyncService.pullIncrementalData(_currentProperty.id, lastSyncTime!);
+      }
+      remote ??= await SupabaseSyncService.pullRemoteData(_currentProperty.id);
+
       if (remote != null) {
         final changed = _applyRemoteData(remote);
         if (changed) {
@@ -321,7 +351,7 @@ class HotelStore extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('[HotelStore] Background poll notice: $e');
+      debugPrint('[HotelStore] Incremental sync notice: $e');
     } finally {
       _isBgSyncRunning = false;
     }
@@ -426,7 +456,15 @@ class HotelStore extends ChangeNotifier {
     _expenses.insert(0, expense);
     notifyListeners();
     saveToLocalStorage();
-    await SupabaseSyncService.syncExpense(expense);
+
+    if (isUuid) {
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_expense',
+        payload: expense.toJson(),
+      );
+      _flushOutbox();
+    }
   }
 
   /// Delete an expense by ID
@@ -434,7 +472,15 @@ class HotelStore extends ChangeNotifier {
     _expenses.removeWhere((e) => e.id == expenseId);
     notifyListeners();
     saveToLocalStorage();
-    await SupabaseSyncService.deleteExpense(expenseId);
+
+    if (SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'delete_expense',
+        payload: {'id': expenseId},
+      );
+      _flushOutbox();
+    }
   }
 
   /// Record a payment towards a bill (advance or partial)
@@ -470,14 +516,28 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
     saveToLocalStorage();
-    Future.microtask(() async {
-      await SupabaseSyncService.syncBill(bill, _currentProperty.id);
-      await SupabaseSyncService.syncPayment(payment);
+
+    if (isUuid) {
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_bill',
+        payload: bill.toJson(),
+      );
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_payment',
+        payload: payment.toJson(),
+      );
       final stay = _stays.where((s) => s.id == bill.stayId).firstOrNull;
       if (stay != null) {
-        await SupabaseSyncService.syncStay(stay, knownRooms: _rooms);
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'upsert_stay',
+          payload: stay.toJson(),
+        );
       }
-    });
+      Future.microtask(() => _flushOutbox());
+    }
   }
 
   /// Merge remote expenses fetched from Supabase
@@ -1301,15 +1361,42 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
     saveToLocalStorage();
-    Future.microtask(() async {
-      await SupabaseSyncService.syncGuest(newGuest);
+
+    // Enqueue to durable local outbox and attempt immediate flush
+    if (isUuid) {
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_guest',
+        payload: newGuest.toJson(),
+      );
       for (final cg in registeredCoGuests) {
-        await SupabaseSyncService.syncGuest(cg);
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'upsert_guest',
+          payload: cg.toJson(),
+        );
       }
-      await SupabaseSyncService.syncStay(newStay, knownRooms: _rooms);
-      await SupabaseSyncService.syncBill(newBill, _currentProperty.id);
-      await SupabaseSyncService.updateRoomStatus(_currentProperty.id, targetRoom.roomNumber, RoomStatus.occupied);
-    });
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_stay',
+        payload: newStay.toJson(),
+      );
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_bill',
+        payload: newBill.toJson(),
+      );
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'update_room_status',
+        payload: {
+          'property_id': _currentProperty.id,
+          'room_number': targetRoom.roomNumber,
+          'status': RoomStatus.occupied.dbValue,
+        },
+      );
+    }
+    Future.microtask(() => _flushOutbox());
 
     // Trigger automated WhatsApp check-in notification (non-blocking)
     if (sendWhatsApp && phone.trim().isNotEmpty) {
@@ -1535,17 +1622,43 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
     saveToLocalStorage();
-    Future.microtask(() async {
-      await SupabaseSyncService.syncGuest(newGuest);
+
+    if (isUuid) {
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_guest',
+        payload: newGuest.toJson(),
+      );
       for (final cg in registeredCoGuests) {
-        await SupabaseSyncService.syncGuest(cg);
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'upsert_guest',
+          payload: cg.toJson(),
+        );
       }
-      await SupabaseSyncService.syncStay(newStay, knownRooms: _rooms);
-      await SupabaseSyncService.syncBill(newBill, _currentProperty.id);
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_stay',
+        payload: newStay.toJson(),
+      );
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_bill',
+        payload: newBill.toJson(),
+      );
       if (targetRoom.status == RoomStatus.reserved) {
-        await SupabaseSyncService.updateRoomStatus(_currentProperty.id, targetRoom.roomNumber, RoomStatus.reserved);
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'update_room_status',
+          payload: {
+            'property_id': _currentProperty.id,
+            'room_number': targetRoom.roomNumber,
+            'status': RoomStatus.reserved.dbValue,
+          },
+        );
       }
-    });
+    }
+    Future.microtask(() => _flushOutbox());
 
     // Trigger automated WhatsApp booking confirmation notification (non-blocking)
     if (sendWhatsApp && phone.trim().isNotEmpty) {
@@ -1595,12 +1708,26 @@ class HotelStore extends ChangeNotifier {
     }
     notifyListeners();
     saveToLocalStorage();
-    Future.microtask(() async {
-      await SupabaseSyncService.syncStay(targetStay, knownRooms: _rooms);
+
+    if (SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_stay',
+        payload: targetStay.toJson(),
+      );
       if (roomIndex != -1) {
-        await SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.occupied);
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'update_room_status',
+          payload: {
+            'property_id': _currentProperty.id,
+            'room_number': _rooms[roomIndex].roomNumber,
+            'status': RoomStatus.occupied.dbValue,
+          },
+        );
       }
-    });
+    }
+    Future.microtask(() => _flushOutbox());
   }
 
   // 1e. Cancel Reservation
@@ -1618,12 +1745,26 @@ class HotelStore extends ChangeNotifier {
       }
       notifyListeners();
       saveToLocalStorage();
-      Future.microtask(() async {
-        await SupabaseSyncService.syncStay(stay, knownRooms: _rooms);
+
+      if (SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'upsert_stay',
+          payload: stay.toJson(),
+        );
         if (roomIndex != -1) {
-          await SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.vacant);
+          OutboxQueueService.enqueue(
+            propertyId: _currentProperty.id,
+            action: 'update_room_status',
+            payload: {
+              'property_id': _currentProperty.id,
+              'room_number': _rooms[roomIndex].roomNumber,
+              'status': RoomStatus.vacant.dbValue,
+            },
+          );
         }
-      });
+      }
+      Future.microtask(() => _flushOutbox());
     }
   }
 
@@ -1716,16 +1857,39 @@ class HotelStore extends ChangeNotifier {
 
     notifyListeners();
     saveToLocalStorage();
-    Future.microtask(() async {
-      await SupabaseSyncService.syncStay(targetStay, knownRooms: _rooms);
-      await SupabaseSyncService.syncBill(bill);
+
+    final isUuid = SupabaseSyncService.isValidUuid(_currentProperty.id);
+    if (isUuid) {
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_stay',
+        payload: targetStay.toJson(),
+      );
+      OutboxQueueService.enqueue(
+        propertyId: _currentProperty.id,
+        action: 'upsert_bill',
+        payload: bill.toJson(),
+      );
       for (final p in bill.payments) {
-        await SupabaseSyncService.syncPayment(p);
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'upsert_payment',
+          payload: p.toJson(),
+        );
       }
       if (roomIndex != -1) {
-        await SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[roomIndex].roomNumber, RoomStatus.needsCleaning);
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'update_room_status',
+          payload: {
+            'property_id': _currentProperty.id,
+            'room_number': _rooms[roomIndex].roomNumber,
+            'status': RoomStatus.needsCleaning.dbValue,
+          },
+        );
       }
-    });
+    }
+    Future.microtask(() => _flushOutbox());
 
     // Trigger automated WhatsApp checkout thank-you notification with straight PDF invoice (non-blocking)
     final guestPhone = targetStay.guest?.phone;
@@ -1762,7 +1926,18 @@ class HotelStore extends ChangeNotifier {
       );
       notifyListeners();
       saveToLocalStorage();
-      SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[index].roomNumber, RoomStatus.vacant);
+      if (SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'update_room_status',
+          payload: {
+            'property_id': _currentProperty.id,
+            'room_number': _rooms[index].roomNumber,
+            'status': RoomStatus.vacant.dbValue,
+          },
+        );
+        _flushOutbox();
+      }
     }
   }
 
@@ -1776,7 +1951,18 @@ class HotelStore extends ChangeNotifier {
       );
       notifyListeners();
       saveToLocalStorage();
-      SupabaseSyncService.updateRoomStatus(_currentProperty.id, _rooms[index].roomNumber, status);
+      if (SupabaseSyncService.isValidUuid(_currentProperty.id)) {
+        OutboxQueueService.enqueue(
+          propertyId: _currentProperty.id,
+          action: 'update_room_status',
+          payload: {
+            'property_id': _currentProperty.id,
+            'room_number': _rooms[index].roomNumber,
+            'status': status.dbValue,
+          },
+        );
+        _flushOutbox();
+      }
     }
   }
 
@@ -2176,7 +2362,8 @@ class HotelStore extends ChangeNotifier {
       _stays.removeWhere((s) =>
           s.propertyId == _currentProperty.id &&
           SupabaseSyncService.isValidUuid(s.id) &&
-          !remoteStayIds.contains(s.id));
+          !remoteStayIds.contains(s.id) &&
+          !OutboxQueueService.hasPendingMutation(_currentProperty.id, s.id));
       if (_stays.length != beforeStayCount) hasChanged = true;
 
       for (final raw in remoteStays) {
@@ -2215,7 +2402,8 @@ class HotelStore extends ChangeNotifier {
       final beforeBillCount = _bills.length;
       _bills.removeWhere((b) =>
           SupabaseSyncService.isValidUuid(b.id) &&
-          !remoteBillIds.contains(b.id));
+          !remoteBillIds.contains(b.id) &&
+          !OutboxQueueService.hasPendingMutation(_currentProperty.id, b.id));
       if (_bills.length != beforeBillCount) hasChanged = true;
 
       for (final raw in remoteBills) {
@@ -2268,7 +2456,8 @@ class HotelStore extends ChangeNotifier {
       _payments.removeWhere((p) =>
           p.propertyId == _currentProperty.id &&
           SupabaseSyncService.isValidUuid(p.id) &&
-          !remotePaymentIds.contains(p.id));
+          !remotePaymentIds.contains(p.id) &&
+          !OutboxQueueService.hasPendingMutation(_currentProperty.id, p.id));
       if (_payments.length != beforePaymentCount) hasChanged = true;
 
       for (final raw in remotePayments) {
@@ -2304,7 +2493,8 @@ class HotelStore extends ChangeNotifier {
       _expenses.removeWhere((e) =>
           e.propertyId == _currentProperty.id &&
           SupabaseSyncService.isValidUuid(e.id) &&
-          !remoteExpIds.contains(e.id));
+          !remoteExpIds.contains(e.id) &&
+          !OutboxQueueService.hasPendingMutation(_currentProperty.id, e.id));
       if (_expenses.length != beforeExpCount) hasChanged = true;
 
       for (final raw in remoteExpenseList) {
